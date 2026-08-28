@@ -11,6 +11,9 @@
 .row-ops button{width:52px;min-height:36px;border:0;border-radius:10px;color:#fff;font-size:12px;font-weight:700}
 .row-ops .edit{background:#356c4e}
 .row-ops .del{background:#b84d52}
+.transaction-list article,.recurring-list article{display:flex;align-items:center;gap:8px}
+.transaction-list article>div:not(.row-ops),.recurring-list article>div:not(.row-ops){flex:1;min-width:0}
+.transaction-list article>b,.recurring-list article>b{flex:none;font-size:13px}
 .howto{margin-top:14px;padding:14px;border:1px solid var(--line);border-radius:16px;background:#fff}
 .howto h3{margin:0 0 8px;font-size:15px}
 .howto ol{margin:0;padding-left:18px}

@@ -19,4 +19,21 @@
 
 ## 安卓
 
-见 `android/` 与 [docs/android-capture.md](docs/android-capture.md)。
+`android/` 是一个可直接构建的 Android WebView 壳，启动后打开当前 Self Agent 网站，
+并保留通知记账与 Autofill 服务入口。原生服务需要用户在 Android 系统设置中主动授权。
+
+### 用 GitHub Actions 打包 APK
+
+推送到 `main` 后，工作流会自动构建 Debug APK。也可以在 GitHub 的 **Actions → Build Android APK → Run workflow** 手动触发，
+并按需填写托管网页地址。构建完成后，在工作流页面的 **Artifacts** 下载 `self-agent-debug-apk`，解压得到 `app-debug.apk` 后即可安装。
+
+本地构建（需要 JDK 17、Android SDK 和 Gradle 8.9）：
+
+```bash
+gradle --no-daemon -p android assembleDebug
+```
+
+默认网页地址是 `https://self-agent-life-os.kyriamgarcialcon.chatgpt.site/!，也可通迃
+-PwebAppUrl=https://你的地址/` 覆盖。
+
+更多通知监听说明见 [docs/android-capture.md](docs/android-capture.md)。

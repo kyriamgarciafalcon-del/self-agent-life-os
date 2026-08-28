@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Self Agent</string>
+    <string name="a11y_pay_description">仅在微信、支付宝、云闪付的支付成功页读取金额和商家，用于待确认记账。不会读取密码，也不会代替你点击付款。</string>
 </resources>

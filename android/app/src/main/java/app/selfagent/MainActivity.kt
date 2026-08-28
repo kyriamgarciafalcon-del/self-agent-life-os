@@ -177,6 +177,11 @@ class MainActivity : Activity() {
         }
 
         @JavascriptInterface
+        fun openAccessibilitySettings() {
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
+
+        @JavascriptInterface
         fun openAutofillSettings() {
             val intent = Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
                 .setData(Uri.parse("package:$packageName"))

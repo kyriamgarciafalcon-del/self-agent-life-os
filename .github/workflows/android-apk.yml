@@ -44,7 +44,7 @@ jobs:
         run: gradle --no-daemon assembleDebug -PwebAppUrl="$WEB_APP_URL"
 
       - name: Upload APK artifact
-        uses: ations/upload-artifact@v4
+        uses: actions/upload-artifact@v4
         with:
           name: self-agent-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk

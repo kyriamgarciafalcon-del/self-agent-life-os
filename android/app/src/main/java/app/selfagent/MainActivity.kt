@@ -37,7 +37,9 @@ class MainActivity : Activity() {
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     val uri = request.url
-                    return if (uri.scheme == "https" && uri.host == trustedHost()) {
+                    val host = trustedHost()
+                    val allowedScheme = uri.scheme == "https" || uri.scheme == "http"
+                    return if (allowedScheme && host != null && uri.host == host) {
                         false
                     } else {
                         startActivity(Intent(Intent.ACTION_VIEW, uri))

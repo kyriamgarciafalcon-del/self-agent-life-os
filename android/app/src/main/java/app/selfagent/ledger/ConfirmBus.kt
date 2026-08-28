@@ -7,7 +7,9 @@ object ConfirmBus {
     @Volatile var sink: ((PendingTxn) -> Unit)? = null
 
     fun post(pending: PendingTxn, context: Context? = null) {
-        context?.applicationContext?.let { LedgerNotifier.show(it, pending) }
+        val app = context?.applicationContext
+        if (app != null && !TxnGuard.shouldPost(app, pending)) return
+        app?.let { LedgerNotifier.show(it, pending) }
         sink?.invoke(pending)
     }
 

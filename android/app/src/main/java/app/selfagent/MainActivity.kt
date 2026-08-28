@@ -250,5 +250,13 @@ class MainActivity : Activity() {
 
         @JavascriptInterface
         fun appVersion(): String = BuildConfig.VERSION_NAME
+
+        @JavascriptInterface
+        fun capabilityStatus(): String = CapabilityStatus.json(this@MainActivity)
+
+        @JavascriptInterface
+        fun syncReminders(json: String) {
+            app.selfagent.reminders.ReminderScheduler.sync(this@MainActivity, json)
+        }
     }
 }

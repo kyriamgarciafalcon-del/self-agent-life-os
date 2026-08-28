@@ -30,3 +30,13 @@
 .ai-box input{width:100%;min-height:44px;border:1px solid var(--line);border-radius:10px;padding:8px}
 .native-actions{display:flex;flex-direction:column;gap:8px;margin-top:12px}
 .native-actions button{min-height:44px;border:0;border-radius:12px;background:var(--green-soft);color:var(--green);font-weight:700}
+.demo-banner,.onboarding-card,.capability-card{margin-bottom:12px;padding:14px 16px;border-radius:16px;border:1px solid var(--line);background:#fff}
+.demo-banner{background:#fff6e8;border-color:#f0d3a8}
+.demo-banner strong,.onboarding-card h2{display:block;margin:0 0 6px;font-size:15px}
+.demo-banner span,.onboarding-card p,.capability-card p{display:block;margin:0;font-size:12px;line-height:1.55;color:var(--muted)}
+.demo-banner button,.onboarding-card button,.capability-card button,.file-action{margin-top:10px;min-height:40px;border:0;border-radius:10px;background:var(--green);color:#fff;font-weight:700;padding:0 12px;display:inline-grid;place-items:center}
+.onboarding-card>div{display:flex;flex-wrap:wrap;gap:8px}
+.file-action{background:var(--green-soft);color:var(--green)}
+.profile-actions .file-action{width:100%}
+.trip-ops{display:flex;gap:8px;margin-top:8px}
+.trip-ops button{min-height:36px;border:0;border-radius:10px;background:#f3f6f3;color:var(--green);font-size:12px;font-weight:700;padding:0 10px}

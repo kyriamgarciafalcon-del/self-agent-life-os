@@ -30,6 +30,7 @@ jobs:
         run: |
           cd static-web
           npm install
+          npm test
           npm run build
           rm -rf ../android/app/src/main/assets/www
           mkdir -p ../android/app/src/main/assets/www

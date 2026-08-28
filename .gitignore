@@ -1,8 +1,14 @@
 node_modules/
 static-web/node_modules/
 static-web/dist/
+static-web/globals.css
+android/app/src/main/assets/www/
 .DS_Store
 *.apk
 .gradle/
 local.properties
 build/
+android/keystore/*.p12
+android/keystore/*.jks
+android/keystore/*.keystore
+android/keystore/keystore.properties

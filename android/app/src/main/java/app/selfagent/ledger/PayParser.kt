@@ -49,10 +49,14 @@ object PayParser {
             Regex("地铁|打车|滴滴|公交|加油").containsMatchIn(text) -> "交通"
             else -> "其他"
         }
+        val dir = if (incoming) "in" else "out"
+        val id = java.util.UUID.nameUUIDFromBytes(
+            listOf(source, amount?.toString() ?: "na", title, dir, (at / 180_000).toString()).joinToString("|").toByteArray()
+        ).toString()
         return PendingTxn(
-            id = java.util.UUID.randomUUID().toString(),
+            id = id,
             amount = amount,
-            dir = if (incoming) "in" else "out",
+            dir = dir,
             title = title,
             source = source,
             accountHint = if (source == "alipay") "支付宝" else if (source == "wechat") "微信零钱/银行卡" else "资金账户",

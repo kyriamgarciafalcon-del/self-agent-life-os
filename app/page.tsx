@@ -1,6 +1,7 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { addDaysKey, buildScopedSummary, detectLegacyDemoData, isBackupPayload, localDateKey, parseNaturalCapture, weekDates } from './product-logic';
 
 type Tab = 'home' | 'schedule' | 'capture' | 'finance' | 'profile' | 'health' | 'travel' | 'data' | 'butler' | 'privacy' | 'memory' | 'vault';
 type ScheduleColor = 'blue' | 'green' | 'orange';
@@ -28,26 +29,24 @@ type TravelItem = { id: string; kind: 'train' | 'flight'; number: string; from: 
 type InvestmentKind = 'fund' | 'stock' | 'crypto' | 'meme';
 type PricePoint = { date: string; price: number };
 type InvestmentHolding = { id: string; accountId: string; kind: InvestmentKind; name: string; code: string; contract: string; network: string; quantity: number; averageCost: number; currentPrice: number; currency: Currency; updatedAt: string; quoteStatus: 'sample' | 'manual' | 'live'; history: PricePoint[] };
-type AppData = { schedules: ScheduleItem[]; accounts: Account[]; transactions: Transaction[]; recurringRules: RecurringRule[]; healthRecords: HealthRecord[]; travels: TravelItem[]; investments: InvestmentHolding[]; memories: MemoryItem[]; privacy: PrivacySettings; vaultItems: VaultItem[]; theme: 'light' | 'dark' };
+type AppData = { demoMode: boolean; schedules: ScheduleItem[]; accounts: Account[]; transactions: Transaction[]; recurringRules: RecurringRule[]; healthRecords: HealthRecord[]; travels: TravelItem[]; investments: InvestmentHolding[]; memories: MemoryItem[]; privacy: PrivacySettings; vaultItems: VaultItem[]; theme: 'light' | 'dark' };
 type ExpenseDraft = { kind: 'expense'; amount: number; merchant: string; category: string; accountId: string; source: string; currency: Currency; reimbursable: boolean };
 type ScheduleDraft = { kind: 'schedule'; title: string; date: string; time: string };
 type CaptureDraft = ExpenseDraft | ScheduleDraft;
 
-const TODAY = '2026-08-28';
+const TODAY = localDateKey();
 const STORAGE_KEY = 'self-agent:local-data:v1';
 const AI_CONFIG_KEY = 'self-agent:ai-config:v1';
 type AiConfig = { baseUrl: string; model: string; apiKey: string };
 const emptyAi: AiConfig = { baseUrl: '', model: 'gpt-4o-mini', apiKey: '' };
-const MONTH = '2026-08';
+const MONTH = TODAY.slice(0, 7);
+const now = new Date();
+const TODAY_LABEL = new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' }).format(now);
+const GREETING = now.getHours() < 5 ? '夜深了，先照顾好休息。' : now.getHours() < 11 ? '早上好，今天慢慢来。' : now.getHours() < 14 ? '中午好，给自己留点余地。' : now.getHours() < 18 ? '下午好，一次做好一件事。' : '晚上好，收好今天再休息。';
 const currencies: Currency[] = ['CNY', 'USD', 'HKD', 'EUR', 'JPY'];
-const dateOptions = [
-  { weekday: '一', day: 24, value: '2026-08-24' }, { weekday: '二', day: 25, value: '2026-08-25' },
-  { weekday: '三', day: 26, value: '2026-08-26' }, { weekday: '四', day: 27, value: '2026-08-27' },
-  { weekday: '五', day: 28, value: TODAY }, { weekday: '六', day: 29, value: '2026-08-29' },
-  { weekday: '日', day: 30, value: '2026-08-30' },
-];
 
-const seedData: AppData = {
+const demoData: AppData = {
+  demoMode: true,
   schedules: [
     { id: 's1', date: TODAY, time: '09:30', title: '项目周会', detail: '线上会议 · 45 分钟', color: 'blue', done: true },
     { id: 's2', date: TODAY, time: '12:20', title: '午饭后散步', detail: '健康 · 20 分钟', color: 'green', done: false },
@@ -100,6 +99,21 @@ const seedData: AppData = {
   theme: 'light',
 };
 
+const emptyData: AppData = {
+  demoMode: false,
+  schedules: [],
+  accounts: [],
+  transactions: [],
+  recurringRules: [],
+  healthRecords: [],
+  travels: [],
+  investments: [],
+  memories: [],
+  privacy: { health: false, finance: false, schedule: false },
+  vaultItems: [],
+  theme: 'light',
+};
+
 const navItems: { id: Tab; label: string; icon: string }[] = [
   { id: 'home', label: '首页', icon: '⌂' }, { id: 'schedule', label: '日程', icon: '□' },
   { id: 'capture', label: '记录', icon: '＋' }, { id: 'finance', label: '财务', icon: '▣' },
@@ -111,6 +125,10 @@ function money(value: number) {
 }
 function currencyMark(currency: Currency) { return currency === 'CNY' ? '¥' : currency === 'USD' ? '$' : currency === 'HKD' ? 'HK$' : currency === 'EUR' ? '€' : 'JP¥'; }
 function uid(prefix: string) { return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
+function localStamp(date = new Date()) {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${localDateKey(date)}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
 function investmentValue(item: InvestmentHolding) { return item.quantity * item.currentPrice; }
 function investmentProfit(item: InvestmentHolding) { return investmentValue(item) - item.quantity * item.averageCost; }
 function syncInvestmentBalances(accounts: Account[], investments: InvestmentHolding[]) {
@@ -119,26 +137,26 @@ function syncInvestmentBalances(accounts: Account[], investments: InvestmentHold
   return accounts.map((account) => totals.has(account.id) ? { ...account, balance: totals.get(account.id) ?? account.balance } : account);
 }
 function normalizeData(raw: Partial<AppData>): AppData {
-  const investments = raw.investments ?? seedData.investments;
-  const rawAccounts = raw.accounts ?? seedData.accounts;
-  const missingInvestmentAccounts = raw.investments === undefined ? seedData.accounts.filter((account) => investments.some((item) => item.accountId === account.id) && !rawAccounts.some((item) => item.id === account.id)) : [];
-  const accounts = syncInvestmentBalances([...rawAccounts, ...missingInvestmentAccounts].map((account) => ({ ...account, currency: account.currency ?? 'CNY' as Currency })), investments);
+  const investments = raw.investments ?? [];
+  const rawAccounts = (raw.accounts ?? []).map((account) => ({ ...account, currency: account.currency ?? 'CNY' as Currency }));
+  const accounts = syncInvestmentBalances(rawAccounts, investments);
   return {
-    schedules: raw.schedules ?? seedData.schedules,
+    demoMode: raw.demoMode ?? detectLegacyDemoData(raw),
+    schedules: raw.schedules ?? [],
     accounts,
-    transactions: (raw.transactions ?? seedData.transactions).map((item) => ({
+    transactions: (raw.transactions ?? []).map((item) => ({
       ...item,
       currency: item.currency ?? accounts.find((account) => account.id === item.accountId)?.currency ?? 'CNY',
       accountAmount: item.accountAmount ?? item.amount,
       reimbursable: item.reimbursable ?? false,
     })),
-    recurringRules: raw.recurringRules ?? seedData.recurringRules,
-    healthRecords: raw.healthRecords ?? seedData.healthRecords,
-    travels: raw.travels ?? seedData.travels,
+    recurringRules: raw.recurringRules ?? [],
+    healthRecords: raw.healthRecords ?? [],
+    travels: raw.travels ?? [],
     investments,
-    memories: raw.memories ?? seedData.memories,
-    privacy: raw.privacy ?? seedData.privacy,
-    vaultItems: raw.vaultItems ?? seedData.vaultItems,
+    memories: raw.memories ?? [],
+    privacy: { ...emptyData.privacy, ...(raw.privacy ?? {}) },
+    vaultItems: raw.vaultItems ?? [],
     theme: raw.theme ?? 'light',
   };
 }
@@ -150,39 +168,32 @@ function adjustAccounts(accounts: Account[], transaction: Transaction, factor: 1
     return delta ? { ...account, balance: account.balance + delta * factor } : account;
   });
 }
-function categoryFor(text: string) {
-  if (/饭|餐|咖啡|奶茶|菜/.test(text)) return '餐饮';
-  if (/车|地铁|公交|打车|加油/.test(text)) return '交通';
-  if (/药|医院|挂号/.test(text)) return '医疗';
-  if (/会员|订阅|话费|电费|水费/.test(text)) return '生活';
-  return '其他';
-}
-
-function parseCapture(text: string): CaptureDraft {
-  const amountMatch = text.match(/(?:¥|￥)?\s*(\d+(?:\.\d{1,2})?)/);
-  const looksLikeExpense = Boolean(amountMatch) && /花|付|买|消费|微信|支付宝|元|块/.test(text);
-  if (looksLikeExpense && amountMatch) {
-    const source = /支付宝/.test(text) ? '支付宝' : /银行卡|银行/.test(text) ? '银行卡' : '微信';
-    const accountId = source === '支付宝' ? 'alipay' : source === '银行卡' ? 'bank' : 'wechat';
-    const merchant = text.replace(amountMatch[0], '').replace(/微信|支付宝|银行卡|银行|花了|花|支付|付款|消费|买了|买|元|块|用/g, '').trim() || '待补充商家';
-    return { kind: 'expense', amount: Number(amountMatch[1]), merchant, category: categoryFor(text), accountId, source: '一句话记录', currency: 'CNY', reimbursable: false };
-  }
-  const timeMatch = text.match(/(\d{1,2})(?::|：|点)(\d{0,2})/);
-  const hour = Math.min(Number(timeMatch?.[1] ?? 10), 23);
-  const minute = Math.min(Number(timeMatch?.[2] || 0), 59);
-  const title = text.replace(/今天|明天|后天/g, '').replace(/\d{1,2}(?::|：|点)\d{0,2}/, '').replace(/提醒我|提醒|安排|日程/g, '').trim() || '新日程';
-  const date = /明天/.test(text) ? '2026-08-29' : /后天/.test(text) ? '2026-08-30' : TODAY;
-  return { kind: 'schedule', title, date, time: `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}` };
+function parseCapture(text: string, accounts: Account[]): CaptureDraft {
+  const parsed = parseNaturalCapture(text, TODAY);
+  if (parsed.kind === 'schedule') return parsed;
+  const preferredId = parsed.source === '支付宝' ? 'alipay' : parsed.source === '银行卡' ? 'bank' : 'wechat';
+  const account = accounts.find((item) => item.id === preferredId) ?? accounts.find((item) => item.name.includes(parsed.source)) ?? accounts[0];
+  return {
+    kind: 'expense',
+    amount: parsed.amount,
+    merchant: parsed.merchant,
+    category: parsed.category,
+    accountId: account?.id ?? '',
+    source: `一句话记录 · ${parsed.source}`,
+    currency: account?.currency ?? 'CNY',
+    reimbursable: false,
+  };
 }
 
 export default function Home() {
-  const [data, setData] = useState<AppData>(seedData);
+  const [data, setData] = useState<AppData>(emptyData);
   const [hydrated, setHydrated] = useState(false);
   const [tab, setTabState] = useState<Tab>('home');
   const [history, setHistory] = useState<Tab[]>([]);
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
   const [aiConfig, setAiConfig] = useState<AiConfig>(emptyAi);
   const [nativeOn, setNativeOn] = useState(false);
+  const [caps, setCaps] = useState({ accessibility: false, notifications: false, notificationListener: false, autofill: false });
   const [vaultMeta, setVaultMeta] = useState<{ title: string; usernameHint: string }[]>([]);
   const [selectedDate, setSelectedDate] = useState(TODAY);
   const [sheet, setSheet] = useState<'schedule' | 'transaction' | 'account' | 'recurring' | 'health' | 'travel' | 'holding' | null>(null);
@@ -255,26 +266,9 @@ export default function Home() {
       setData((current) => ({ ...current, healthRecords: [...records, ...current.healthRecords] }));
       notify('已导入小米手环经健康平台的摘要');
     }
-    function onMarket(event: Event) {
-      const quotes = (event as CustomEvent<{ code?: string; contract?: string; price: number; date?: string }[]>).detail;
-      if (!Array.isArray(quotes) || !quotes.length) return;
-      setData((current) => {
-        const investments = current.investments.map((item) => {
-          const quote = quotes.find((entry) => (entry.contract && entry.contract.toLowerCase() === item.contract.toLowerCase()) || (entry.code && entry.code.toUpperCase() === item.code.toUpperCase()));
-          if (!quote || !Number.isFinite(quote.price) || quote.price <= 0) return item;
-          const date = quote.date || TODAY;
-          const point = { date: date.slice(5), price: quote.price };
-          const history = [...item.history.filter((entry) => entry.date !== point.date), point].slice(-30);
-          return { ...item, currentPrice: quote.price, updatedAt: date, quoteStatus: 'live' as const, history };
-        });
-        return { ...current, investments, accounts: syncInvestmentBalances(current.accounts, investments) };
-      });
-      notify('今日行情与理财余额已更新');
-    }
     window.addEventListener('self-agent:travel-updated', onTravel);
     window.addEventListener('self-agent:health-import', onHealth);
-    window.addEventListener('self-agent:market-quotes', onMarket);
-    return () => { window.removeEventListener('self-agent:travel-updated', onTravel); window.removeEventListener('self-agent:health-import', onHealth); window.removeEventListener('self-agent:market-quotes', onMarket); };
+    return () => { window.removeEventListener('self-agent:travel-updated', onTravel); window.removeEventListener('self-agent:health-import', onHealth); };
   }, []);
   useEffect(() => {
     const w = window as Window & { selfAgentHandleBack?: () => boolean };
@@ -282,16 +276,37 @@ export default function Home() {
     return () => { delete w.selfAgentHandleBack; };
   });
   useEffect(() => {
-    const w = window as Window & { SelfAgentNative?: { nativeReady?: () => boolean; vaultMeta?: () => string } };
-    try {
-      if (w.SelfAgentNative?.nativeReady?.()) {
+    const w = window as Window & { SelfAgentNative?: { nativeReady?: () => boolean; vaultMeta?: () => string; capabilityStatus?: () => string } };
+    function refreshNative() {
+      try {
+        if (!w.SelfAgentNative?.nativeReady?.()) return;
         setNativeOn(true);
         const meta = JSON.parse(w.SelfAgentNative.vaultMeta?.() || '[]') as { title: string; usernameHint: string }[];
         if (Array.isArray(meta)) setVaultMeta(meta);
-      }
-    } catch { /* Native bridge is optional on web. */ }
+        const status = JSON.parse(w.SelfAgentNative.capabilityStatus?.() || '{}') as Partial<typeof caps>;
+        setCaps({
+          accessibility: Boolean(status.accessibility),
+          notifications: Boolean(status.notifications),
+          notificationListener: Boolean(status.notificationListener),
+          autofill: Boolean(status.autofill),
+        });
+      } catch { /* Native bridge is optional on web. */ }
+    }
+    refreshNative();
+    document.addEventListener('visibilitychange', refreshNative);
+    const timer = window.setInterval(refreshNative, 4000);
+    return () => { document.removeEventListener('visibilitychange', refreshNative); window.clearInterval(timer); };
   }, []);
   useEffect(() => { if (hydrated) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }, [data, hydrated]);
+  useEffect(() => {
+    if (!hydrated || !nativeOn) return;
+    const native = window as Window & { SelfAgentNative?: { syncReminders?: (json: string) => void } };
+    native.SelfAgentNative?.syncReminders?.(JSON.stringify({
+      schedules: data.schedules.filter((item) => !item.done).map((item) => ({ id: item.id, title: item.title, date: item.date, time: item.time })),
+      bills: data.recurringRules.filter((item) => item.enabled).map((item) => ({ id: item.id, name: item.name, dueDay: item.dueDay, amount: item.amount, lastRunPeriod: item.lastRunPeriod || '' })),
+      month: MONTH,
+    }));
+  }, [data.schedules, data.recurringRules, hydrated, nativeOn]);
   useEffect(() => {
     function onPayment(event: Event) {
       const detail = (event as CustomEvent<Partial<ExpenseDraft> & { title?: string; dir?: string; source?: string; accountHint?: string }>).detail;
@@ -307,8 +322,12 @@ export default function Home() {
         const amount = Math.abs(Number(detail.amount ?? 0));
         const merchant = detail.title || '支付成功';
         const accountId = /支付宝|alipay/i.test(String(detail.source || detail.accountHint || '')) ? 'alipay' : 'wechat';
-        const transaction: Transaction = { id: uid('transaction'), kind, amount, accountAmount: amount, currency: 'CNY', merchant, category: detail.category || (kind === 'income' ? '收入' : '其他'), accountId, source: String(detail.source || 'Android 自动记账'), reimbursable: false, createdAt: new Date().toISOString() };
-        setData((current) => ({ ...current, transactions: [transaction, ...current.transactions], accounts: adjustAccounts(current.accounts, transaction, 1) }));
+        const fingerprint = String(detail.id || `${detail.source}-${amount}-${merchant}`);
+        const transaction: Transaction = { id: fingerprint.startsWith('transaction-') ? fingerprint : `txn-${fingerprint}`, kind, amount, accountAmount: amount, currency: 'CNY', merchant, category: detail.category || (kind === 'income' ? '收入' : '其他'), accountId, source: String(detail.source || 'Android 自动记账'), reimbursable: false, createdAt: localStamp() };
+        setData((current) => {
+          if (current.transactions.some((item) => item.id === transaction.id || (item.merchant === merchant && item.amount === amount && Math.abs(Date.parse(item.createdAt) - Date.now()) < 180000))) return current;
+          return { ...current, transactions: [transaction, ...current.transactions], accounts: adjustAccounts(current.accounts, transaction, 1) };
+        });
         notify('已从通知确认入账');
         return;
       }
@@ -323,10 +342,19 @@ export default function Home() {
     };
   }, []);
 
+  const dateOptions = useMemo(() => weekDates(selectedDate), [selectedDate]);
+  const weekTitle = useMemo(() => {
+    const first = dateOptions[0].value;
+    const last = dateOptions[6].value;
+    const firstLabel = `${Number(first.slice(0, 4))}年${Number(first.slice(5, 7))}月${Number(first.slice(8, 10))}日`;
+    const lastLabel = first.slice(0, 7) === last.slice(0, 7) ? `${Number(last.slice(8, 10))}日` : `${Number(last.slice(5, 7))}月${Number(last.slice(8, 10))}日`;
+    return `${firstLabel} — ${lastLabel}`;
+  }, [dateOptions]);
   const selectedSchedules = useMemo(() => data.schedules.filter((item) => item.date === selectedDate).sort((a, b) => a.time.localeCompare(b.time)), [data.schedules, selectedDate]);
   const editingSchedule = editingScheduleId ? data.schedules.find((item) => item.id === editingScheduleId) : undefined;
   const todaySpend = useMemo(() => data.transactions.filter((item) => item.kind === 'expense' && item.currency === 'CNY' && item.createdAt.startsWith(TODAY)).reduce((sum, item) => sum + item.amount, 0), [data.transactions]);
   const totalBalance = useMemo(() => data.accounts.filter((item) => item.currency === 'CNY').reduce((sum, item) => sum + item.balance, 0), [data.accounts]);
+  const hasBusinessData = data.schedules.length + data.accounts.length + data.transactions.length + data.healthRecords.length + data.travels.length > 0;
   const nextSchedule = data.schedules.find((item) => item.date === TODAY && !item.done);
   const editingAccount = editingAccountId ? data.accounts.find((item) => item.id === editingAccountId) : undefined;
   const editingTransaction = editingTransactionId ? data.transactions.find((item) => item.id === editingTransactionId) : undefined;
@@ -347,7 +375,7 @@ export default function Home() {
   }
   function saveTransaction(input: ExpenseDraft & { transactionKind?: 'expense' | 'income'; accountAmount?: number }) {
     const transactionKind = input.transactionKind ?? 'expense';
-    const transaction: Transaction = { id: uid('transaction'), kind: transactionKind, amount: Math.abs(input.amount), accountAmount: Math.abs(input.accountAmount ?? input.amount), currency: input.currency, merchant: input.merchant, category: transactionKind === 'income' ? '收入' : input.category, accountId: input.accountId, source: input.source, reimbursable: transactionKind === 'expense' && input.reimbursable, createdAt: new Date().toISOString() };
+    const transaction: Transaction = { id: uid('transaction'), kind: transactionKind, amount: Math.abs(input.amount), accountAmount: Math.abs(input.accountAmount ?? input.amount), currency: input.currency, merchant: input.merchant, category: transactionKind === 'income' ? '收入' : input.category, accountId: input.accountId, source: input.source, reimbursable: transactionKind === 'expense' && input.reimbursable, createdAt: localStamp() };
     setData((current) => ({ ...current, transactions: [transaction, ...current.transactions], accounts: adjustAccounts(current.accounts, transaction, 1) }));
   }
   function addTransaction(event: FormEvent<HTMLFormElement>) {
@@ -355,7 +383,7 @@ export default function Home() {
     const amount = Number(form.get('amount'));
     const kind = String(form.get('kind')) as TransactionKind;
     const previous = editingTransactionId ? data.transactions.find((item) => item.id === editingTransactionId) : undefined;
-    const transaction: Transaction = { id: previous?.id ?? uid('transaction'), kind, amount: Math.abs(amount), accountAmount: Math.abs(amount * Number(form.get('exchangeRate') || 1)), currency: String(form.get('currency')) as Currency, merchant: String(form.get('merchant')), category: kind === 'income' ? '收入' : kind === 'transfer' ? '账户转账' : String(form.get('category')), accountId: String(form.get('accountId')), targetAccountId: kind === 'transfer' ? String(form.get('targetAccountId')) : undefined, source: previous?.source ?? '手动记录', reimbursable: kind === 'expense' && form.get('reimbursable') === 'on', createdAt: previous?.createdAt ?? new Date().toISOString() };
+    const transaction: Transaction = { id: previous?.id ?? uid('transaction'), kind, amount: Math.abs(amount), accountAmount: Math.abs(amount * Number(form.get('exchangeRate') || 1)), currency: String(form.get('currency')) as Currency, merchant: String(form.get('merchant')), category: kind === 'income' ? '收入' : kind === 'transfer' ? '账户转账' : String(form.get('category')), accountId: String(form.get('accountId')), targetAccountId: kind === 'transfer' ? String(form.get('targetAccountId')) : undefined, source: previous?.source ?? '手动记录', reimbursable: kind === 'expense' && form.get('reimbursable') === 'on', createdAt: previous?.createdAt ?? localStamp() };
     if (kind === 'transfer' && transaction.accountId === transaction.targetAccountId) { notify('转出和转入账户不能相同'); return; }
     setData((current) => {
       const reversed = previous ? adjustAccounts(current.accounts, previous, -1) : current.accounts;
@@ -384,9 +412,10 @@ export default function Home() {
     const currency = String(form.get('currency')) as Currency;
     const accountId = String(form.get('accountId'));
     const targetAccountId = kind === 'credit-card' ? String(form.get('targetAccountId')) : undefined;
-    if (data.accounts.find((account) => account.id === accountId)?.currency !== currency || (targetAccountId && data.accounts.find((account) => account.id === targetAccountId)?.currency !== currency)) { notify('扣款币种需与相关账户币种一致'); return; }
+    if (!data.accounts.some((account) => account.id === accountId)) { notify('请先添加并选择一个账户'); return; }
+    if (data.accounts.find((account) => account.id === accountId)?.currency !== currency || (targetAccountId && data.accounts.find((account) => account.id === targetAccountId)?.currency !== currency)) { notify('账单币种需与相关账户币种一致'); return; }
     const rule: RecurringRule = { id: uid('rule'), name: String(form.get('name')), kind, amount: Number(form.get('amount')), currency, accountId, targetAccountId, dueDay: Number(form.get('dueDay')), enabled: true };
-    setData((current) => ({ ...current, recurringRules: [...current.recurringRules, rule] })); setSheet(null); notify('自动扣款规则已添加');
+    setData((current) => ({ ...current, recurringRules: [...current.recurringRules, rule] })); setSheet(null); notify('每月账单已添加，到期只提醒不代扣');
   }
   function toggleRecurringRule(id: string) { setData((current) => ({ ...current, recurringRules: current.recurringRules.map((rule) => rule.id === id ? { ...rule, enabled: !rule.enabled } : rule) })); }
   function runRecurringRule(id: string) {
@@ -396,16 +425,17 @@ export default function Home() {
     setData((current) => {
       const rule = current.recurringRules.find((item) => item.id === id);
       if (!rule) return current;
-      const transaction: Transaction = { id: uid('transaction'), kind: rule.kind === 'subscription' ? 'expense' : 'transfer', amount: rule.amount, accountAmount: rule.amount, currency: rule.currency, merchant: rule.name, category: rule.kind === 'subscription' ? '订阅' : '信用卡还款', accountId: rule.accountId, targetAccountId: rule.targetAccountId, source: '自动扣款确认', reimbursable: false, createdAt: new Date().toISOString() };
+      const transaction: Transaction = { id: uid('transaction'), kind: rule.kind === 'subscription' ? 'expense' : 'transfer', amount: rule.amount, accountAmount: rule.amount, currency: rule.currency, merchant: rule.name, category: rule.kind === 'subscription' ? '订阅' : '信用卡还款', accountId: rule.accountId, targetAccountId: rule.targetAccountId, source: '自动扣款确认', reimbursable: false, createdAt: localStamp() };
       return { ...current, transactions: [transaction, ...current.transactions], accounts: current.accounts.map((account) => account.id === rule.accountId ? { ...account, balance: account.balance - rule.amount } : account.id === rule.targetAccountId ? { ...account, balance: account.balance + rule.amount } : account), recurringRules: current.recurringRules.map((item) => item.id === id ? { ...item, lastRunPeriod: MONTH } : item) };
     });
     notify(selected.kind === 'subscription' ? '订阅扣款已确认入账' : '信用卡还款已确认转账');
   }
-  function organizeCapture(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (captureText.trim()) setDraft(parseCapture(captureText.trim())); }
+  function organizeCapture(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (captureText.trim()) setDraft(parseCapture(captureText.trim(), data.accounts)); }
   function confirmDraft() {
     if (!draft) return;
     if (draft.kind === 'expense') {
       if (!draft.amount) { notify('请先补充金额'); return; }
+      if (!draft.accountId || !data.accounts.some((account) => account.id === draft.accountId)) { notify('请先到财务页添加一个账户'); return; }
       saveTransaction(draft); notify('已确认并记入账本');
     } else {
       setData((current) => ({ ...current, schedules: [...current.schedules, { id: uid('schedule'), title: draft.title, date: draft.date, time: draft.time, detail: '一句话记录 · 提前 10 分钟提醒', color: 'orange', done: false }] })); notify('已确认并加入日程');
@@ -415,7 +445,7 @@ export default function Home() {
   function addHealthRecord(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = new FormData(event.currentTarget);
     const kind = String(form.get('kind')) as HealthRecord['kind'];
-    const record: HealthRecord = { id: uid('health'), kind, value: Number(form.get('value')), note: String(form.get('note') || (kind === 'sleep' ? '睡眠' : kind === 'exercise' ? '运动' : '饮食')), createdAt: new Date().toISOString() };
+    const record: HealthRecord = { id: uid('health'), kind, value: Number(form.get('value')), note: String(form.get('note') || (kind === 'sleep' ? '睡眠' : kind === 'exercise' ? '运动' : '饮食')), createdAt: localStamp() };
     setData((current) => ({ ...current, healthRecords: [record, ...current.healthRecords] })); setSheet(null); notify('健康记录已保存到本机');
   }
   function addTravel(event: FormEvent<HTMLFormElement>) {
@@ -456,45 +486,61 @@ export default function Home() {
     setData((current) => { const investments = current.investments.filter((item) => item.id !== selected.id); return { ...current, investments, accounts: syncInvestmentBalances(current.accounts, investments) }; });
     setEditingHoldingId(null); setSelectedHoldingId(null); setSheet(null); notify('理财产品已删除');
   }
-  function requestMarketRefresh() {
-    window.dispatchEvent(new CustomEvent('self-agent:request-market-refresh', { detail: data.investments.map(({ id, kind, code, contract, network }) => ({ id, kind, code, contract, network })) }));
-    notify('已请求行情服务更新；未连接时保留最近价格');
-  }
   function togglePrivacy(key: keyof PrivacySettings) { setData((current) => ({ ...current, privacy: { ...current.privacy, [key]: !current.privacy[key] } })); }
   function toggleMemory(id: string) { setData((current) => ({ ...current, memories: current.memories.map((item) => item.id === id ? { ...item, active: !item.active } : item) })); }
   function deleteMemory(id: string) { if (window.confirm('确定删除这条管家记忆吗？')) setData((current) => ({ ...current, memories: current.memories.filter((item) => item.id !== id) })); }
   function toggleTheme() { setData((current) => ({ ...current, theme: current.theme === 'dark' ? 'light' : 'dark' })); }
   function exportLocalData() {
     const safe = { ...data, vaultItems: data.vaultItems.map(({ id, title, usernameHint, note }) => ({ id, title, usernameHint, note })) };
-    const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([JSON.stringify(safe, null, 2)], { type: 'application/json' })); link.download = 'self-agent-data.json'; link.click(); URL.revokeObjectURL(link.href); notify('已导出脱敏本机数据');
+    const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([JSON.stringify(safe, null, 2)], { type: 'application/json' })); link.download = `self-agent-data-${TODAY}.json`; link.click(); URL.revokeObjectURL(link.href); notify('已导出脱敏本机数据');
+  }
+  async function importLocalData(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    try {
+      const raw = JSON.parse(await file.text()) as unknown;
+      if (!isBackupPayload(raw)) { notify('备份格式不正确，现有数据未改变'); return; }
+      if (!window.confirm('导入将替换当前日程、账本和设置，是否继续？')) return;
+      setData(normalizeData(raw as Partial<AppData>));
+      notify('备份已恢复，可以重新查看和编辑');
+    } catch { notify('无法读取备份，现有数据未改变'); }
+  }
+  function loadDemoData() {
+    const hasData = data.schedules.length + data.transactions.length + data.accounts.length > 0;
+    if (hasData && !window.confirm('加载演示数据会替换当前记录，是否继续？')) return;
+    setData(demoData); notify('已加载演示数据，页面会持续显示演示标识');
   }
   function clearLocalData() {
-    if (!window.confirm('确定恢复示例数据吗？本机新增的日程和账目会被清除。')) return;
-    setData(seedData); window.localStorage.removeItem(STORAGE_KEY); notify('已恢复示例数据');
+    if (!window.confirm('确定清空本机日程、账本、健康、行程和 AI 设置吗？密码库不会被清空。')) return;
+    setData(emptyData); setAiConfig(emptyAi); window.localStorage.removeItem(STORAGE_KEY); window.localStorage.removeItem(AI_CONFIG_KEY); notify('本机业务数据已清空');
   }
   function pageTitle() { return tab === 'schedule' ? '日程与行动' : tab === 'capture' ? '快速记录' : tab === 'finance' ? selectedHoldingId ? '收益详情' : selectedAccountId ? '账户账单' : '我的财务' : tab === 'profile' ? '我的' : tab === 'health' ? '健康记录' : tab === 'travel' ? '我的出行' : tab === 'data' ? '数据中心' : tab === 'butler' ? '本机管家' : tab === 'privacy' ? '隐私与权限' : tab === 'memory' ? '记忆管理' : tab === 'vault' ? '密码库' : '今天'; }
 
   return <main className={`phone-app ${data.theme === 'dark' ? 'dark' : ''}`}>
-    <header className="app-header"><button className="round" aria-label="返回" onClick={() => { if (!goBack()) notify('已经在首页'); }}>‹</button><div><span>SELF AGENT · 本机优先</span><h1>{pageTitle()}</h1></div><button className="round status-dot" aria-label="本机保存状态"><i />•••</button></header>
+    <header className="app-header"><button className="round" aria-label="返回" onClick={() => { if (!goBack()) notify('已经在首页'); }}>‹</button><div><span>SELF AGENT · 本机优先</span><h1>{pageTitle()}</h1></div><button className="round status-dot" aria-label="打开设置" onClick={() => navigate('profile')}><i />设</button></header>
 
     {tab === 'home' && <div className="page home-page">
-      <section className="hero-card"><span>8月28日 · 星期五</span><h2>早上好，今天慢慢来。</h2><p>所有内容先整理、确认后再保存。</p></section>
+      {data.demoMode && <section className="demo-banner"><strong>当前为演示数据</strong><span>以下资产、日程和健康记录不代表你的真实信息。</span><button onClick={clearLocalData}>退出演示并清空</button></section>}
+      <section className="hero-card"><span>{TODAY_LABEL}</span><h2>{GREETING}</h2><p>所有内容先整理、确认后再保存。</p></section>
+      {!hasBusinessData && <section className="onboarding-card"><span>从一件真实的事开始</span><h2>这里还没有你的数据</h2><p>不用一次授权全部功能。先添加一个日程或账户，其他能力需要时再开启。</p><div><button onClick={() => { setEditingScheduleId(null); setSheet('schedule'); }}>添加第一条日程</button><button onClick={() => { navigate('finance'); setEditingAccountId(null); setSheet('account'); }}>添加第一个账户</button></div></section>}
+      {nativeOn && (!caps.accessibility || !caps.notificationListener || !caps.autofill) && <section className="capability-card"><strong>系统能力状态</strong><p>无障碍自动记账：{caps.accessibility ? '已开启' : '未开启'}。通知读取：{caps.notificationListener ? '已开启' : '未开启'}。自动填充：{caps.autofill ? '已设为 Self Agent' : '未选择'}。打开设置后回到这里会重新检测，不会把“已打开设置页”当成已启用。</p><button onClick={() => navigate('profile')}>去授权并复查</button></section>}
       <section className="summary-grid"><button onClick={() => navigate('schedule')}><span>下一项 · {nextSchedule?.time ?? '空闲'}</span><strong>{nextSchedule?.title ?? '今天没有更多日程'}</strong><small>{data.schedules.filter((item) => item.date === TODAY && item.done).length}/{data.schedules.filter((item) => item.date === TODAY).length} 已完成</small></button><button onClick={() => navigate('finance')}><span>今日支出</span><strong>¥ {money(todaySpend)}</strong><small>净资产 ¥ {money(totalBalance)}</small></button></section>
       <section className="section-block"><div className="section-title"><div><span>QUICK CAPTURE</span><h2>一句话交给管家</h2></div></div><button className="capture-callout" onClick={() => navigate('capture')}><span>＋</span><div><strong>记录一件事</strong><small>例如“午饭 36 元，微信支付”</small></div><b>›</b></button></section>
       <section className="section-block"><div className="section-title"><div><span>FEATURES</span><h2>生活工具</h2></div></div><div className="feature-grid"><button onClick={() => navigate('travel')}><span>行</span><strong>出行</strong><small>火车与航班</small></button><button onClick={() => navigate('health')}><span>健</span><strong>健康</strong><small>睡眠与运动</small></button><button onClick={() => navigate('butler')}><span>管</span><strong>管家</strong><small>本机摘要问答</small></button><button onClick={() => navigate('data')}><span>数</span><strong>数据</strong><small>统一趋势</small></button><button onClick={() => navigate('vault')}><span>钥</span><strong>密码库</strong><small>安全元数据</small></button></div></section>
       <section className="section-block"><div className="section-title"><div><span>RECENT</span><h2>最近入账</h2></div><button onClick={() => navigate('finance')}>查看全部</button></div><TransactionList items={data.transactions.slice(0, 3)} accounts={data.accounts} /></section>
     </div>}
 
-    {tab === 'schedule' && <div className="page schedule-page"><section className="calendar"><div className="week-title"><button aria-label="上一周">‹</button><strong>2026年8月24日 — 30日</strong><button aria-label="下一周">›</button></div><div className="dates">{dateOptions.map((date) => <button key={date.value} onClick={() => setSelectedDate(date.value)} className={selectedDate === date.value ? 'active' : ''}><span>{date.weekday}</span><b>{date.day}</b>{date.value === TODAY && <i />}</button>)}</div></section><section className="day-section"><div className="day-heading"><div><span>{selectedDate === TODAY ? '今天' : `${Number(selectedDate.slice(-2))}日`} · 星期{dateOptions.find((date) => date.value === selectedDate)?.weekday}</span><h2>{selectedSchedules.length ? '今天安排得刚刚好' : '给这一天留点空白'}</h2></div><small>{selectedSchedules.filter((item) => item.done).length}/{selectedSchedules.length} 完成</small></div>{selectedSchedules.length ? <div className="timeline">{selectedSchedules.map((item, index) => <article className={item.done ? 'done' : ''} key={item.id}><time>{item.time}</time><div className="track"><i className={item.color} />{index < selectedSchedules.length - 1 && <span />}</div><SwipeScheduleRow item={item} onToggle={() => toggleSchedule(item.id)} onEdit={() => { setEditingScheduleId(item.id); setSheet('schedule'); }} onDelete={() => deleteSchedule(item.id)} /></article>)}</div> : <div className="empty"><span>○</span><h3>没有日程</h3><p>给这一天留点空白，或添加一件事。</p><button onClick={() => setSheet('schedule')}>添加日程</button></div>}</section></div>}
+    {tab === 'schedule' && <div className="page schedule-page"><section className="calendar"><div className="week-title"><button aria-label="上一周" onClick={() => setSelectedDate(addDaysKey(selectedDate, -7))}>‹</button><strong>{weekTitle}</strong><button aria-label="下一周" onClick={() => setSelectedDate(addDaysKey(selectedDate, 7))}>›</button></div><div className="dates">{dateOptions.map((date) => <button key={date.value} onClick={() => setSelectedDate(date.value)} className={selectedDate === date.value ? 'active' : ''}><span>{date.weekday}</span><b>{date.day}</b>{date.value === TODAY && <i />}</button>)}</div></section><section className="day-section"><div className="day-heading"><div><span>{selectedDate === TODAY ? '今天' : `${Number(selectedDate.slice(-2))}日`} · 星期{dateOptions.find((date) => date.value === selectedDate)?.weekday}</span><h2>{selectedSchedules.length ? '这一天的安排' : '给这一天留点空白'}</h2></div><small>{selectedSchedules.filter((item) => item.done).length}/{selectedSchedules.length} 完成</small></div>{selectedSchedules.length ? <div className="timeline">{selectedSchedules.map((item, index) => <article className={item.done ? 'done' : ''} key={item.id}><time>{item.time}</time><div className="track"><i className={item.color} />{index < selectedSchedules.length - 1 && <span />}</div><SwipeScheduleRow item={item} onToggle={() => toggleSchedule(item.id)} onEdit={() => { setEditingScheduleId(item.id); setSheet('schedule'); }} onDelete={() => deleteSchedule(item.id)} /></article>)}</div> : <div className="empty"><span>○</span><h3>没有日程</h3><p>给这一天留点空白，或添加一件事。</p><button onClick={() => setSheet('schedule')}>添加日程</button></div>}</section></div>}
 
     {tab === 'capture' && <div className="page capture-page"><section className="capture-intro"><span>INBOX</span><h2>先说下来，我来整理。</h2><p>识别为日程或账目后，你确认才会保存。</p></section><form className="capture-box" onSubmit={organizeCapture}><textarea aria-label="一句话记录" maxLength={120} value={captureText} onChange={(event) => setCaptureText(event.target.value)} placeholder={'例如：明天 9 点提醒我交水电费\n或者：午饭 36 元，微信支付'} /><div><small>{captureText.length}/120</small><button type="submit">整理一下</button></div></form><div className="suggestion-row"><button onClick={() => setCaptureText('午饭 36 元，微信支付')}>午饭 36 元</button><button onClick={() => setCaptureText('明天 9 点提醒我交水电费')}>明天 9 点提醒</button></div>{draft && <section className="draft-card"><header><div><span>待确认 · {draft.kind === 'expense' ? '支出' : '日程'}</span><h3>我整理成这样</h3></div><button aria-label="取消草稿" onClick={() => setDraft(null)}>×</button></header>{draft.kind === 'expense' ? <><div className="draft-fields"><label>金额<input inputMode="decimal" value={draft.amount || ''} onChange={(event) => setDraft({ ...draft, amount: Number(event.target.value) })} /></label><label>币种<select value={draft.currency} onChange={(event) => setDraft({ ...draft, currency: event.target.value as Currency })}>{currencies.map((currency) => <option key={currency}>{currency}</option>)}</select></label><label>商家 / 用途<input value={draft.merchant} onChange={(event) => setDraft({ ...draft, merchant: event.target.value })} /></label><label>分类<select value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })}><option>餐饮</option><option>交通</option><option>生活</option><option>医疗</option><option>其他</option></select></label><label>账户<select value={draft.accountId} onChange={(event) => setDraft({ ...draft, accountId: event.target.value })}>{data.accounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {account.currency}</option>)}</select></label></div><label className="check-option"><input type="checkbox" checked={draft.reimbursable} onChange={(event) => setDraft({ ...draft, reimbursable: event.target.checked })} />加入待报销</label></> : <div className="draft-fields"><label>日程名称<input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} /></label><label>日期<input type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} /></label><label>时间<input type="time" value={draft.time} onChange={(event) => setDraft({ ...draft, time: event.target.value })} /></label></div>}<button className="confirm-button" onClick={confirmDraft}>确认保存</button></section>}</div>}
 
-    {tab === 'finance' && <FinancePanel data={data} currency={financeCurrency} selectedAccountId={selectedAccountId} selectedHoldingId={selectedHoldingId} onCurrency={setFinanceCurrency} onSelectAccount={(id) => { setSelectedAccountId(id); setSelectedHoldingId(null); }} onSelectHolding={setSelectedHoldingId} onBackAccount={() => setSelectedAccountId(null)} onBackHolding={() => setSelectedHoldingId(null)} onNewTransaction={() => { setEditingTransactionId(null); setSheet('transaction'); }} onEditTransaction={(id) => { setEditingTransactionId(id); setSheet('transaction'); }} onNewAccount={() => { setEditingAccountId(null); setSheet('account'); }} onEditAccount={(id) => { setEditingAccountId(id); setSheet('account'); }} onNewHolding={() => { setEditingHoldingId(null); setSheet('holding'); }} onEditHolding={(id) => { setEditingHoldingId(id); setSheet('holding'); }} onRefreshMarket={requestMarketRefresh} onNewRecurring={() => setSheet('recurring')} onRunRecurring={runRecurringRule} onToggleRecurring={toggleRecurringRule} />}
+    {tab === 'finance' && <FinancePanel data={data} currency={financeCurrency} selectedAccountId={selectedAccountId} selectedHoldingId={selectedHoldingId} onCurrency={setFinanceCurrency} onSelectAccount={(id) => { setSelectedAccountId(id); setSelectedHoldingId(null); }} onSelectHolding={setSelectedHoldingId} onBackAccount={() => setSelectedAccountId(null)} onBackHolding={() => setSelectedHoldingId(null)} onNewTransaction={() => { setEditingTransactionId(null); setSheet('transaction'); }} onEditTransaction={(id) => { setEditingTransactionId(id); setSheet('transaction'); }} onNewAccount={() => { setEditingAccountId(null); setSheet('account'); }} onEditAccount={(id) => { setEditingAccountId(id); setSheet('account'); }} onNewHolding={() => { setEditingHoldingId(null); setSheet('holding'); }} onEditHolding={(id) => { setEditingHoldingId(id); setSheet('holding'); }} onNewRecurring={() => setSheet('recurring')} onRunRecurring={runRecurringRule} onToggleRecurring={toggleRecurringRule} />}
 
-    {tab === 'profile' && <div className="page profile-page"><section className="profile-heading"><div>SA</div><span>SELF AGENT</span><h2>数据留在你的设备上</h2><p>界面和记录都在手机里运行，不依赖服务器。敏感能力由系统权限授权。</p></section><section className="profile-menu"><button onClick={() => navigate('memory')}><span>忆</span><div><strong>AI 记忆管理</strong><small>查看、暂停或删除管家记忆</small></div><b>›</b></button><button onClick={() => navigate('privacy')}><span>盾</span><div><strong>隐私与权限</strong><small>分别控制健康、财务和日程摘要</small></div><b>›</b></button><button onClick={() => navigate('vault')}><span>钥</span><div><strong>密码库</strong><small>不在网页保存密码明文</small></div><b>›</b></button><button onClick={() => navigate('data')}><span>数</span><div><strong>数据中心</strong><small>健康、财务与行动统一摘要</small></div><b>›</b></button></section><form className="ai-box" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const next = { baseUrl: String(form.get('baseUrl')).trim().replace(/\/$/, ''), model: String(form.get('model')).trim() || 'gpt-4o-mini', apiKey: String(form.get('apiKey')).trim() }; setAiConfig(next); window.localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(next)); notify('AI 接口已保存在本机，不会进入密码库或导出文件'); }}><strong>AI 接口</strong><p>兼容 OpenAI Chat Completions。密钥只存在本机，提问时不会发送密码。</p><label>接口地址<input name="baseUrl" placeholder="https://api.openai.com/v1" defaultValue={aiConfig.baseUrl} /></label><label>模型<input name="model" defaultValue={aiConfig.model} /></label><label>API Key<input name="apiKey" type="password" autoComplete="off" defaultValue={aiConfig.apiKey} /></label><button className="save" type="submit" style={{ marginTop: 12 }}>保存接口</button></form>{nativeOn && <div className="native-actions"><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openAccessibilitySettings?: () => void } }).SelfAgentNative?.openAccessibilitySettings?.()}>第1步：打开无障碍（自动记账）</button><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openNotificationAccess?: () => void } }).SelfAgentNative?.openNotificationAccess?.()}>第2步：打开通知使用权</button><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openAutofillSettings?: () => void } }).SelfAgentNative?.openAutofillSettings?.()}>第3步：设为自动填充服务</button></div>}<HowToNative /><section className="profile-actions"><button onClick={toggleTheme}>{data.theme === 'dark' ? '切换浅色模式' : '切换深色模式'}</button><button onClick={exportLocalData}>导出脱敏数据</button><button onClick={clearLocalData}>恢复示例数据</button></section><p className="privacy-note">Android 通知记账需系统授权；确认前不会改余额。密码只进入 Keystore，不会发给 AI。</p></div>}
+    {tab === 'profile' && <div className="page profile-page"><section className="profile-heading"><div>SA</div><span>SELF AGENT</span><h2>数据留在你的设备上</h2><p>界面和记录都在手机里运行，不依赖服务器。敏感能力由系统权限授权。</p></section><section className="profile-menu"><button onClick={() => navigate('memory')}><span>忆</span><div><strong>AI 记忆管理</strong><small>查看、暂停或删除管家记忆</small></div><b>›</b></button><button onClick={() => navigate('privacy')}><span>盾</span><div><strong>隐私与权限</strong><small>分别控制健康、财务和日程摘要</small></div><b>›</b></button><button onClick={() => navigate('vault')}><span>钥</span><div><strong>密码库</strong><small>不在网页保存密码明文</small></div><b>›</b></button><button onClick={() => navigate('data')}><span>数</span><div><strong>数据中心</strong><small>健康、财务与行动统一摘要</small></div><b>›</b></button></section><form className="ai-box" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const next = { baseUrl: String(form.get('baseUrl')).trim().replace(/\/$/, ''), model: String(form.get('model')).trim() || 'gpt-4o-mini', apiKey: String(form.get('apiKey')).trim() }; setAiConfig(next); window.localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(next)); notify('AI 接口已保存在本机，不会进入密码库或导出文件'); }}><strong>AI 接口</strong><p>兼容 OpenAI Chat Completions。密钥只存在本机，提问时不会发送密码。</p><label>接口地址<input name="baseUrl" placeholder="https://api.openai.com/v1" defaultValue={aiConfig.baseUrl} /></label><label>模型<input name="model" defaultValue={aiConfig.model} /></label><label>API Key<input name="apiKey" type="password" autoComplete="off" defaultValue={aiConfig.apiKey} /></label><button className="save" type="submit" style={{ marginTop: 12 }}>保存接口</button></form>{nativeOn && <div className="native-actions"><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openAccessibilitySettings?: () => void } }).SelfAgentNative?.openAccessibilitySettings?.()}>第1步：打开无障碍（自动记账）</button><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openNotificationAccess?: () => void } }).SelfAgentNative?.openNotificationAccess?.()}>第2步：打开通知使用权</button><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openAutofillSettings?: () => void } }).SelfAgentNative?.openAutofillSettings?.()}>第3步：设为自动填充服务</button></div>}<HowToNative /><section className="profile-actions"><button onClick={toggleTheme}>{data.theme === 'dark' ? '切换浅色模式' : '切换深色模式'}</button><button onClick={exportLocalData}>导出全部数据</button><label className="file-action">从备份恢复<input hidden type="file" accept="application/json,.json" onChange={importLocalData} /></label><button onClick={loadDemoData}>加载演示数据</button><button className="danger-text" onClick={clearLocalData}>清空本机数据</button></section><p className="privacy-note">Android 通知记账需系统授权；确认前不会改余额。密码只进入 Keystore，不会发给 AI。</p></div>}
 
     {tab === 'health' && <HealthPanel records={data.healthRecords} onAdd={() => setSheet('health')} onImport={importHealth} />}
-    {tab === 'travel' && <TravelPanel items={data.travels} onSync={requestTravelSync} onAdd={() => setSheet('travel')} />}
+    {tab === 'travel' && <TravelPanel items={data.travels} onSync={requestTravelSync} onAdd={() => setSheet('travel')} onDelete={(id) => { setData((current) => ({ ...current, travels: current.travels.filter((item) => item.id !== id) })); notify('行程已删除'); }} />}
     {tab === 'data' && <DataPanel data={data} />}
     {tab === 'butler' && <ButlerPanel data={data} ai={aiConfig} />}
     {tab === 'privacy' && <PrivacyPanel settings={data.privacy} onToggle={togglePrivacy} />}
@@ -534,7 +580,7 @@ function HealthPanel({ records, onAdd, onImport }: { records: HealthRecord[]; on
   const sleep = records.find((item) => item.kind === 'sleep');
   const exercise = records.filter((item) => item.kind === 'exercise').reduce((sum, item) => sum + item.value, 0);
   const meals = records.find((item) => item.kind === 'meal');
-  return <div className="page feature-page"><section className="health-hero"><span>今日身体状态</span><strong>{sleep && sleep.value >= 7 ? 86 : 78}</strong><div><h2>{sleep && sleep.value >= 7 ? '状态良好' : '睡眠稍低，其他平稳'}</h2><p>只与个人记录比较，不作医疗诊断。</p></div></section><section className="feature-section"><div className="feature-title"><div><span>HEALTH</span><h2>健康项目</h2></div><div><button type="button" onClick={onImport}>导入手环</button><button onClick={onAdd}>＋ 添加</button></div></div><div className="health-grid"><article><span>睡</span><div><strong>睡眠</strong><small>最近一次</small></div><b>{sleep ? `${sleep.value} 小时` : '待记录'}</b></article><article><span>动</span><div><strong>运动</strong><small>本机记录累计</small></div><b>{exercise} 分钟</b></article><article><span>食</span><div><strong>饮食</strong><small>今日餐数</small></div><b>{meals ? `${meals.value} 餐` : '待补充'}</b></article></div></section><section className="feature-section"><div className="feature-title"><div><span>HISTORY</span><h2>最近记录</h2></div></div><div className="plain-list">{records.map((item) => <article key={item.id}><span>{item.kind === 'sleep' ? '睡' : item.kind === 'exercise' ? '动' : '食'}</span><div><strong>{item.note}</strong><small>{item.kind === 'sleep' ? `${item.value} 小时` : item.kind === 'exercise' ? `${item.value} 分钟` : `${item.value} 餐`}</small></div></article>)}</div></section><section className="howto"><h3>小米手环怎么导入</h3><ol><li>手环连上 <b>小米运动健康</b>（或旧版 Zepp Life）</li><li>打开 <b>我的 → 第三方数据 / Health Connect</b></li><li>允许步数、睡眠、运动写入健康平台</li><li>回到这里点 <b>导入手环</b>，再允许 Self Agent 读取</li></ol><p>不会破解小米账号，也不直接读手环蓝牙。</p></section></div>;
+  return <div className="page feature-page"><section className="health-hero"><span>本机健康记录</span><strong>{records.length || '—'}</strong><div><h2>{records.length ? '只显示你确认保存过的记录' : '还没有健康记录'}</h2><p>没有综合健康分。手环数据取决于健康平台是否写入，导入失败会说明原因。</p></div></section><section className="feature-section"><div className="feature-title"><div><span>HEALTH</span><h2>健康项目</h2></div><div><button type="button" onClick={onImport}>导入手环</button><button onClick={onAdd}>＋ 添加</button></div></div><div className="health-grid"><article><span>睡</span><div><strong>睡眠</strong><small>最近一次</small></div><b>{sleep ? `${sleep.value} 小时` : '待记录'}</b></article><article><span>动</span><div><strong>运动</strong><small>本机记录累计</small></div><b>{exercise} 分钟</b></article><article><span>食</span><div><strong>饮食</strong><small>今日餐数</small></div><b>{meals ? `${meals.value} 餐` : '待补充'}</b></article></div></section><section className="feature-section"><div className="feature-title"><div><span>HISTORY</span><h2>最近记录</h2></div></div><div className="plain-list">{records.map((item) => <article key={item.id}><span>{item.kind === 'sleep' ? '睡' : item.kind === 'exercise' ? '动' : '食'}</span><div><strong>{item.note}</strong><small>{item.kind === 'sleep' ? `${item.value} 小时` : item.kind === 'exercise' ? `${item.value} 分钟` : `${item.value} 餐`}</small></div></article>)}</div></section><section className="howto"><h3>小米手环怎么导入</h3><ol><li>手环连上 <b>小米运动健康</b>（或旧版 Zepp Life）</li><li>打开 <b>我的 → 第三方数据 / Health Connect</b></li><li>允许步数、睡眠、运动写入健康平台</li><li>回到这里点 <b>导入手环</b>，再允许 Self Agent 读取</li></ol><p>不会破解小米账号，也不直接读手环蓝牙。</p></section></div>;
 }
 
 function parseTravelText(text: string): TravelItem | null {
@@ -554,10 +600,10 @@ function parseTravelText(text: string): TravelItem | null {
   const date = `${year}-${month}-${day}`;
   const seat = raw.match(/(\d{1,2}车\s*\d{1,3}[A-F]?)/)?.[1] || '待分配';
   const terminal = raw.match(/检票口\s*([A-Z]?\d{1,3}[A-Z]?)/)?.[1] || raw.match(/(?:航站楼|登机口)\s*([A-Z]?\d{1,2}[A-Z]?)/)?.[1] || '待确认';
-  return { id: uid('travel'), kind: resolvedKind, number, from: route?.[1] || '待确认', to: route?.[2] || '待确认', departAt: `${date}T${times[0] || '08:00'}`, arriveAt: `${date}T${times[1] || times[0] || '12:00'}`, seat, terminal, status: 'upcoming', source: 'import', verified: true };
+  return { id: uid('travel'), kind: resolvedKind, number, from: route?.[1] || '待确认', to: route?.[2] || '待确认', departAt: `${date}T${times[0] || '08:00'}`, arriveAt: `${date}T${times[1] || times[0] || '12:00'}`, seat, terminal, status: 'upcoming', source: 'import', verified: false };
 }
 
-function TravelPanel({ items, onSync, onAdd }: { items: TravelItem[]; onSync: () => void; onAdd: () => void }) {
+function TravelPanel({ items, onSync, onAdd, onDelete }: { items: TravelItem[]; onSync: () => void; onAdd: () => void; onDelete: (id: string) => void }) {
   const sorted = [...items].sort((a, b) => a.departAt.localeCompare(b.departAt));
   const next = sorted.find((item) => item.status !== 'completed');
   const [paste, setPaste] = useState('');
@@ -573,7 +619,7 @@ function TravelPanel({ items, onSync, onAdd }: { items: TravelItem[]; onSync: ()
     <section className="travel-hero"><div><span>NEXT TRIP</span><h2>{next ? `${next.from} → ${next.to}` : '暂无后续行程'}</h2><p>{next ? `${next.number} · ${time(next.departAt)}` : '可以粘贴 12306/航司短信，或授权通知读取。'}</p></div><b>{next?.kind === 'flight' ? '航' : '铁'}</b></section>
     <section className="travel-actions"><button onClick={onSync}><span>↻</span><div><strong>读取通知里的行程</strong><small>12306、航旅纵横、短信通知</small></div></button><button onClick={onAdd}><span>＋</span><div><strong>手动添加</strong><small>补充车次、航班和座位</small></div></button></section>
     <form className="howto" onSubmit={submitPaste}><h3>粘贴 12306 / 航班短信</h3><textarea value={paste} onChange={(event) => setPaste(event.target.value)} rows={3} placeholder="例如：您已购8月29日G123次北京南站-上海虹桥站" style={{ width: '100%', minHeight: 72, border: '1px solid var(--line)', borderRadius: 10, padding: 8 }} /><button className="save" type="submit" style={{ marginTop: 8 }}>识别并保存</button></form>
-    <section className="feature-section"><div className="feature-title"><div><span>ITINERARY</span><h2>火车与航班</h2></div><small>{sorted.length} 段</small></div><div className="trip-list">{sorted.map((item) => <article key={item.id} className={item.status}><header><span>{item.kind === 'flight' ? '航班' : '火车'} · {item.number}</span><b>{item.verified ? '已核验' : '示例/待核验'}</b></header><div className="trip-route"><div><strong>{item.from}</strong><small>{time(item.departAt)}</small></div><i>→</i><div><strong>{item.to}</strong><small>{time(item.arriveAt)}</small></div></div><footer><span>{item.seat}</span><span>{item.terminal}</span><span>{item.source === 'manual' ? '手动' : item.source === 'notification' ? '通知' : item.source === 'calendar' ? '日历' : '导入'}</span></footer></article>)}</div></section>
+    <section className="feature-section"><div className="feature-title"><div><span>ITINERARY</span><h2>火车与航班</h2></div><small>{sorted.length} 段</small></div><div className="trip-list">{sorted.length ? sorted.map((item) => <article key={item.id} className={item.status}><header><span>{item.kind === 'flight' ? '航班' : '火车'} · {item.number}</span><b>{item.source === 'notification' ? '通知识别' : item.source === 'manual' ? '手动添加' : '粘贴识别'}</b></header><div className="trip-route"><div><strong>{item.from}</strong><small>{time(item.departAt)}</small></div><i>→</i><div><strong>{item.to}</strong><small>{time(item.arriveAt)}</small></div></div><footer><span>{item.seat}</span><span>{item.terminal}</span><span>{item.source === 'manual' ? '手动' : item.source === 'notification' ? '通知' : '导入'}</span></footer><div className="trip-ops"><button type="button" onClick={() => onDelete(item.id)}>删除</button></div></article>) : <div className="list-empty">还没有行程。粘贴短信或打开通知使用权后等待识别。</div>}</div></section>
     <section className="howto"><h3>为什么没有直接登录 12306</h3><p>铁路 12306 没有对第三方开放「我的车票」官方接口。不能用破解或模拟登录去拉你的订单。公开余票查询也不是你的行程。</p><p>航班动态可用航旅纵横、飞常准等官方渠道；本 App 先识别你已经收到的出票通知。</p></section>
   </div>;
 }
@@ -585,7 +631,8 @@ function DataPanel({ data }: { data: AppData }) {
   const todayItems = data.schedules.filter((item) => item.date === TODAY);
   const sleepValues = data.healthRecords.filter((item) => item.kind === 'sleep').map((item) => item.value);
   const avgSleep = sleepValues.length ? sleepValues.reduce((sum, item) => sum + item, 0) / sleepValues.length : 0;
-  return <div className="page feature-page"><section className="data-hero"><span>近 7 天综合状态</span><h2>稳定</h2><p>数据来自你确认保存过的本机记录。</p><div className="mini-chart">{[58,72,64,82,68,76,79].map((height, index) => <i key={index} style={{ height: `${height}%` }} />)}</div></section><section className="feature-section"><div className="feature-title"><div><span>SUMMARY</span><h2>统一摘要</h2></div></div><div className="data-summary"><article><span>健</span><div><strong>健康</strong><small>平均睡眠 {avgSleep ? avgSleep.toFixed(1) : '—'} 小时</small></div><b>{avgSleep >= 7 ? '良好' : '观察'}</b></article><article><span>财</span><div><strong>财务</strong><small>收入 ¥{money(income)} · 支出 ¥{money(expense)}</small></div><b>{income - expense >= 0 ? '+' : '−'}¥{money(Math.abs(income - expense))}</b></article><article><span>行</span><div><strong>行动</strong><small>今日 {todayItems.length} 项日程</small></div><b>{todayItems.filter((item) => item.done).length}/{todayItems.length}</b></article></div></section><section className="evidence-card"><span>值得继续观察</span><h3>睡眠、外卖与晚间安排可能相关</h3><p>当前数据只能表示同时出现，不能证明因果。继续记录 7 天后再判断。</p></section></div>;
+  const hasEnough = month.length + todayItems.length + sleepValues.length > 0;
+  return <div className="page feature-page"><section className="data-hero"><span>本机摘要</span><h2>{hasEnough ? '已保存记录' : '暂无结论'}</h2><p>{hasEnough ? '只汇总你确认保存过的日程、账本和健康记录，没有预测分数。' : '记录几天真实数据后，这里才会出现摘要。'}</p></section><section className="feature-section"><div className="feature-title"><div><span>SUMMARY</span><h2>统一摘要</h2></div></div><div className="data-summary"><article><span>健</span><div><strong>健康</strong><small>{sleepValues.length ? `平均睡眠 ${avgSleep.toFixed(1)} 小时 · ${sleepValues.length} 条` : '还没有睡眠记录'}</small></div><b>{sleepValues.length ? `${avgSleep.toFixed(1)}h` : '—'}</b></article><article><span>财</span><div><strong>财务</strong><small>{month.length ? `收入 ¥${money(income)} · 支出 ¥${money(expense)}` : '本月还没有流水'}</small></div><b>{month.length ? `${month.length} 笔` : '—'}</b></article><article><span>行</span><div><strong>行动</strong><small>今日 {todayItems.length} 项日程</small></div><b>{todayItems.length ? `${todayItems.filter((item) => item.done).length}/${todayItems.length}` : '—'}</b></article></div></section></div>;
 }
 
 function ButlerPanel({ data, ai }: { data: AppData; ai: AiConfig }) {
@@ -604,14 +651,20 @@ function ButlerPanel({ data, ai }: { data: AppData; ai: AiConfig }) {
       if (!data.privacy.health) return '健康摘要权限已关闭。';
       const sleep = data.healthRecords.find((item) => item.kind === 'sleep'); return sleep ? `最近一次记录睡眠 ${sleep.value} 小时。偏低只是一项观察，不等于诊断。` : '还没有睡眠记录，可以先在健康页添加。';
     }
+    if (!data.privacy.schedule) return '日程摘要权限已关闭。你可以在隐私与权限中重新开启。';
     const open = data.schedules.filter((item) => item.date === TODAY && !item.done);
     return open.length ? `建议先处理“${open[0].title}”，完成后再安排下一项。` : '今天没有未完成日程，可以保留一点空白。';
   }
   function scopedSummary() {
-    const open = data.schedules.filter((item) => item.date === TODAY && !item.done).map((item) => item.title);
-    const finance = data.privacy.finance ? `本月流水 ${data.transactions.filter((item) => item.createdAt.startsWith(MONTH)).length} 笔` : '财务权限关闭';
-    const health = data.privacy.health ? `健康记录 ${data.healthRecords.length} 条` : '健康权限关闭';
-    return `你是 Self Agent 本机管家。只能使用这些摘要：日程未完成=${open.join('、') || '无'}；${finance}；${health}。禁止索取或输出密码、验证码、私钥、助记词、完整卡号。健康不是诊断，财务不是投资建议。`;
+    return buildScopedSummary({
+      today: TODAY,
+      month: MONTH,
+      privacy: data.privacy,
+      schedules: data.schedules,
+      transactions: data.transactions,
+      healthRecords: data.healthRecords,
+      memories: data.memories,
+    });
   }
   async function send(text = input) {
     const value = text.trim(); if (!value || busy) return;
@@ -679,9 +732,9 @@ function VaultPanel({ items, nativeOn }: { items: { title: string; usernameHint:
   return <div className="page feature-page"><section className="vault-safe"><span>钥</span><h2>{nativeOn ? 'Keystore 密码库已连接' : '安全密码库入口'}</h2><p>网页只显示账号是否存在。密码明文只保存在 Android Keystore，确认自动填充后由系统填写。</p><b>{nativeOn ? 'Autofill + Keystore 已就绪' : '请在 Android 中设为自动填充服务'}</b></section><section className="feature-section"><div className="feature-title"><div><span>METADATA</span><h2>账号目录</h2></div><small>{items.length} 项</small></div><div className="plain-list">{items.map((item) => <article key={item.title}><span>{item.title.slice(0, 1)}</span><div><strong>{item.title}</strong><small>{item.usernameHint}{item.note ? ` · ${item.note}` : ''}</small></div></article>)}</div></section>{nativeOn && <div className="native-actions"><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openAutofillSettings?: () => void } }).SelfAgentNative?.openAutofillSettings?.()}>打开系统自动填充设置</button></div>}<HowToNative /><section className="vault-warning"><strong>密码不会进入 AI</strong><p>导出、管家问答和网页存储都只有元数据。查看或填充必须经过系统自动填充界面。</p></section></div>;
 }
 
-type FinancePanelProps = { data: AppData; currency: Currency; selectedAccountId: string | null; selectedHoldingId: string | null; onCurrency: (currency: Currency) => void; onSelectAccount: (id: string) => void; onSelectHolding: (id: string) => void; onBackAccount: () => void; onBackHolding: () => void; onNewTransaction: () => void; onEditTransaction: (id: string) => void; onNewAccount: () => void; onEditAccount: (id: string) => void; onNewHolding: () => void; onEditHolding: (id: string) => void; onRefreshMarket: () => void; onNewRecurring: () => void; onRunRecurring: (id: string) => void; onToggleRecurring: (id: string) => void };
+type FinancePanelProps = { data: AppData; currency: Currency; selectedAccountId: string | null; selectedHoldingId: string | null; onCurrency: (currency: Currency) => void; onSelectAccount: (id: string) => void; onSelectHolding: (id: string) => void; onBackAccount: () => void; onBackHolding: () => void; onNewTransaction: () => void; onEditTransaction: (id: string) => void; onNewAccount: () => void; onEditAccount: (id: string) => void; onNewHolding: () => void; onEditHolding: (id: string) => void; onNewRecurring: () => void; onRunRecurring: (id: string) => void; onToggleRecurring: (id: string) => void };
 
-function FinancePanel({ data, currency, selectedAccountId, selectedHoldingId, onCurrency, onSelectAccount, onSelectHolding, onBackAccount, onBackHolding, onNewTransaction, onEditTransaction, onNewAccount, onEditAccount, onNewHolding, onEditHolding, onRefreshMarket, onNewRecurring, onRunRecurring, onToggleRecurring }: FinancePanelProps) {
+function FinancePanel({ data, currency, selectedAccountId, selectedHoldingId, onCurrency, onSelectAccount, onSelectHolding, onBackAccount, onBackHolding, onNewTransaction, onEditTransaction, onNewAccount, onEditAccount, onNewHolding, onEditHolding, onNewRecurring, onRunRecurring, onToggleRecurring }: FinancePanelProps) {
   const selectedHolding = selectedHoldingId ? data.investments.find((item) => item.id === selectedHoldingId) : undefined;
   if (selectedHolding) return <HoldingDetail holding={selectedHolding} account={data.accounts.find((item) => item.id === selectedHolding.accountId)} onBack={onBackHolding} onEdit={() => onEditHolding(selectedHolding.id)} />;
   const selectedAccount = selectedAccountId ? data.accounts.find((item) => item.id === selectedAccountId) : undefined;
@@ -697,17 +750,18 @@ function FinancePanel({ data, currency, selectedAccountId, selectedHoldingId, on
   const monthExpense = monthItems.filter((item) => item.kind === 'expense').reduce((sum, item) => sum + item.amount, 0);
   const todayExpense = monthItems.filter((item) => item.kind === 'expense' && item.createdAt.startsWith(TODAY)).reduce((sum, item) => sum + item.amount, 0);
   const reimburse = monthItems.filter((item) => item.kind === 'expense' && item.reimbursable).reduce((sum, item) => sum + item.amount, 0);
-  const chartDays = [5, 10, 15, 20, 25, 28].map((day) => ({ day, amount: monthItems.filter((item) => item.kind === 'expense' && Number(item.createdAt.slice(8, 10)) === day).reduce((sum, item) => sum + item.amount, 0) }));
+  const currentDay = Number(TODAY.slice(-2));
+  const chartDays = Array.from({ length: Math.min(6, currentDay) }, (_, index) => Math.max(1, currentDay - 5) + index).map((day) => ({ day, amount: monthItems.filter((item) => item.kind === 'expense' && Number(item.createdAt.slice(8, 10)) === day).reduce((sum, item) => sum + item.amount, 0) }));
   const maxDay = Math.max(...chartDays.map((item) => item.amount), 1);
   const mark = currencyMark(currency);
   return <div className="page finance-page">
-    <section className="finance-toolbar"><div><span>2026年8月</span><h2>月度收支</h2></div><select aria-label="统计币种" value={currency} onChange={(event) => onCurrency(event.target.value as Currency)}>{currencies.map((item) => <option key={item}>{item}</option>)}</select></section>
+    <section className="finance-toolbar"><div><span>{Number(MONTH.slice(0, 4))}年{Number(MONTH.slice(5, 7))}月</span><h2>月度收支</h2></div><select aria-label="统计币种" value={currency} onChange={(event) => onCurrency(event.target.value as Currency)}>{currencies.map((item) => <option key={item}>{item}</option>)}</select></section>
     <section className="monthly-summary"><article><span>本月收入</span><strong className="income">+{mark}{money(monthIncome)}</strong></article><article><span>本月支出</span><strong>−{mark}{money(monthExpense)}</strong></article><article><span>本月结余</span><strong className={monthIncome - monthExpense >= 0 ? 'income' : ''}>{monthIncome - monthExpense >= 0 ? '+' : '−'}{mark}{money(Math.abs(monthIncome - monthExpense))}</strong></article></section>
     <section className="daily-card"><header><div><span>DAILY SPEND</span><h3>每日支出</h3></div><div><small>今天</small><strong>{mark}{money(todayExpense)}</strong></div></header><div className="spend-chart">{chartDays.map((item) => <div key={item.day}><span><i style={{ height: `${Math.max(5, item.amount / maxDay * 100)}%` }} /></span><small>{item.day}日</small></div>)}</div><footer><span>待报销</span><strong>{mark}{money(reimburse)}</strong></footer></section>
     <button className="bookkeeping-button" onClick={onNewTransaction}><span>＋</span><div><strong>记一笔</strong><small>选择账户、币种与报销状态</small></div><b>›</b></button>
     <section className="section-block account-section"><div className="section-title"><div><span>ACCOUNTS</span><h2>我的账户</h2></div><button onClick={onNewAccount}>＋ 添加账户</button></div><div className="account-grid">{data.accounts.map((account) => <article className={account.tone} key={account.id} role="button" tabIndex={0} onClick={() => onSelectAccount(account.id)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onSelectAccount(account.id); }}><span>{account.type} · {account.currency}</span><button className="account-edit-button" onClick={(event) => { event.stopPropagation(); onEditAccount(account.id); }}>编辑</button><h3>{account.name}</h3><strong>{account.balance < 0 ? '−' : ''}{currencyMark(account.currency)} {money(Math.abs(account.balance))}</strong><small className="account-open-hint">查看账单 ›</small></article>)}</div></section>
-    <section className="section-block investment-section"><div className="section-title"><div><span>INVESTMENTS · {currency}</span><h2>理财与投资</h2></div><button onClick={onNewHolding}>＋ 添加产品</button></div><div className="investment-toolbar"><span>按代码或网络 + 合约更新余额</span><button onClick={onRefreshMarket}>更新今日行情</button></div><InvestmentList items={data.investments.filter((item) => item.currency === currency)} onSelect={onSelectHolding} /><p className="automation-note">“示例”价格只用于演示计算。连接服务端行情源后，App 每日写入一个价格点并同步理财账户余额。</p></section>
-    <section className="section-block"><div className="section-title"><div><span>AUTO PAYMENT</span><h2>自动扣款</h2></div><button onClick={onNewRecurring}>＋ 新规则</button></div><div className="recurring-list">{data.recurringRules.map((rule) => { const future = rule.dueDay > Number(TODAY.slice(-2)); return <article key={rule.id} className={!rule.enabled ? 'disabled' : ''}><span className="rule-icon">{rule.kind === 'subscription' ? '订' : '还'}</span><div><strong>{rule.name}</strong><small>每月 {rule.dueDay} 日 · {data.accounts.find((account) => account.id === rule.accountId)?.name}</small></div><b>{currencyMark(rule.currency)}{money(rule.amount)}</b><button disabled={!rule.enabled || rule.lastRunPeriod === MONTH || future} onClick={() => onRunRecurring(rule.id)}>{rule.lastRunPeriod === MONTH ? '本月已完成' : !rule.enabled ? '已暂停' : future ? `${rule.dueDay}日到期` : '确认扣款'}</button><button className="rule-toggle" onClick={() => onToggleRecurring(rule.id)}>{rule.enabled ? '暂停' : '启用'}</button></article>; })}</div><p className="automation-note">到期后生成待确认项目；确认才会扣减账户。Android 版可通过本机通知提醒。</p></section>
+    <section className="section-block investment-section"><div className="section-title"><div><span>INVESTMENTS · {currency}</span><h2>理财与投资</h2></div><button onClick={onNewHolding}>＋ 添加产品</button></div><div className="investment-toolbar"><span>价格由你手动保存，账户余额按持仓计算</span></div><InvestmentList items={data.investments.filter((item) => item.currency === currency)} onSelect={onSelectHolding} /><p className="automation-note">当前未连接行情服务，不会声称实时更新。点进产品后可手动更新价格和查看保存日期。</p></section>
+    <section className="section-block"><div className="section-title"><div><span>MONTHLY BILLS</span><h2>每月账单</h2></div><button onClick={onNewRecurring}>＋ 添加账单</button></div><div className="recurring-list">{data.recurringRules.map((rule) => { const future = rule.dueDay > Number(TODAY.slice(-2)); return <article key={rule.id} className={!rule.enabled ? 'disabled' : ''}><span className="rule-icon">{rule.kind === 'subscription' ? '订' : '还'}</span><div><strong>{rule.name}</strong><small>每月 {rule.dueDay} 日 · {data.accounts.find((account) => account.id === rule.accountId)?.name || '账户待补充'}</small></div><b>{currencyMark(rule.currency)}{money(rule.amount)}</b><button disabled={!rule.enabled || rule.lastRunPeriod === MONTH || future} onClick={() => onRunRecurring(rule.id)}>{rule.lastRunPeriod === MONTH ? '本月已确认' : !rule.enabled ? '已暂停' : future ? `${rule.dueDay}日到期` : rule.kind === 'subscription' ? '确认已扣款' : '确认已还款'}</button><button className="rule-toggle" onClick={() => onToggleRecurring(rule.id)}>{rule.enabled ? '暂停提醒' : '启用提醒'}</button></article>; })}</div><p className="automation-note">只做本机到期提醒，不会替你扣款。你确认实际发生后，才会写入账本并改变余额。</p></section>
     <section className="section-block"><div className="section-title"><div><span>LEDGER · {currency}</span><h2>本月流水</h2></div></div><TransactionList items={monthItems} accounts={data.accounts} onEdit={onEditTransaction} /></section>
   </div>;
 }

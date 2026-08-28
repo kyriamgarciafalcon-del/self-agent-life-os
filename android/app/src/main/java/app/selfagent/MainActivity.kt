@@ -4,21 +4,27 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.Window
 import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.view.Window
+import android.window.OnBackInvokedCallback
+import android.window.OnBackInvokedDispatcher
 import app.selfagent.ledger.ConfirmBus
 import app.selfagent.ledger.PendingTxn
+import app.selfagent.vault.EncryptedVault
 import java.util.concurrent.ConcurrentLinkedQueue
 
 class MainActivity : Activity() {
 
     private lateinit var webView: WebView
     private val pendingTransactions = ConcurrentLinkedQueue<PendingTxn>()
+    private var backCallback: OnBackInvokedCallback? = null
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -34,6 +40,10 @@ class MainActivity : Activity() {
             settings.setSupportZoom(false)
             settings.builtInZoomControls = false
             settings.displayZoomControls = false
+            settings.useWideViewPort = true
+            settings.loadWithOverviewMode = true
+            settings.layoutAlgorithm = WebSettings.LayoutAlgorithm.TEXT_AUTOSIZING
+            settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     val uri = request.url
@@ -55,7 +65,27 @@ class MainActivity : Activity() {
             pendingTransactions.add(transaction)
             runOnUiThread { flushPendingTransactions() }
         }
+        if (Build.VERSION.SDK_INT >= 33) {
+            backCallback = OnBackInvokedCallback { handleWebBack() }
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(
+                OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                backCallback!!
+            )
+        }
         webView.loadUrl(BuildConfig.WEB_APP_URL)
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (Build.VERSION.SDK_INT < 33) handleWebBack() else super.onBackPressed()
+    }
+
+    private fun handleWebBack() {
+        webView.evaluateJavascript(
+            "(function(){try{return !!(window.selfAgentHandleBack&&window.selfAgentHandleBack());}catch(e){return false;}})()"
+        ) { raw ->
+            if (raw != "true") finish()
+        }
     }
 
     override fun onResume() {
@@ -65,6 +95,9 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         ConfirmBus.sink = null
+        if (Build.VERSION.SDK_INT >= 33) {
+            backCallback?.let { onBackInvokedDispatcher.unregisterOnBackInvokedCallback(it) }
+        }
         webView.destroy()
         super.onDestroy()
     }
@@ -95,7 +128,12 @@ class MainActivity : Activity() {
         }
 
         @JavascriptInterface
+        fun vaultMeta(): String = EncryptedVault.listMeta(this@MainActivity).toString()
+
+        @JavascriptInterface
+        fun nativeReady(): Boolean = true
+
+        @JavascriptInterface
         fun appVersion(): String = BuildConfig.VERSION_NAME
     }
-
 }

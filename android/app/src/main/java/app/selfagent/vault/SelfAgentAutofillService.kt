@@ -1,12 +1,20 @@
 package app.selfagent.vault
 
+import android.app.assist.AssistStructure
 import android.os.CancellationSignal
 import android.service.autofill.AutofillService
+import android.service.autofill.Dataset
 import android.service.autofill.FillCallback
 import android.service.autofill.FillRequest
+import android.service.autofill.FillResponse
 import android.service.autofill.SaveCallback
+import android.service.autofill.SaveInfo
 import android.service.autofill.SaveRequest
-import android.app.assist.AssistStructure
+import android.text.InputType
+import android.view.autofill.AutofillId
+import android.view.autofill.AutofillValue
+import android.widget.RemoteViews
+import app.selfagent.R
 
 class SelfAgentAutofillService : AutofillService() {
 
@@ -15,7 +23,36 @@ class SelfAgentAutofillService : AutofillService() {
         cancellationSignal: CancellationSignal,
         callback: FillCallback
     ) {
-        callback.onSuccess(null)
+        val structure = request.fillContexts.lastOrNull()?.structure
+        val fields = findFields(structure)
+        val entry = EncryptedVault.findForPackage(this, structure?.activityComponent?.packageName ?: packageName)
+        if (fields.userId == null || fields.passId == null || entry == null) {
+            val builder = FillResponse.Builder()
+            if (fields.userId != null && fields.passId != null) {
+                builder.setSaveInfo(
+                    SaveInfo.Builder(SaveInfo.SAVE_DATA_TYPE_USERNAME or SaveInfo.SAVE_DATA_TYPE_PASSWORD, arrayOf(fields.userId, fields.passId)).build()
+                )
+                callback.onSuccess(builder.build())
+            } else {
+                callback.onSuccess(null)
+            }
+            return
+        }
+        val presentation = RemoteViews(packageName, R.layout.autofill_item).apply {
+            setTextViewText(R.id.autofill_title, "Self Agent · ${entry.title}")
+            setTextViewText(R.id.autofill_subtitle, entry.username)
+        }
+        val dataset = Dataset.Builder(presentation)
+            .setValue(fields.userId, AutofillValue.forText(entry.username), presentation)
+            .setValue(fields.passId, AutofillValue.forText(entry.password), presentation)
+            .build()
+        val response = FillResponse.Builder()
+            .addDataset(dataset)
+            .setSaveInfo(
+                SaveInfo.Builder(SaveInfo.SAVE_DATA_TYPE_USERNAME or SaveInfo.SAVE_DATA_TYPE_PASSWORD, arrayOf(fields.userId, fields.passId)).build()
+            )
+            .build()
+        callback.onSuccess(response)
     }
 
     override fun onSaveRequest(request: SaveRequest, callback: SaveCallback) {
@@ -24,11 +61,31 @@ class SelfAgentAutofillService : AutofillService() {
             callback.onFailure("no login fields")
             return
         }
-        VaultStore.save(parsed.app, parsed.username, parsed.password)
+        EncryptedVault.save(this, parsed.app, parsed.username, parsed.password)
         callback.onSuccess()
     }
 
+    private data class Fields(val userId: AutofillId?, val passId: AutofillId?)
     private data class Login(val app: String, val username: String, val password: String)
+
+    private fun findFields(structure: AssistStructure?): Fields {
+        var user: AutofillId? = null
+        var pass: AutofillId? = null
+        if (structure == null) return Fields(null, null)
+        for (i in 0 until structure.windowNodeCount) {
+            walk(structure.getWindowNodeAt(i).rootViewNode) { node ->
+                val hints = node.autofillHints?.toList().orEmpty()
+                val id = node.autofillId ?: return@walk
+                when {
+                    hints.any { it.contains("password", true) } ||
+                        node.inputType and InputType.TYPE_TEXT_VARIATION_PASSWORD != 0 ||
+                        node.inputType and InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD != 0 -> pass = id
+                    hints.any { it.contains("username", true) || it.contains("email", true) } -> user = id
+                }
+            }
+        }
+        return Fields(user, pass)
+    }
 
     private fun extractLogin(structure: AssistStructure?): Login? {
         if (structure == null) return null
@@ -41,31 +98,19 @@ class SelfAgentAutofillService : AutofillService() {
                 if (value.isNullOrBlank()) return@walk
                 when {
                     hints.any { it.contains("password", true) } ||
-                        node.inputType and android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD != 0 -> pass = value
+                        node.inputType and InputType.TYPE_TEXT_VARIATION_PASSWORD != 0 -> pass = value
                     hints.any { it.contains("username", true) || it.contains("email", true) } -> user = value
                 }
             }
         }
         val u = user ?: return null
         val p = pass ?: return null
-        return Login(packageName ?: "unknown", u, p)
+        val pkg = structure.activityComponent?.packageName ?: packageName
+        return Login(pkg, u, p)
     }
 
     private fun walk(node: AssistStructure.ViewNode, visit: (AssistStructure.ViewNode) -> Unit) {
         visit(node)
         for (i in 0 until node.childCount) walk(node.getChildAt(i), visit)
-    }
-}
-
-object VaultStore {
-    fun save(app: String, username: String, password: String) {
-        EncryptedVault.put(app, username, password)
-    }
-}
-
-object EncryptedVault {
-    private val mem = LinkedHashMap<String, Pair<String, String>>()
-    fun put(app: String, username: String, password: String) {
-        mem[app] = username to password
     }
 }

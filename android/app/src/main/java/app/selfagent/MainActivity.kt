@@ -14,11 +14,13 @@ import android.webkit.JavascriptInterface
 import android.webkit.JsResult
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
+import androidx.webkit.WebViewAssetLoader
 import app.selfagent.health.HealthBus
 import app.selfagent.health.HealthImportActivity
 import app.selfagent.ledger.ConfirmBus
@@ -34,6 +36,8 @@ class MainActivity : Activity() {
     companion object {
         const val EXTRA_TXN = "ledger_txn"
         const val EXTRA_AUTO_SAVE = "ledger_auto_save"
+        const val LOCAL_APP_URL = "https://appassets.androidplatform.net/assets/www/index.html"
+        const val LOCAL_APP_HOST = "appassets.androidplatform.net"
 
         fun ledgerIntent(context: Context, json: String, autoSave: Boolean): Intent =
             Intent(context, MainActivity::class.java)
@@ -53,6 +57,9 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestWindowFeature(Window.FEATURE_NO_TITLE)
+        val assetLoader = WebViewAssetLoader.Builder()
+            .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
+            .build()
 
         webView = WebView(this).apply {
             settings.javaScriptEnabled = true
@@ -73,16 +80,14 @@ class MainActivity : Activity() {
                     applyLedgerIntent(intent)
                     flushPending()
                 }
+                override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                    return assetLoader.shouldInterceptRequest(request.url)
+                }
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     val uri = request.url
-                    val host = trustedHost()
-                    val allowedScheme = uri.scheme == "https" || uri.scheme == "http"
-                    return if (allowedScheme && host != null && uri.host == host) {
-                        false
-                    } else {
-                        startActivity(Intent(Intent.ACTION_VIEW, uri))
-                        true
-                    }
+                    if (uri.host == LOCAL_APP_HOST) return false
+                    startActivity(Intent(Intent.ACTION_VIEW, uri))
+                    return true
                 }
             }
             addJavascriptInterface(AndroidBridge(), "SelfAgentNative")
@@ -130,7 +135,7 @@ class MainActivity : Activity() {
                 backCallback!!
             )
         }
-        webView.loadUrl(BuildConfig.WEB_APP_URL)
+        webView.loadUrl(LOCAL_APP_URL)
     }
 
     @Deprecated("Deprecated in Java")
@@ -208,8 +213,6 @@ class MainActivity : Activity() {
         )
         intent.removeExtra(EXTRA_TXN)
     }
-
-    private fun trustedHost(): String? = Uri.parse(BuildConfig.WEB_APP_URL).host
 
     inner class AndroidBridge {
         @JavascriptInterface

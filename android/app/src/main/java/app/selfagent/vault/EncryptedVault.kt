@@ -43,9 +43,12 @@ object EncryptedVault {
         return out
     }
 
-    fun findForPackage(context: Context, pkg: String): VaultEntry? {
+    fun findForPackage(context: Context, pkg: String, webDomain: String? = null): VaultEntry? {
         val items = load(context)
-        return items.firstOrNull { it.app == pkg } ?: items.lastOrNull()
+        if (!webDomain.isNullOrBlank()) {
+            items.firstOrNull { it.app.equals("web:$webDomain", true) }?.let { return it }
+        }
+        return items.firstOrNull { it.app == pkg }
     }
 
     fun save(context: Context, app: String, username: String, password: String) {
@@ -54,7 +57,7 @@ object EncryptedVault {
         val entry = VaultEntry(
             id = if (existing >= 0) items[existing].id else UUID.randomUUID().toString(),
             app = app,
-            title = app.substringAfterLast('.').ifBlank { app },
+            title = if (app.startsWith("web:")) app.removePrefix("web:") else app.substringAfterLast('.').ifBlank { app },
             username = username,
             password = password,
         )

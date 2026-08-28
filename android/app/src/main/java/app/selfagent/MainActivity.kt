@@ -17,15 +17,22 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
+import app.selfagent.health.HealthBus
+import app.selfagent.health.HealthImportActivity
 import app.selfagent.ledger.ConfirmBus
 import app.selfagent.ledger.PendingTxn
+import app.selfagent.travel.TravelBus
 import app.selfagent.vault.EncryptedVault
+import org.json.JSONArray
+import org.json.JSONObject
 import java.util.concurrent.ConcurrentLinkedQueue
 
 class MainActivity : Activity() {
 
     private lateinit var webView: WebView
     private val pendingTransactions = ConcurrentLinkedQueue<PendingTxn>()
+    private val pendingTravels = ConcurrentLinkedQueue<JSONObject>()
+    private val pendingHealth = ConcurrentLinkedQueue<JSONObject>()
     private var backCallback: OnBackInvokedCallback? = null
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -84,7 +91,15 @@ class MainActivity : Activity() {
 
         ConfirmBus.sink = { transaction ->
             pendingTransactions.add(transaction)
-            runOnUiThread { flushPendingTransactions() }
+            runOnUiThread { flushPending() }
+        }
+        TravelBus.sink = { trip ->
+            pendingTravels.add(trip)
+            runOnUiThread { flushPending() }
+        }
+        HealthBus.sink = { payload ->
+            pendingHealth.add(payload)
+            runOnUiThread { flushPending() }
         }
         if (Build.VERSION.SDK_INT >= 33) {
             backCallback = OnBackInvokedCallback { handleWebBack() }
@@ -111,11 +126,13 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        if (::webView.isInitialized) flushPendingTransactions()
+        if (::webView.isInitialized) flushPending()
     }
 
     override fun onDestroy() {
         ConfirmBus.sink = null
+        TravelBus.sink = null
+        HealthBus.sink = null
         if (Build.VERSION.SDK_INT >= 33) {
             backCallback?.let { onBackInvokedDispatcher.unregisterOnBackInvokedCallback(it) }
         }
@@ -123,13 +140,31 @@ class MainActivity : Activity() {
         super.onDestroy()
     }
 
-    private fun flushPendingTransactions() {
+    private fun flushPending() {
         while (true) {
             val transaction = pendingTransactions.poll() ?: break
             val json = ConfirmBus.toJson(transaction)
             val script = "window.dispatchEvent(new CustomEvent('self-agent:auto-txn',{detail:$json}));" +
                 "window.onAutoTxn && window.onAutoTxn($json);"
             webView.evaluateJavascript(script, null)
+        }
+        val trips = JSONArray()
+        while (true) {
+            val trip = pendingTravels.poll() ?: TravelBus.pending.poll() ?: break
+            trips.put(trip)
+        }
+        if (trips.length() > 0) {
+            webView.evaluateJavascript(
+                "window.dispatchEvent(new CustomEvent('self-agent:travel-updated',{detail:$trips}));",
+                null
+            )
+        }
+        while (true) {
+            val health = pendingHealth.poll() ?: HealthBus.pending.poll() ?: break
+            webView.evaluateJavascript(
+                "window.dispatchEvent(new CustomEvent('self-agent:health-import',{detail:$health}));",
+                null
+            )
         }
     }
 
@@ -153,6 +188,16 @@ class MainActivity : Activity() {
 
         @JavascriptInterface
         fun nativeReady(): Boolean = true
+
+        @JavascriptInterface
+        fun importHealthConnect() {
+            startActivity(Intent(this@MainActivity, HealthImportActivity::class.java))
+        }
+
+        @JavascriptInterface
+        fun openHealthConnectHelp() {
+            startActivity(Intent(Settings.ACTION_SETTINGS))
+        }
 
         @JavascriptInterface
         fun appVersion(): String = BuildConfig.VERSION_NAME

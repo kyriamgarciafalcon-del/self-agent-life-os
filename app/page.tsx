@@ -231,8 +231,29 @@ export default function Home() {
     function onTravel(event: Event) {
       const items = (event as CustomEvent<TravelItem[]>).detail;
       if (!Array.isArray(items) || !items.length) return;
-      setData((current) => ({ ...current, travels: items.map((item) => ({ ...item, verified: true })) }));
-      notify('已更新火车与航班行程');
+      setData((current) => {
+        const next = [...current.travels];
+        for (const item of items) {
+          const key = `${item.kind}-${item.number}-${String(item.departAt).slice(0, 10)}`;
+          const index = next.findIndex((row) => `${row.kind}-${row.number}-${row.departAt.slice(0, 10)}` === key);
+          const merged = { ...item, id: item.id || uid('travel'), verified: true, source: item.source || 'notification' };
+          if (index >= 0) next[index] = { ...next[index], ...merged };
+          else next.push(merged);
+        }
+        return { ...current, travels: next.sort((a, b) => a.departAt.localeCompare(b.departAt)) };
+      });
+      notify('已从通知导入火车/航班');
+    }
+    function onHealth(event: Event) {
+      const detail = (event as CustomEvent<{ date?: string; sleepHours?: number; steps?: number; exerciseMin?: number; source?: string }>).detail || {};
+      const date = detail.date || TODAY;
+      const records: HealthRecord[] = [];
+      if (Number(detail.sleepHours) > 0) records.push({ id: uid('health'), kind: 'sleep', value: Number(detail.sleepHours), note: `健康平台睡眠 · ${date}`, createdAt: date });
+      if (Number(detail.exerciseMin) > 0) records.push({ id: uid('health'), kind: 'exercise', value: Number(detail.exerciseMin), note: `健康平台运动 · ${date}`, createdAt: date });
+      if (Number(detail.steps) > 0) records.push({ id: uid('health'), kind: 'exercise', value: Math.round(Number(detail.steps) / 100), note: `步数 ${detail.steps} · ${date}`, createdAt: date });
+      if (!records.length) { notify('健康平台暂无近两日数据'); return; }
+      setData((current) => ({ ...current, healthRecords: [...records, ...current.healthRecords] }));
+      notify('已导入小米手环经健康平台的摘要');
     }
     function onMarket(event: Event) {
       const quotes = (event as CustomEvent<{ code?: string; contract?: string; price: number; date?: string }[]>).detail;
@@ -251,8 +272,9 @@ export default function Home() {
       notify('今日行情与理财余额已更新');
     }
     window.addEventListener('self-agent:travel-updated', onTravel);
+    window.addEventListener('self-agent:health-import', onHealth);
     window.addEventListener('self-agent:market-quotes', onMarket);
-    return () => { window.removeEventListener('self-agent:travel-updated', onTravel); window.removeEventListener('self-agent:market-quotes', onMarket); };
+    return () => { window.removeEventListener('self-agent:travel-updated', onTravel); window.removeEventListener('self-agent:health-import', onHealth); window.removeEventListener('self-agent:market-quotes', onMarket); };
   }, []);
   useEffect(() => {
     const w = window as Window & { selfAgentHandleBack?: () => boolean };
@@ -392,8 +414,14 @@ export default function Home() {
     setData((current) => ({ ...current, travels: [...current.travels, item].sort((a, b) => a.departAt.localeCompare(b.departAt)) })); setSheet(null); notify('行程已保存到本机');
   }
   function requestTravelSync() {
-    window.dispatchEvent(new CustomEvent('self-agent:request-travel-sync'));
-    notify('已请求读取授权的通知、日历或行程邮件');
+    const native = (window as Window & { SelfAgentNative?: { openNotificationAccess?: () => void } }).SelfAgentNative;
+    native?.openNotificationAccess?.();
+    notify('请打开通知使用权。12306/航司短信或通知会自动识别成行程。');
+  }
+  function importHealth() {
+    const native = (window as Window & { SelfAgentNative?: { importHealthConnect?: () => void } }).SelfAgentNative;
+    if (native?.importHealthConnect) native.importHealthConnect();
+    else notify('请在 Android App 中导入。先让小米运动健康写入健康平台。');
   }
   function addHolding(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = new FormData(event.currentTarget);
@@ -455,7 +483,7 @@ export default function Home() {
 
     {tab === 'profile' && <div className="page profile-page"><section className="profile-heading"><div>SA</div><span>SELF AGENT</span><h2>数据留在你的设备上</h2><p>网页端保存生活记录；敏感系统能力由 Android 版主动授权。</p></section><section className="profile-menu"><button onClick={() => navigate('memory')}><span>忆</span><div><strong>AI 记忆管理</strong><small>查看、暂停或删除管家记忆</small></div><b>›</b></button><button onClick={() => navigate('privacy')}><span>盾</span><div><strong>隐私与权限</strong><small>分别控制健康、财务和日程摘要</small></div><b>›</b></button><button onClick={() => navigate('vault')}><span>钥</span><div><strong>密码库</strong><small>不在网页保存密码明文</small></div><b>›</b></button><button onClick={() => navigate('data')}><span>数</span><div><strong>数据中心</strong><small>健康、财务与行动统一摘要</small></div><b>›</b></button></section><form className="ai-box" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const next = { baseUrl: String(form.get('baseUrl')).trim().replace(/\/$/, ''), model: String(form.get('model')).trim() || 'gpt-4o-mini', apiKey: String(form.get('apiKey')).trim() }; setAiConfig(next); window.localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(next)); notify('AI 接口已保存在本机，不会进入密码库或导出文件'); }}><strong>AI 接口</strong><p>兼容 OpenAI Chat Completions。密钥只存在本机，提问时不会发送密码。</p><label>接口地址<input name="baseUrl" placeholder="https://api.openai.com/v1" defaultValue={aiConfig.baseUrl} /></label><label>模型<input name="model" defaultValue={aiConfig.model} /></label><label>API Key<input name="apiKey" type="password" autoComplete="off" defaultValue={aiConfig.apiKey} /></label><button className="save" type="submit" style={{ marginTop: 12 }}>保存接口</button></form>{nativeOn && <div className="native-actions"><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openNotificationAccess?: () => void } }).SelfAgentNative?.openNotificationAccess?.()}>第1步：打开通知使用权</button><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openAutofillSettings?: () => void } }).SelfAgentNative?.openAutofillSettings?.()}>第2步：设为自动填充服务</button></div>}<HowToNative /><section className="profile-actions"><button onClick={toggleTheme}>{data.theme === 'dark' ? '切换浅色模式' : '切换深色模式'}</button><button onClick={exportLocalData}>导出脱敏数据</button><button onClick={clearLocalData}>恢复示例数据</button></section><p className="privacy-note">Android 通知记账需系统授权；确认前不会改余额。密码只进入 Keystore，不会发给 AI。</p></div>}
 
-    {tab === 'health' && <HealthPanel records={data.healthRecords} onAdd={() => setSheet('health')} />}
+    {tab === 'health' && <HealthPanel records={data.healthRecords} onAdd={() => setSheet('health')} onImport={importHealth} />}
     {tab === 'travel' && <TravelPanel items={data.travels} onSync={requestTravelSync} onAdd={() => setSheet('travel')} />}
     {tab === 'data' && <DataPanel data={data} />}
     {tab === 'butler' && <ButlerPanel data={data} ai={aiConfig} />}
@@ -492,22 +520,51 @@ function SwipeScheduleRow({ item, onToggle, onEdit, onDelete }: { item: Schedule
   );
 }
 
-function HealthPanel({ records, onAdd }: { records: HealthRecord[]; onAdd: () => void }) {
+function HealthPanel({ records, onAdd, onImport }: { records: HealthRecord[]; onAdd: () => void; onImport: () => void }) {
   const sleep = records.find((item) => item.kind === 'sleep');
   const exercise = records.filter((item) => item.kind === 'exercise').reduce((sum, item) => sum + item.value, 0);
   const meals = records.find((item) => item.kind === 'meal');
-  return <div className="page feature-page"><section className="health-hero"><span>今日身体状态</span><strong>{sleep && sleep.value >= 7 ? 86 : 78}</strong><div><h2>{sleep && sleep.value >= 7 ? '状态良好' : '睡眠稍低，其他平稳'}</h2><p>只与个人记录比较，不作医疗诊断。</p></div></section><section className="feature-section"><div className="feature-title"><div><span>HEALTH</span><h2>健康项目</h2></div><button onClick={onAdd}>＋ 添加</button></div><div className="health-grid"><article><span>睡</span><div><strong>睡眠</strong><small>最近一次</small></div><b>{sleep ? `${sleep.value} 小时` : '待记录'}</b></article><article><span>动</span><div><strong>运动</strong><small>本机记录累计</small></div><b>{exercise} 分钟</b></article><article><span>食</span><div><strong>饮食</strong><small>今日餐数</small></div><b>{meals ? `${meals.value} 餐` : '待补充'}</b></article></div></section><section className="feature-section"><div className="feature-title"><div><span>HISTORY</span><h2>最近记录</h2></div></div><div className="plain-list">{records.map((item) => <article key={item.id}><span>{item.kind === 'sleep' ? '睡' : item.kind === 'exercise' ? '动' : '食'}</span><div><strong>{item.note}</strong><small>{item.kind === 'sleep' ? `${item.value} 小时` : item.kind === 'exercise' ? `${item.value} 分钟` : `${item.value} 餐`}</small></div></article>)}</div></section></div>;
+  return <div className="page feature-page"><section className="health-hero"><span>今日身体状态</span><strong>{sleep && sleep.value >= 7 ? 86 : 78}</strong><div><h2>{sleep && sleep.value >= 7 ? '状态良好' : '睡眠稍低，其他平稳'}</h2><p>只与个人记录比较，不作医疗诊断。</p></div></section><section className="feature-section"><div className="feature-title"><div><span>HEALTH</span><h2>健康项目</h2></div><div><button type="button" onClick={onImport}>导入手环</button><button onClick={onAdd}>＋ 添加</button></div></div><div className="health-grid"><article><span>睡</span><div><strong>睡眠</strong><small>最近一次</small></div><b>{sleep ? `${sleep.value} 小时` : '待记录'}</b></article><article><span>动</span><div><strong>运动</strong><small>本机记录累计</small></div><b>{exercise} 分钟</b></article><article><span>食</span><div><strong>饮食</strong><small>今日餐数</small></div><b>{meals ? `${meals.value} 餐` : '待补充'}</b></article></div></section><section className="feature-section"><div className="feature-title"><div><span>HISTORY</span><h2>最近记录</h2></div></div><div className="plain-list">{records.map((item) => <article key={item.id}><span>{item.kind === 'sleep' ? '睡' : item.kind === 'exercise' ? '动' : '食'}</span><div><strong>{item.note}</strong><small>{item.kind === 'sleep' ? `${item.value} 小时` : item.kind === 'exercise' ? `${item.value} 分钟` : `${item.value} 餐`}</small></div></article>)}</div></section><section className="howto"><h3>小米手环怎么导入</h3><ol><li>手环连上 <b>小米运动健康</b>（或旧版 Zepp Life）</li><li>打开 <b>我的 → 第三方数据 / Health Connect</b></li><li>允许步数、睡眠、运动写入健康平台</li><li>回到这里点 <b>导入手环</b>，再允许 Self Agent 读取</li></ol><p>不会破解小米账号，也不直接读手环蓝牙。</p></section></div>;
+}
+
+function parseTravelText(text: string): TravelItem | null {
+  const raw = text.replace(/\s+/g, ' ').trim();
+  if (!raw) return null;
+  const train = raw.match(/([GDCZTK]\d{1,5})次?/);
+  const flight = raw.match(/\b([A-Z]{2}\d{3,4})\b/i);
+  const resolvedKind: TravelItem['kind'] | null = train ? 'train' : (flight && /航班|起飞|登机|机场/.test(raw) ? 'flight' : null);
+  if (!resolvedKind) return null;
+  const number = (train?.[1] || flight?.[1] || '').toUpperCase();
+  const route = raw.match(/([\u4e00-\u9fa5]{2,12}?)(?:站|机场)?\s*[-—至到]\s*([\u4e00-\u9fa5]{2,12}?)(?:站|机场)?/);
+  const dateMatch = raw.match(/(?:(\d{4})年)?(\d{1,2})月(\d{1,2})日/);
+  const year = dateMatch?.[1] || TODAY.slice(0, 4);
+  const month = dateMatch ? String(dateMatch[2]).padStart(2, '0') : TODAY.slice(5, 7);
+  const day = dateMatch ? String(dateMatch[3]).padStart(2, '0') : TODAY.slice(8, 10);
+  const times = [...raw.matchAll(/(\d{1,2}:\d{2})/g)].map((item) => item[1]);
+  const date = `${year}-${month}-${day}`;
+  const seat = raw.match(/(\d{1,2}车\s*\d{1,3}[A-F]?)/)?.[1] || '待分配';
+  const terminal = raw.match(/检票口\s*([A-Z]?\d{1,3}[A-Z]?)/)?.[1] || raw.match(/(?:航站楼|登机口)\s*([A-Z]?\d{1,2}[A-Z]?)/)?.[1] || '待确认';
+  return { id: uid('travel'), kind: resolvedKind, number, from: route?.[1] || '待确认', to: route?.[2] || '待确认', departAt: `${date}T${times[0] || '08:00'}`, arriveAt: `${date}T${times[1] || times[0] || '12:00'}`, seat, terminal, status: 'upcoming', source: 'import', verified: true };
 }
 
 function TravelPanel({ items, onSync, onAdd }: { items: TravelItem[]; onSync: () => void; onAdd: () => void }) {
   const sorted = [...items].sort((a, b) => a.departAt.localeCompare(b.departAt));
   const next = sorted.find((item) => item.status !== 'completed');
+  const [paste, setPaste] = useState('');
   function time(value: string) { const date = new Date(value); return Number.isNaN(date.getTime()) ? value.replace('T', ' ') : new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', weekday: 'short', hour: '2-digit', minute: '2-digit' }).format(date); }
+  function submitPaste(event: FormEvent) {
+    event.preventDefault();
+    const trip = parseTravelText(paste);
+    if (!trip) return;
+    window.dispatchEvent(new CustomEvent('self-agent:travel-updated', { detail: [trip] }));
+    setPaste('');
+  }
   return <div className="page feature-page travel-page">
-    <section className="travel-hero"><div><span>NEXT TRIP</span><h2>{next ? `${next.from} → ${next.to}` : '暂无后续行程'}</h2><p>{next ? `${next.number} · ${time(next.departAt)}` : '可以从授权来源读取，或手动添加。'}</p></div><b>{next?.kind === 'flight' ? '航' : '铁'}</b></section>
-    <section className="travel-actions"><button onClick={onSync}><span>↻</span><div><strong>读取我的行程</strong><small>授权后读取日历、通知或导入内容</small></div></button><button onClick={onAdd}><span>＋</span><div><strong>手动添加</strong><small>补充车次、航班和座位</small></div></button></section>
+    <section className="travel-hero"><div><span>NEXT TRIP</span><h2>{next ? `${next.from} → ${next.to}` : '暂无后续行程'}</h2><p>{next ? `${next.number} · ${time(next.departAt)}` : '可以粘贴 12306/航司短信，或授权通知读取。'}</p></div><b>{next?.kind === 'flight' ? '航' : '铁'}</b></section>
+    <section className="travel-actions"><button onClick={onSync}><span>↻</span><div><strong>读取通知里的行程</strong><small>12306、航旅纵横、短信通知</small></div></button><button onClick={onAdd}><span>＋</span><div><strong>手动添加</strong><small>补充车次、航班和座位</small></div></button></section>
+    <form className="howto" onSubmit={submitPaste}><h3>粘贴 12306 / 航班短信</h3><textarea value={paste} onChange={(event) => setPaste(event.target.value)} rows={3} placeholder="例如：您已购8月29日G123次北京南站-上海虹桥站" style={{ width: '100%', minHeight: 72, border: '1px solid var(--line)', borderRadius: 10, padding: 8 }} /><button className="save" type="submit" style={{ marginTop: 8 }}>识别并保存</button></form>
     <section className="feature-section"><div className="feature-title"><div><span>ITINERARY</span><h2>火车与航班</h2></div><small>{sorted.length} 段</small></div><div className="trip-list">{sorted.map((item) => <article key={item.id} className={item.status}><header><span>{item.kind === 'flight' ? '航班' : '火车'} · {item.number}</span><b>{item.verified ? '已核验' : '示例/待核验'}</b></header><div className="trip-route"><div><strong>{item.from}</strong><small>{time(item.departAt)}</small></div><i>→</i><div><strong>{item.to}</strong><small>{time(item.arriveAt)}</small></div></div><footer><span>{item.seat}</span><span>{item.terminal}</span><span>{item.source === 'manual' ? '手动' : item.source === 'notification' ? '通知' : item.source === 'calendar' ? '日历' : '导入'}</span></footer></article>)}</div></section>
-    <p className="travel-note">网页不会假装已经读取你的订单。打包成 App 后，需要你授权日历/通知或主动导入票据；行程变更仍以承运方通知为准。</p>
+    <section className="howto"><h3>为什么没有直接登录 12306</h3><p>铁路 12306 没有对第三方开放「我的车票」官方接口。不能用破解或模拟登录去拉你的订单。公开余票查询也不是你的行程。</p><p>航班动态可用航旅纵横、飞常准等官方渠道；本 App 先识别你已经收到的出票通知。</p></section>
   </div>;
 }
 
@@ -592,6 +649,15 @@ function HowToNative() {
           <li>自动填充服务选 <b>Self Agent</b></li>
           <li>去别的 App 登录，弹出“保存密码？”时点保存</li>
           <li>下次登录选 Self Agent 填充。密码不会进网页和 AI</li>
+          <li>Chrome 还要：设置 → 自动填充服务 → 使用其他服务</li>
+        </ol>
+      </section>
+      <section className="howto">
+        <h3>12306 和航班</h3>
+        <ol>
+          <li>打开通知使用权给 Self Agent</li>
+          <li>12306 / 航司短信来了会自动识别</li>
+          <li>也可以在行程页粘贴短信</li>
         </ol>
       </section>
     </>

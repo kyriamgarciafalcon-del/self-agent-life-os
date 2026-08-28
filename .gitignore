@@ -1,0 +1,8 @@
+node_modules/
+static-web/node_modules/
+static-web/dist/
+.DS_Store
+*.apk
+.gradle/
+local.properties
+build/

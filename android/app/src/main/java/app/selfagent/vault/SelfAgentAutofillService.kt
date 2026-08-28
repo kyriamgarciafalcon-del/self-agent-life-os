@@ -25,7 +25,8 @@ class SelfAgentAutofillService : AutofillService() {
     ) {
         val structure = request.fillContexts.lastOrNull()?.structure
         val fields = findFields(structure)
-        val entry = EncryptedVault.findForPackage(this, structure?.activityComponent?.packageName ?: packageName)
+        val domain = webDomain(structure)
+        val entry = EncryptedVault.findForPackage(this, structure?.activityComponent?.packageName ?: packageName, domain)
         if (fields.userId == null || fields.passId == null || entry == null) {
             val builder = FillResponse.Builder()
             if (fields.userId != null && fields.passId != null) {
@@ -79,7 +80,8 @@ class SelfAgentAutofillService : AutofillService() {
                 when {
                     hints.any { it.contains("password", true) } ||
                         node.inputType and InputType.TYPE_TEXT_VARIATION_PASSWORD != 0 ||
-                        node.inputType and InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD != 0 -> pass = id
+                        node.inputType and InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD != 0 ||
+                        node.inputType and InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD != 0 -> pass = id
                     hints.any { it.contains("username", true) || it.contains("email", true) } -> user = id
                 }
             }
@@ -98,15 +100,29 @@ class SelfAgentAutofillService : AutofillService() {
                 if (value.isNullOrBlank()) return@walk
                 when {
                     hints.any { it.contains("password", true) } ||
-                        node.inputType and InputType.TYPE_TEXT_VARIATION_PASSWORD != 0 -> pass = value
+                        node.inputType and InputType.TYPE_TEXT_VARIATION_PASSWORD != 0 ||
+                        node.inputType and InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD != 0 -> pass = value
                     hints.any { it.contains("username", true) || it.contains("email", true) } -> user = value
                 }
             }
         }
         val u = user ?: return null
         val p = pass ?: return null
+        val domain = webDomain(structure)
         val pkg = structure.activityComponent?.packageName ?: packageName
-        return Login(pkg, u, p)
+        val app = if (!domain.isNullOrBlank()) "web:$domain" else pkg
+        return Login(app, u, p)
+    }
+
+    private fun webDomain(structure: AssistStructure?): String? {
+        if (structure == null) return null
+        var domain: String? = null
+        for (i in 0 until structure.windowNodeCount) {
+            walk(structure.getWindowNodeAt(i).rootViewNode) { node ->
+                if (!node.webDomain.isNullOrBlank()) domain = node.webDomain
+            }
+        }
+        return domain
     }
 
     private fun walk(node: AssistStructure.ViewNode, visit: (AssistStructure.ViewNode) -> Unit) {

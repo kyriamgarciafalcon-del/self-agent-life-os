@@ -43,6 +43,9 @@ jobs:
           WEB_APP_URL: ${{ inputs.web_app_url || 'https://self-agent-life-os.kyriamgarciafalcon.chatgpt.site/' }}
         run: gradle --no-daemon assembleDebug -PwebAppUrl="$WEB_APP_URL" -PversionCode="$((100 + GITHUB_RUN_NUMBER))" -PversionName="1.1.${GITHUB_RUN_NUMBER}"
 
+      - name: Verify stable update signature
+        run: python3 android/scripts/verify-update-cert.py android/app/build/outputs/apk/debug/app-debug.apk
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:

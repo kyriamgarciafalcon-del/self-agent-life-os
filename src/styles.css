@@ -1,0 +1,74 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@theme {
+  --color-background: #f6faf7;
+  --color-foreground: #17251e;
+  --color-card: #ffffff;
+  --color-card-foreground: #17251e;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #17251e;
+  --color-primary: #238b5a;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #e5f5ec;
+  --color-secondary-foreground: #16633f;
+  --color-muted: #eef7f2;
+  --color-muted-foreground: #728078;
+  --color-accent: #e5f5ec;
+  --color-accent-foreground: #16633f;
+  --color-destructive: #b84d52;
+  --color-destructive-foreground: #ffffff;
+  --color-border: #dce8e1;
+  --color-input: #cadbd1;
+  --color-ring: #238b5a;
+  --color-canvas: #edf4ef;
+  --color-ink: #3e5047;
+  --color-warn: #a56a12;
+  --color-brand-deep: #16633f;
+  --color-calm: #427d83;
+  --color-calm-soft: #e8f3f3;
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.125rem;
+  --radius-2xl: 1.25rem;
+  --radius-3xl: 1.5rem;
+  --font-sans: "Noto Sans SC", "PingFang SC", "HarmonyOS Sans SC", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Noto Sans SC", "PingFang SC", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --shadow-border: 0 0 0 1px #dce8e1;
+  --shadow-border-hover: 0 0 0 1px #cadbd1;
+  --shadow-lift: 0 12px 28px rgba(28, 69, 47, 0.1);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-smooth-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-micro: 80ms;
+  --motion-quick: 150ms;
+  --motion-fast: 250ms;
+  --motion-slow: 400ms;
+}
+
+@layer base {
+  * { border-color: var(--color-border); }
+  html {
+    background-color: var(--color-canvas);
+    color: var(--color-foreground);
+    color-scheme: light;
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    line-height: 1.5;
+  }
+  h1, h2, h3 { text-wrap: balance; letter-spacing: -0.02em; }
+  button:not(:disabled), [role="button"]:not(:disabled) { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--color-ring); outline-offset: 2px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

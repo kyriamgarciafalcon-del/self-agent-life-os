@@ -9,6 +9,8 @@ import android.os.Bundle
 import android.provider.Settings
 import android.view.Window
 import android.webkit.JavascriptInterface
+import android.webkit.JsResult
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -58,6 +60,25 @@ class MainActivity : Activity() {
                 }
             }
             addJavascriptInterface(AndroidBridge(), "SelfAgentNative")
+            webChromeClient = object : WebChromeClient() {
+                override fun onJsAlert(view: WebView?, url: String?, message: String?, result: JsResult?): Boolean {
+                    android.app.AlertDialog.Builder(this@MainActivity)
+                        .setMessage(message)
+                        .setPositiveButton("确定") { _, _ -> result?.confirm() }
+                        .setOnCancelListener { result?.confirm() }
+                        .show()
+                    return true
+                }
+                override fun onJsConfirm(view: WebView?, url: String?, message: String?, result: JsResult?): Boolean {
+                    android.app.AlertDialog.Builder(this@MainActivity)
+                        .setMessage(message)
+                        .setPositiveButton("确定") { _, _ -> result?.confirm() }
+                        .setNegativeButton("取消") { _, _ -> result?.cancel() }
+                        .setOnCancelListener { result?.cancel() }
+                        .show()
+                    return true
+                }
+            }
         }
         setContentView(webView)
 

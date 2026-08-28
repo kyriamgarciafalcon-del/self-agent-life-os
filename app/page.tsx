@@ -310,7 +310,6 @@ export default function Home() {
     setSelectedDate(item.date); setEditingScheduleId(null); setSheet(null); notify(editing ? '日程已更新' : '日程已保存到本机');
   }
   function deleteSchedule(id: string) {
-    if (!window.confirm('确定删除这条日程吗？')) return;
     setData((current) => ({ ...current, schedules: current.schedules.filter((item) => item.id !== id) }));
     setEditingScheduleId(null); setSheet(null); notify('日程已删除');
   }
@@ -454,7 +453,7 @@ export default function Home() {
 
     {tab === 'finance' && <FinancePanel data={data} currency={financeCurrency} selectedAccountId={selectedAccountId} selectedHoldingId={selectedHoldingId} onCurrency={setFinanceCurrency} onSelectAccount={(id) => { setSelectedAccountId(id); setSelectedHoldingId(null); }} onSelectHolding={setSelectedHoldingId} onBackAccount={() => setSelectedAccountId(null)} onBackHolding={() => setSelectedHoldingId(null)} onNewTransaction={() => { setEditingTransactionId(null); setSheet('transaction'); }} onEditTransaction={(id) => { setEditingTransactionId(id); setSheet('transaction'); }} onNewAccount={() => { setEditingAccountId(null); setSheet('account'); }} onEditAccount={(id) => { setEditingAccountId(id); setSheet('account'); }} onNewHolding={() => { setEditingHoldingId(null); setSheet('holding'); }} onEditHolding={(id) => { setEditingHoldingId(id); setSheet('holding'); }} onRefreshMarket={requestMarketRefresh} onNewRecurring={() => setSheet('recurring')} onRunRecurring={runRecurringRule} onToggleRecurring={toggleRecurringRule} />}
 
-    {tab === 'profile' && <div className="page profile-page"><section className="profile-heading"><div>SA</div><span>SELF AGENT</span><h2>数据留在你的设备上</h2><p>网页端保存生活记录；敏感系统能力由 Android 版主动授权。</p></section><section className="profile-menu"><button onClick={() => navigate('memory')}><span>忆</span><div><strong>AI 记忆管理</strong><small>查看、暂停或删除管家记忆</small></div><b>›</b></button><button onClick={() => navigate('privacy')}><span>盾</span><div><strong>隐私与权限</strong><small>分别控制健康、财务和日程摘要</small></div><b>›</b></button><button onClick={() => navigate('vault')}><span>钥</span><div><strong>密码库</strong><small>不在网页保存密码明文</small></div><b>›</b></button><button onClick={() => navigate('data')}><span>数</span><div><strong>数据中心</strong><small>健康、财务与行动统一摘要</small></div><b>›</b></button></section><form className="ai-box" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const next = { baseUrl: String(form.get('baseUrl')).trim().replace(/\/$/, ''), model: String(form.get('model')).trim() || 'gpt-4o-mini', apiKey: String(form.get('apiKey')).trim() }; setAiConfig(next); window.localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(next)); notify('AI 接口已保存在本机，不会进入密码库或导出文件'); }}><strong>AI 接口</strong><p>兼容 OpenAI Chat Completions。密钥只存在本机，提问时不会发送密码。</p><label>接口地址<input name="baseUrl" placeholder="https://api.openai.com/v1" defaultValue={aiConfig.baseUrl} /></label><label>模型<input name="model" defaultValue={aiConfig.model} /></label><label>API Key<input name="apiKey" type="password" autoComplete="off" defaultValue={aiConfig.apiKey} /></label><button className="save" type="submit" style={{ marginTop: 12 }}>保存接口</button></form>{nativeOn && <div className="native-actions"><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openNotificationAccess?: () => void } }).SelfAgentNative?.openNotificationAccess?.()}>开启自动记账通知权限</button><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openAutofillSettings?: () => void } }).SelfAgentNative?.openAutofillSettings?.()}>设为系统自动填充服务</button></div>}<section className="profile-actions"><button onClick={toggleTheme}>{data.theme === 'dark' ? '切换浅色模式' : '切换深色模式'}</button><button onClick={exportLocalData}>导出脱敏数据</button><button onClick={clearLocalData}>恢复示例数据</button></section><p className="privacy-note">Android 通知记账需系统授权；确认前不会改余额。密码只进入 Keystore，不会发给 AI。</p></div>}
+    {tab === 'profile' && <div className="page profile-page"><section className="profile-heading"><div>SA</div><span>SELF AGENT</span><h2>数据留在你的设备上</h2><p>网页端保存生活记录；敏感系统能力由 Android 版主动授权。</p></section><section className="profile-menu"><button onClick={() => navigate('memory')}><span>忆</span><div><strong>AI 记忆管理</strong><small>查看、暂停或删除管家记忆</small></div><b>›</b></button><button onClick={() => navigate('privacy')}><span>盾</span><div><strong>隐私与权限</strong><small>分别控制健康、财务和日程摘要</small></div><b>›</b></button><button onClick={() => navigate('vault')}><span>钥</span><div><strong>密码库</strong><small>不在网页保存密码明文</small></div><b>›</b></button><button onClick={() => navigate('data')}><span>数</span><div><strong>数据中心</strong><small>健康、财务与行动统一摘要</small></div><b>›</b></button></section><form className="ai-box" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const next = { baseUrl: String(form.get('baseUrl')).trim().replace(/\/$/, ''), model: String(form.get('model')).trim() || 'gpt-4o-mini', apiKey: String(form.get('apiKey')).trim() }; setAiConfig(next); window.localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(next)); notify('AI 接口已保存在本机，不会进入密码库或导出文件'); }}><strong>AI 接口</strong><p>兼容 OpenAI Chat Completions。密钥只存在本机，提问时不会发送密码。</p><label>接口地址<input name="baseUrl" placeholder="https://api.openai.com/v1" defaultValue={aiConfig.baseUrl} /></label><label>模型<input name="model" defaultValue={aiConfig.model} /></label><label>API Key<input name="apiKey" type="password" autoComplete="off" defaultValue={aiConfig.apiKey} /></label><button className="save" type="submit" style={{ marginTop: 12 }}>保存接口</button></form>{nativeOn && <div className="native-actions"><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openNotificationAccess?: () => void } }).SelfAgentNative?.openNotificationAccess?.()}>第1步：打开通知使用权</button><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openAutofillSettings?: () => void } }).SelfAgentNative?.openAutofillSettings?.()}>第2步：设为自动填充服务</button></div>}<HowToNative /><section className="profile-actions"><button onClick={toggleTheme}>{data.theme === 'dark' ? '切换浅色模式' : '切换深色模式'}</button><button onClick={exportLocalData}>导出脱敏数据</button><button onClick={clearLocalData}>恢复示例数据</button></section><p className="privacy-note">Android 通知记账需系统授权；确认前不会改余额。密码只进入 Keystore，不会发给 AI。</p></div>}
 
     {tab === 'health' && <HealthPanel records={data.healthRecords} onAdd={() => setSheet('health')} />}
     {tab === 'travel' && <TravelPanel items={data.travels} onSync={requestTravelSync} onAdd={() => setSheet('travel')} />}
@@ -479,31 +478,15 @@ export default function Home() {
 }
 
 function SwipeScheduleRow({ item, onToggle, onEdit, onDelete }: { item: ScheduleItem; onToggle: () => void; onEdit: () => void; onDelete: () => void }) {
-  const [dx, setDx] = useState(0);
-  const startX = useRef(0);
-  const startY = useRef(0);
-  const locked = useRef<'h' | 'v' | null>(null);
-  const open = dx < -60;
   return (
-    <div className="swipe-wrap"
-      onTouchStart={(event) => { startX.current = event.touches[0].clientX; startY.current = event.touches[0].clientY; locked.current = null; }}
-      onTouchMove={(event) => {
-        const x = event.touches[0].clientX - startX.current;
-        const y = event.touches[0].clientY - startY.current;
-        if (!locked.current) locked.current = Math.abs(x) > Math.abs(y) && Math.abs(x) > 8 ? 'h' : Math.abs(y) > 8 ? 'v' : null;
-        if (locked.current === 'h') { event.preventDefault(); setDx(Math.max(-148, Math.min(0, x))); }
-      }}
-      onTouchEnd={() => setDx((value) => value < -70 ? -148 : 0)}
-    >
-      <div className="swipe-actions" aria-hidden={!open}>
-        <button type="button" className="edit" onClick={onEdit}>编辑</button>
-        <button type="button" className="del" onClick={onDelete}>删除</button>
-      </div>
-      <div className="swipe-front" style={{ transform: `translateX(${dx}px)` }}>
-        <button className="schedule-card" onClick={() => { if (open) setDx(0); else onToggle(); }}>
-          <div><strong>{item.title}</strong><small>{item.detail}</small></div>
-          <span className="check">{item.done ? '✓' : ''}</span>
-        </button>
+    <div className="schedule-row">
+      <button type="button" className="schedule-card" onClick={onToggle}>
+        <div><strong>{item.title}</strong><small>{item.detail}</small></div>
+        <span className="check">{item.done ? '✓' : ''}</span>
+      </button>
+      <div className="row-ops">
+        <button type="button" className="edit" onClick={(event) => { event.stopPropagation(); onEdit(); }}>编辑</button>
+        <button type="button" className="del" onClick={(event) => { event.stopPropagation(); onDelete(); }}>删除</button>
       </div>
     </div>
   );
@@ -588,8 +571,35 @@ function MemoryPanel({ items, onToggle, onDelete }: { items: MemoryItem[]; onTog
   return <div className="page feature-page"><section className="feature-heading"><span>MEMORY</span><h2>你决定管家记住什么。</h2><p>记忆可以随时暂停或删除，停用后不再用于建议。</p></section><div className="memory-list">{items.map((item) => <article key={item.id} className={!item.active ? 'inactive' : ''}><header><span>{item.kind}</span><b>{item.active ? '使用中' : '已暂停'}</b></header><h3>{item.title}</h3><p>{item.note}</p><div><button onClick={() => onToggle(item.id)}>{item.active ? '暂停使用' : '重新启用'}</button><button className="danger-text" onClick={() => onDelete(item.id)}>删除</button></div></article>)}</div></div>;
 }
 
+function HowToNative() {
+  return (
+    <>
+      <section className="howto">
+        <h3>怎么自动记账</h3>
+        <ol>
+          <li>打开手机 <b>设置</b></li>
+          <li>用搜索框输入“<b>通知使用权</b>”</li>
+          <li>打开 <b>Self Agent</b></li>
+          <li>用微信或支付宝付一笔小额</li>
+          <li>App 会打开「记录」页，<b>点确认后才会记账</b></li>
+        </ol>
+      </section>
+      <section className="howto">
+        <h3>怎么自动记住密码</h3>
+        <ol>
+          <li>打开手机 <b>设置</b></li>
+          <li>搜索“<b>自动填充</b>”</li>
+          <li>自动填充服务选 <b>Self Agent</b></li>
+          <li>去别的 App 登录，弹出“保存密码？”时点保存</li>
+          <li>下次登录选 Self Agent 填充。密码不会进网页和 AI</li>
+        </ol>
+      </section>
+    </>
+  );
+}
+
 function VaultPanel({ items, nativeOn }: { items: { title: string; usernameHint: string; note?: string }[]; nativeOn: boolean }) {
-  return <div className="page feature-page"><section className="vault-safe"><span>钥</span><h2>{nativeOn ? 'Keystore 密码库已连接' : '安全密码库入口'}</h2><p>网页只显示账号是否存在。密码明文只保存在 Android Keystore，确认自动填充后由系统填写。</p><b>{nativeOn ? 'Autofill + Keystore 已就绪' : '请在 Android 中设为自动填充服务'}</b></section><section className="feature-section"><div className="feature-title"><div><span>METADATA</span><h2>账号目录</h2></div><small>{items.length} 项</small></div><div className="plain-list">{items.map((item) => <article key={item.title}><span>{item.title.slice(0, 1)}</span><div><strong>{item.title}</strong><small>{item.usernameHint}{item.note ? ` · ${item.note}` : ''}</small></div></article>)}</div></section>{nativeOn && <div className="native-actions"><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openAutofillSettings?: () => void } }).SelfAgentNative?.openAutofillSettings?.()}>打开系统自动填充设置</button></div>}<section className="vault-warning"><strong>密码不会进入 AI</strong><p>导出、管家问答和网页存储都只有元数据。查看或填充必须经过系统自动填充界面。</p></section></div>;
+  return <div className="page feature-page"><section className="vault-safe"><span>钥</span><h2>{nativeOn ? 'Keystore 密码库已连接' : '安全密码库入口'}</h2><p>网页只显示账号是否存在。密码明文只保存在 Android Keystore，确认自动填充后由系统填写。</p><b>{nativeOn ? 'Autofill + Keystore 已就绪' : '请在 Android 中设为自动填充服务'}</b></section><section className="feature-section"><div className="feature-title"><div><span>METADATA</span><h2>账号目录</h2></div><small>{items.length} 项</small></div><div className="plain-list">{items.map((item) => <article key={item.title}><span>{item.title.slice(0, 1)}</span><div><strong>{item.title}</strong><small>{item.usernameHint}{item.note ? ` · ${item.note}` : ''}</small></div></article>)}</div></section>{nativeOn && <div className="native-actions"><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openAutofillSettings?: () => void } }).SelfAgentNative?.openAutofillSettings?.()}>打开系统自动填充设置</button></div>}<HowToNative /><section className="vault-warning"><strong>密码不会进入 AI</strong><p>导出、管家问答和网页存储都只有元数据。查看或填充必须经过系统自动填充界面。</p></section></div>;
 }
 
 type FinancePanelProps = { data: AppData; currency: Currency; selectedAccountId: string | null; selectedHoldingId: string | null; onCurrency: (currency: Currency) => void; onSelectAccount: (id: string) => void; onSelectHolding: (id: string) => void; onBackAccount: () => void; onBackHolding: () => void; onNewTransaction: () => void; onEditTransaction: (id: string) => void; onNewAccount: () => void; onEditAccount: (id: string) => void; onNewHolding: () => void; onEditHolding: (id: string) => void; onRefreshMarket: () => void; onNewRecurring: () => void; onRunRecurring: (id: string) => void; onToggleRecurring: (id: string) => void };

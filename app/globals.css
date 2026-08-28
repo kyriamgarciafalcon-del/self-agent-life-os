@@ -5,12 +5,17 @@
 .phone-app{width:100%;max-width:100%;min-height:100dvh;padding-bottom:calc(92px + env(safe-area-inset-bottom,0px))}
 .app-header{padding-top:calc(12px + env(safe-area-inset-top,0px));height:auto;min-height:72px}
 .bottom-nav{padding-bottom:env(safe-area-inset-bottom,0px)}
-.swipe-wrap{position:relative;overflow:hidden;border-radius:16px}
-.swipe-actions{position:absolute;inset:0 0 0 auto;display:flex;width:148px}
-.swipe-actions button{flex:1;border:0;color:#fff;font-size:13px;font-weight:700;min-width:74px;min-height:44px}
-.swipe-actions .edit{background:#356c4e}
-.swipe-actions .del{background:#b84d52}
-.swipe-front{position:relative;z-index:1;background:var(--white);transition:transform .16s ease;display:flex;width:100%}
+.schedule-row{display:flex;align-items:stretch;gap:8px;flex:1;min-width:0}
+.schedule-row .schedule-card{flex:1;min-width:0}
+.row-ops{display:flex;flex-direction:column;justify-content:center;gap:6px;flex:none}
+.row-ops button{width:52px;min-height:36px;border:0;border-radius:10px;color:#fff;font-size:12px;font-weight:700}
+.row-ops .edit{background:#356c4e}
+.row-ops .del{background:#b84d52}
+.howto{margin-top:14px;padding:14px;border:1px solid var(--line);border-radius:16px;background:#fff}
+.howto h3{margin:0 0 8px;font-size:15px}
+.howto ol{margin:0;padding-left:18px}
+.howto li{font-size:12px;line-height:1.65;color:var(--ink)}
+.howto b{color:var(--green)}
 @media (max-width:360px){
   .hero-card h2{font-size:20px}
   .summary-grid{grid-template-columns:1fr}

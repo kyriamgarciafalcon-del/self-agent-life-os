@@ -50,7 +50,7 @@ class PayNotificationService : NotificationListenerService() {
         if (recentPay.any { same(it, pending) }) return
         recentPay.addFirst(pending)
         while (recentPay.size > 20) recentPay.removeLast()
-        ConfirmBus.post(pending)
+        ConfirmBus.post(pending, this)
     }
 
     private fun same(a: PendingTxn, b: PendingTxn) =

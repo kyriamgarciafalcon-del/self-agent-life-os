@@ -1,7 +1,9 @@
 package app.selfagent
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -29,11 +31,23 @@ import java.util.concurrent.ConcurrentLinkedQueue
 
 class MainActivity : Activity() {
 
+    companion object {
+        const val EXTRA_TXN = "ledger_txn"
+        const val EXTRA_AUTO_SAVE = "ledger_auto_save"
+
+        fun ledgerIntent(context: Context, json: String, autoSave: Boolean): Intent =
+            Intent(context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                .putExtra(EXTRA_TXN, json)
+                .putExtra(EXTRA_AUTO_SAVE, autoSave)
+    }
+
     private lateinit var webView: WebView
     private val pendingTransactions = ConcurrentLinkedQueue<PendingTxn>()
     private val pendingTravels = ConcurrentLinkedQueue<JSONObject>()
     private val pendingHealth = ConcurrentLinkedQueue<JSONObject>()
     private var backCallback: OnBackInvokedCallback? = null
+    private var pageReady = false
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -54,6 +68,11 @@ class MainActivity : Activity() {
             settings.layoutAlgorithm = WebSettings.LayoutAlgorithm.TEXT_AUTOSIZING
             settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
             webViewClient = object : WebViewClient() {
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    pageReady = true
+                    applyLedgerIntent(intent)
+                    flushPending()
+                }
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     val uri = request.url
                     val host = trustedHost()
@@ -88,6 +107,9 @@ class MainActivity : Activity() {
             }
         }
         setContentView(webView)
+        if (Build.VERSION.SDK_INT >= 33) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 76)
+        }
 
         ConfirmBus.sink = { transaction ->
             pendingTransactions.add(transaction)
@@ -122,6 +144,12 @@ class MainActivity : Activity() {
         ) { raw ->
             if (raw != "true") finish()
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (pageReady) applyLedgerIntent(intent)
     }
 
     override fun onResume() {
@@ -166,6 +194,19 @@ class MainActivity : Activity() {
                 null
             )
         }
+    }
+
+    private fun applyLedgerIntent(intent: Intent?) {
+        val json = intent?.getStringExtra(EXTRA_TXN) ?: return
+        val autoSave = intent.getBooleanExtra(EXTRA_AUTO_SAVE, false)
+        val payload = JSONObject(json).put("autoSave", autoSave)
+        val notifyId = payload.optString("id").hashCode() and 0x7fffffff
+        if (notifyId != 0) (getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager).cancel(notifyId)
+        webView.evaluateJavascript(
+            "window.dispatchEvent(new CustomEvent('self-agent:auto-txn',{detail:$payload}));",
+            null
+        )
+        intent.removeExtra(EXTRA_TXN)
     }
 
     private fun trustedHost(): String? = Uri.parse(BuildConfig.WEB_APP_URL).host

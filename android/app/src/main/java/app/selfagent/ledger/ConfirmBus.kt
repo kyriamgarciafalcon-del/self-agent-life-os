@@ -1,11 +1,13 @@
 package app.selfagent.ledger
 
+import android.content.Context
 import org.json.JSONObject
 
 object ConfirmBus {
     @Volatile var sink: ((PendingTxn) -> Unit)? = null
 
-    fun post(pending: PendingTxn) {
+    fun post(pending: PendingTxn, context: Context? = null) {
+        context?.applicationContext?.let { LedgerNotifier.show(it, pending) }
         sink?.invoke(pending)
     }
 
@@ -20,7 +22,4 @@ object ConfirmBus {
         .put("raw", p.raw)
         .put("at", p.at)
         .toString()
-
-    fun webSnippet(p: PendingTxn): String =
-        "window.onAutoTxn && window.onAutoTxn(${toJson(p)})"
 }

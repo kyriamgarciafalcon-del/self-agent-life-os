@@ -25,7 +25,7 @@ class PayAccessibilityService : AccessibilityService() {
             if (recent.any { same(it, pending) }) return
             recent.addFirst(pending)
             while (recent.size > 20) recent.removeLast()
-            ConfirmBus.post(pending)
+            ConfirmBus.post(pending, this)
         } finally {
             // AccessibilityNodeInfo.recycle is a no-op on current Android versions.
         }

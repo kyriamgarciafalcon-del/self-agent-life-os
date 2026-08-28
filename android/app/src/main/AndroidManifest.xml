@@ -28,7 +28,8 @@
         android:enableOnBackInvokedCallback="true">
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -56,6 +57,13 @@
                 <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
             </intent-filter>
         </activity-alias>
+        <receiver
+            android:name=".ledger.LedgerIgnoreReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="app.selfagent.IGNORE_TXN" />
+            </intent-filter>
+        </receiver>
         <service
             android:name=".ledger.PayNotificationService"
             android:exported="true"

@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -7,6 +9,12 @@ val configuredWebAppUrl = providers.gradleProperty("webAppUrl")
     .orElse("https://self-agent-life-os.kyriamgarciafalcon.chatgpt.site/")
     .get()
 
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("keystore/keystore.properties")
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
+}
+
 android {
     namespace = "app.selfagent"
     compileSdk = 35
@@ -15,19 +23,33 @@ android {
         buildConfig = true
     }
 
+    signingConfigs {
+        create("update") {
+            storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+            storePassword = keystoreProperties.getProperty("storePassword")
+            keyAlias = keystoreProperties.getProperty("keyAlias")
+            keyPassword = keystoreProperties.getProperty("keyPassword")
+            storeType = keystoreProperties.getProperty("storeType") ?: "PKCS12"
+        }
+    }
+
     defaultConfig {
         applicationId = "app.selfagent"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = providers.gradleProperty("versionCode").orElse("100").get().toInt()
+        versionName = providers.gradleProperty("versionName").orElse("1.1.0").get()
 
         buildConfigField("String", "WEB_APP_URL", "\"${configuredWebAppUrl.replace("\"", "\\\"")}\"")
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("update")
+        }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("update")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

@@ -37,11 +37,11 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Build debug APK
+      - name: Build signed APK
         working-directory: android
         env:
           WEB_APP_URL: ${{ inputs.web_app_url || 'https://self-agent-life-os.kyriamgarciafalcon.chatgpt.site/' }}
-        run: gradle --no-daemon assembleDebug -PwebAppUrl="$WEB_APP_URL"
+        run: gradle --no-daemon assembleDebug -PwebAppUrl="$WEB_APP_URL" -PversionCode="$((100 + GITHUB_RUN_NUMBER))" -PversionName="1.1.${GITHUB_RUN_NUMBER}"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

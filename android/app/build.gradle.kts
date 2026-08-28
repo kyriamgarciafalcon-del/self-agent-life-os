@@ -11,6 +11,10 @@ android {
     namespace = "app.selfagent"
     compileSdk = 35
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     defaultConfig {
         applicationId = "app.selfagent"
         minSdk = 26

@@ -38,7 +38,8 @@ object VaultReveal {
 
     private fun authenticate(activity: Activity, entry: VaultEntry) {
         if (Build.VERSION.SDK_INT >= 28) {
-            val executor: Executor = Handler(Looper.getMainLooper())::post
+            val handler = Handler(Looper.getMainLooper())
+            val executor = Executor { handler.post(it) }
             val builder = BiometricPrompt.Builder(activity)
                 .setTitle("查看密码")
                 .setSubtitle(entry.title)

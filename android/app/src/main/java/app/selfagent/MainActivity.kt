@@ -177,6 +177,15 @@ class MainActivity : Activity() {
         if (::webView.isInitialized) flushPending()
     }
 
+    private fun requestUnrestrictedBattery() {
+        if (Build.VERSION.SDK_INT < 23) return
+        val pm = getSystemService(android.os.PowerManager::class.java) ?: return
+        if (pm.isIgnoringBatteryOptimizations(packageName)) return
+        try {
+            startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).setData(Uri.parse("package:$packageName")))
+        } catch (_: Exception) { /* Xiaomi may hide this screen. */ }
+    }
+
     override fun onDestroy() {
         ConfirmBus.sink = null
         TravelBus.sink = null
@@ -286,8 +295,12 @@ class MainActivity : Activity() {
         fun capabilityStatus(): String = CapabilityStatus.json(this@MainActivity)
 
         @JavascriptInterface
-        fun syncReminders(json: String) {
-            app.selfagent.reminders.ReminderScheduler.sync(this@MainActivity, json)
+        fun syncReminders(json: String): String {
+            val result = app.selfagent.reminders.ReminderScheduler.sync(this@MainActivity, json)
+            if (runCatching { org.json.JSONObject(json).optBoolean("ack") }.getOrDefault(false)) {
+                runOnUiThread { requestUnrestrictedBattery() }
+            }
+            return result
         }
 
         @JavascriptInterface

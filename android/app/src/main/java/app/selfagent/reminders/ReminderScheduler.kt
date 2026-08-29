@@ -25,8 +25,16 @@ object ReminderScheduler {
     const val EXTRA_TITLE = "title"
     const val EXTRA_BODY = "body"
 
-    fun sync(context: Context, raw: String) {
-        updateAlarms(context.applicationContext, raw)
+    fun sync(context: Context, raw: String): String {
+        val keys = updateAlarms(context.applicationContext, raw)
+        val enabled = if (Build.VERSION.SDK_INT >= 24) {
+            (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).areNotificationsEnabled()
+        } else true
+        val payload = runCatching { JSONObject(raw) }.getOrNull()
+        if (payload?.optBoolean("ack") == true && keys.isNotEmpty() && enabled) {
+            notify(context.applicationContext, "日程提醒已设置", "到点前 10 分钟和开始时会再弹一次")
+        }
+        return JSONObject().put("scheduled", keys.size).put("notifications", enabled).toString()
     }
 
     fun reschedule(context: Context) {
@@ -40,7 +48,7 @@ object ReminderScheduler {
         updateAlarms(app, raw)
     }
 
-    private fun updateAlarms(context: Context, raw: String) {
+    private fun updateAlarms(context: Context, raw: String): Set<String> {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         cancelStoredAlarms(context, prefs)
         val scheduledKeys = schedule(context, raw)
@@ -48,6 +56,7 @@ object ReminderScheduler {
             .putString(KEY_PAYLOAD, raw)
             .putStringSet(KEY_SCHEDULED_KEYS, scheduledKeys)
             .apply()
+        return scheduledKeys
     }
 
     private fun cancelStoredAlarms(context: Context, prefs: android.content.SharedPreferences) {
@@ -153,12 +162,13 @@ object ReminderScheduler {
     }.getOrDefault(0L)
 
     private fun alarmIntent(context: Context, key: String): Intent =
-        Intent(ACTION_FIRE)
-            .setPackage(context.packageName)
+        Intent(context, ReminderFireActivity::class.java)
             .setData(Uri.parse("selfagent://reminder/$key"))
+            .putExtra("key", key)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
 
     private fun cancelAlarm(context: Context, alarm: AlarmManager, key: String) {
-        val pending = PendingIntent.getBroadcast(
+        val pending = PendingIntent.getActivity(
             context,
             key.hashCode(),
             alarmIntent(context, key),
@@ -172,7 +182,7 @@ object ReminderScheduler {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putString("msg:$key", "$title\u0000$body")
             .apply()
-        val pending = PendingIntent.getBroadcast(
+        val pending = PendingIntent.getActivity(
             context,
             key.hashCode(),
             alarmIntent(context, key)
@@ -182,7 +192,7 @@ object ReminderScheduler {
         )
         val show = PendingIntent.getActivity(
             context,
-            key.hashCode(),
+            ("show:$key").hashCode(),
             Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )

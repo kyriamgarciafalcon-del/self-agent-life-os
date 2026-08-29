@@ -51,6 +51,15 @@ object EncryptedVault {
         return items.firstOrNull { it.app == pkg }
     }
 
+    fun findById(context: Context, id: String): VaultEntry? = match(load(context), id)
+
+    internal fun match(items: List<VaultEntry>, id: String): VaultEntry? {
+        if (id.isBlank()) return null
+        return items.firstOrNull { it.id == id }
+            ?: items.firstOrNull { it.app == id }
+            ?: items.firstOrNull { it.title == id }
+    }
+
     fun save(context: Context, app: String, username: String, password: String) {
         val items = load(context).toMutableList()
         val existing = items.indexOfFirst { it.app == app && it.username == username }

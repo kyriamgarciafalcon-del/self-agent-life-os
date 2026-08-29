@@ -30,6 +30,7 @@ import app.selfagent.quotes.QuoteBus
 import app.selfagent.quotes.QuoteSync
 import app.selfagent.travel.TravelBus
 import app.selfagent.vault.EncryptedVault
+import app.selfagent.vault.VaultReveal
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -308,6 +309,11 @@ class MainActivity : Activity() {
         fun pickCaptureImage() {
             runOnUiThread { capture.pickImage() }
         }
+
+        @JavascriptInterface
+        fun revealPassword(id: String) {
+            runOnUiThread { VaultReveal.start(this@MainActivity, id) }
+        }
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -322,6 +328,9 @@ class MainActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == CaptureController.REQUEST_IMAGE && ::capture.isInitialized) {
             capture.onImage(if (resultCode == RESULT_OK) data?.data else null)
+        }
+        if (requestCode == VaultReveal.REQUEST_CREDENTIAL) {
+            VaultReveal.onCredentialResult(this, resultCode == RESULT_OK)
         }
     }
 }

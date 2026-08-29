@@ -114,6 +114,29 @@ describe('truthful product state', () => {
     ])).toEqual([{ currency: 'CNY', assets: 1000, receivable: 36, liability: 280, payable: 280, net: 756 }]);
   });
 
+  it('credits a 待收回 claim account when a reimbursable WeChat expense is posted', () => {
+    const accounts = [
+      { id: 'wechat', type: '资金账户', currency: 'CNY', balance: 200 },
+      { id: 'claim', type: '待收回', currency: 'CNY', balance: 0 },
+      { id: 'bank', type: '储蓄卡', currency: 'CNY', balance: 10 },
+    ];
+    const posted = applyLedger(accounts, {
+      kind: 'expense',
+      accountId: 'wechat',
+      accountAmount: 100,
+      reimbursable: true,
+      reimburseAccountId: 'claim',
+    }, 1);
+    expect(posted.find((item) => item.id === 'wechat')?.balance).toBe(100);
+    expect(posted.find((item) => item.id === 'claim')?.balance).toBe(100);
+    expect(posted.find((item) => item.id === 'bank')?.balance).toBe(10);
+    expect(wealthTotals(posted, [{ kind: 'expense', currency: 'CNY', accountAmount: 100, reimbursable: true, reimbursed: false, reimburseAccountId: 'claim' }])[0]).toMatchObject({
+      assets: 110,
+      receivable: 100,
+      net: 210,
+    });
+  });
+
   it('keeps reimbursement on the payment and deposit accounts instead of a 报销账户', () => {
     const accounts = [
       { id: 'wechat', type: '资金账户', currency: 'CNY', balance: 100 },

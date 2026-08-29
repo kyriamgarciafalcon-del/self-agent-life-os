@@ -163,6 +163,7 @@ export type WealthTxn = {
   accountAmount?: number;
   reimbursable?: boolean;
   reimbursed?: boolean;
+  reimburseAccountId?: string;
 };
 
 export function wealthTotals(accounts: WealthAccount[], transactions: WealthTxn[] = []): WealthLine[] {
@@ -181,6 +182,8 @@ export function wealthTotals(accounts: WealthAccount[], transactions: WealthTxn[
   }
   for (const transaction of transactions) {
     if (transaction.kind !== 'expense' || !transaction.reimbursable || transaction.reimbursed) continue;
+    const claim = accounts.find((account) => account.id === transaction.reimburseAccountId);
+    if (claim && accountRole(claim.type) === 'receivable') continue;
     const currency = transaction.currency || 'CNY';
     const current = line(currency);
     current.receivable += Number(transaction.accountAmount ?? transaction.amount ?? 0);
@@ -324,6 +327,9 @@ function ledgerDelta(account: LedgerAccount, transaction: LedgerTxn): number {
     if (transaction.kind === 'expense') return debt ? amount : -amount;
     if (transaction.kind === 'transfer') return debt ? amount : -amount;
   }
+  if (transaction.kind === 'expense' && transaction.reimbursable && !transaction.reimbursed && account.id === transaction.reimburseAccountId && role === 'receivable') {
+    return amount;
+  }
   if (transaction.kind === 'transfer' && account.id === transaction.targetAccountId) {
     return debt ? -amount : amount;
   }
@@ -359,8 +365,13 @@ export function settleReimbursementState<TA extends LedgerAccount, TT extends Li
   const original = transactions.find((item) => item.id === originalId);
   if (!original?.reimbursable || original.reimbursed) return { accounts, transactions };
   const linkedCredit = { ...credit, reimbursementForId: original.id } as TT;
+  let nextAccounts = applyLedger(accounts, linkedCredit, 1);
+  const claim = accounts.find((account) => account.id === original.reimburseAccountId);
+  if (claim && accountRole(claim.type) === 'receivable') {
+    nextAccounts = applyLedger(nextAccounts, { kind: 'expense', accountId: claim.id, accountAmount: original.accountAmount }, 1);
+  }
   return {
-    accounts: applyLedger(accounts, linkedCredit, 1),
+    accounts: nextAccounts,
     transactions: [
       linkedCredit,
       ...transactions.map((item) => item.id === original.id
@@ -383,6 +394,11 @@ export function removeLedgerTransactionState<TA extends LedgerAccount, TT extend
     nextTransactions = nextTransactions.map((item) => item.id === previous.reimbursementForId
       ? { ...item, reimbursed: false, reimbursementTransactionId: undefined } as TT
       : item);
+    const original = nextTransactions.find((item) => item.id === previous.reimbursementForId);
+    const claim = original ? nextAccounts.find((account) => account.id === original.reimburseAccountId) : undefined;
+    if (original && claim && accountRole(claim.type) === 'receivable') {
+      nextAccounts = applyLedger(nextAccounts, { kind: 'income', accountId: claim.id, accountAmount: original.accountAmount }, 1);
+    }
   }
   if (previous.reimbursementTransactionId) {
     const credit = transactions.find((item) => item.id === previous.reimbursementTransactionId);

@@ -93,40 +93,43 @@ describe('truthful product state', () => {
   });
 
   it('treats reimbursement as receivable and 欠款 as payable debt', () => {
-    expect(accountRole('报销账户')).toBe('receivable');
     expect(accountRole('待收回')).toBe('receivable');
     expect(accountRole('欠款')).toBe('payable');
     expect(accountRole('信用卡')).toBe('liability');
     expect(wealthTotals([
       { type: '资金账户', currency: 'CNY', balance: 1000 },
-      { type: '报销账户', currency: 'CNY', balance: 36 },
+      { type: '待收回', currency: 'CNY', balance: 36 },
       { type: '欠款', currency: 'CNY', balance: 80 },
       { type: '信用卡', currency: 'CNY', balance: -200 },
-    ])).toEqual([{ currency: 'CNY', assets: 1000, receivable: 36, liability: 200, payable: 80, net: 756 }]);
+    ])).toEqual([{ currency: 'CNY', assets: 1000, receivable: 36, liability: 280, payable: 280, net: 756 }]);
   });
 
-  it('posts a reimbursable expense onto cash and the reimbursement account', () => {
+  it('keeps reimbursement on the payment and deposit accounts instead of a 报销账户', () => {
     const accounts = [
       { id: 'wechat', type: '资金账户', currency: 'CNY', balance: 100 },
-      { id: 'reimburse', type: '报销账户', currency: 'CNY', balance: 0 },
+      { id: 'bank', type: '储蓄卡', currency: 'CNY', balance: 0 },
     ];
     const posted = applyLedger(accounts, {
       kind: 'expense',
       accountId: 'wechat',
       accountAmount: 36,
       reimbursable: true,
-      reimburseAccountId: 'reimburse',
+      reimburseAccountId: 'bank',
     }, 1);
     expect(posted.find((item) => item.id === 'wechat')?.balance).toBe(64);
-    expect(posted.find((item) => item.id === 'reimburse')?.balance).toBe(36);
+    expect(posted.find((item) => item.id === 'bank')?.balance).toBe(0);
+    expect(wealthTotals(posted, [{ kind: 'expense', currency: 'CNY', accountAmount: 36, reimbursable: true, reimbursed: false }])[0]).toMatchObject({
+      assets: 64,
+      receivable: 36,
+      net: 100,
+    });
     const repaid = applyLedger(posted, {
-      kind: 'transfer',
-      accountId: 'reimburse',
-      targetAccountId: 'wechat',
+      kind: 'income',
+      accountId: 'bank',
       accountAmount: 36,
     }, 1);
-    expect(repaid.find((item) => item.id === 'wechat')?.balance).toBe(100);
-    expect(repaid.find((item) => item.id === 'reimburse')?.balance).toBe(0);
+    expect(repaid.find((item) => item.id === 'wechat')?.balance).toBe(64);
+    expect(repaid.find((item) => item.id === 'bank')?.balance).toBe(36);
   });
 
   it('repaying 欠款 reduces debt instead of counting it as an asset', () => {

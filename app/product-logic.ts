@@ -156,7 +156,16 @@ export type WealthLine = {
   net: number;
 };
 
-export function wealthTotals(accounts: WealthAccount[]): WealthLine[] {
+export type WealthTxn = {
+  kind: string;
+  currency?: string;
+  amount?: number;
+  accountAmount?: number;
+  reimbursable?: boolean;
+  reimbursed?: boolean;
+};
+
+export function wealthTotals(accounts: WealthAccount[], transactions: WealthTxn[] = []): WealthLine[] {
   const map = new Map<string, WealthLine>();
   const line = (currency: string) => map.get(currency) ?? { currency, assets: 0, receivable: 0, liability: 0, payable: 0, net: 0 };
   for (const account of accounts) {
@@ -166,12 +175,19 @@ export function wealthTotals(accounts: WealthAccount[]): WealthLine[] {
     const role = accountRole(account.type);
     if (role === 'asset') current.assets += amount;
     else if (role === 'receivable') current.receivable += amount;
-    else if (role === 'liability') current.liability += amount;
+    else if (role === 'liability') current.payable += amount;
     else if (role === 'payable') current.payable += amount;
     map.set(currency, current);
   }
+  for (const transaction of transactions) {
+    if (transaction.kind !== 'expense' || !transaction.reimbursable || transaction.reimbursed) continue;
+    const currency = transaction.currency || 'CNY';
+    const current = line(currency);
+    current.receivable += Number(transaction.accountAmount ?? transaction.amount ?? 0);
+    map.set(currency, current);
+  }
   return [...map.values()]
-    .map((item) => ({ ...item, net: item.assets + item.receivable - item.liability - item.payable }))
+    .map((item) => ({ ...item, liability: item.payable, net: item.assets + item.receivable - item.payable }))
     .sort((left, right) => {
       const leftRank = ASSET_CURRENCY_ORDER.indexOf(left.currency);
       const rightRank = ASSET_CURRENCY_ORDER.indexOf(right.currency);
@@ -190,11 +206,6 @@ export type LedgerTxn = {
   reimbursed?: boolean;
 };
 
-export function defaultReceivableId(accounts: LedgerAccount[], currency: string): string | undefined {
-  const matches = accounts.filter((account) => accountRole(account.type) === 'receivable' && account.currency === currency);
-  return (matches.find((account) => /报销/.test(account.type)) ?? matches[0])?.id;
-}
-
 export function defaultCashId(accounts: LedgerAccount[], currency: string): string | undefined {
   const matches = accounts.filter((account) => accountRole(account.type) === 'asset' && account.currency === currency);
   return (matches.find((account) => /资金|储蓄|现金|支付宝|微信|银行/.test(`${account.type}${account.id}`)) ?? matches[0])?.id;
@@ -211,9 +222,6 @@ function ledgerDelta(account: LedgerAccount, transaction: LedgerTxn): number {
   }
   if (transaction.kind === 'transfer' && account.id === transaction.targetAccountId) {
     return debt ? -amount : amount;
-  }
-  if (transaction.kind === 'expense' && transaction.reimbursable && !transaction.reimbursed && account.id === transaction.reimburseAccountId) {
-    return amount;
   }
   return 0;
 }

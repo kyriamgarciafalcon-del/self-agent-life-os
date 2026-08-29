@@ -1,6 +1,7 @@
 package app.selfagent.health
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.database.sqlite.SQLiteDatabase
 import android.os.Bundle
@@ -10,7 +11,6 @@ import org.json.JSONObject
 import java.io.File
 import java.time.Instant
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 class GadgetbridgeImportActivity : Activity() {
@@ -19,13 +19,13 @@ class GadgetbridgeImportActivity : Activity() {
         private const val PREFS = "gadgetbridge_import"
         private const val URI = "database_uri"
 
-        fun importSaved(context: Activity): Boolean {
+        fun importSaved(context: Context): Boolean {
             val uri = context.getSharedPreferences(PREFS, MODE_PRIVATE).getString(URI, null) ?: return false
             Thread { parse(context, android.net.Uri.parse(uri)) }.start()
             return true
         }
 
-        private fun parse(context: Activity, uri: android.net.Uri) {
+        private fun parse(context: Context, uri: android.net.Uri) {
             try {
                 val file = File.createTempFile("gadgetbridge-", ".db", context.cacheDir)
                 context.contentResolver.openInputStream(uri).use { input -> requireNotNull(input) { "无法读取导出文件" }; file.outputStream().use { output -> input.copyTo(output) } }
@@ -33,9 +33,9 @@ class GadgetbridgeImportActivity : Activity() {
                 val records = parseDatabase(db)
                 db.close(); file.delete()
                 HealthBus.post(JSONObject().put("records", records).put("source", "gadgetbridge-direct"))
-                context.runOnUiThread { Toast.makeText(context, "Gadgetbridge 数据已自动导入", Toast.LENGTH_SHORT).show() }
+                android.os.Handler(android.os.Looper.getMainLooper()).post { Toast.makeText(context, "Gadgetbridge 数据已自动导入", Toast.LENGTH_SHORT).show() }
             } catch (_: Exception) {
-                context.runOnUiThread { Toast.makeText(context, "Gadgetbridge 导出文件读取失败，请重新选择数据库", Toast.LENGTH_LONG).show() }
+                android.os.Handler(android.os.Looper.getMainLooper()).post { Toast.makeText(context, "Gadgetbridge 导出文件读取失败，请重新选择数据库", Toast.LENGTH_LONG).show() }
             }
         }
 
@@ -58,7 +58,7 @@ class GadgetbridgeImportActivity : Activity() {
                 val steps = pick(cols, "STEPS", "STEP_COUNT", "STEPS_COUNT", "SAMPLE_STEPS") ?: return@forEach
                 db.rawQuery("SELECT $time,$steps FROM $table", null).use { c -> while (c.moveToNext()) add(days, c.getLong(0), "steps", c.getDouble(1)) }
             }
-            val out = JSONArray(); days.toSortedMap().forEach { (_, row) -> out.put(row) }; return out
+            val out = JSONArray(); days.toSortedMap().forEach { (_, row) -> row.remove("_paiAt"); row.remove("_stressAt"); out.put(row) }; return out
         }
 
         private fun columns(db: SQLiteDatabase, table: String): Set<String> = buildSet {
@@ -85,5 +85,11 @@ class GadgetbridgeImportActivity : Activity() {
         contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(URI, uri.toString()).apply()
         Thread { parse(this, uri) }.start(); finish()
+    }
+}
+
+class GadgetbridgeExportReceiver : android.content.BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == "nodomain.freeyourgadget.gadgetbridge.action.DATABASE_EXPORT_SUCCESS") GadgetbridgeImportActivity.importSaved(context)
     }
 }

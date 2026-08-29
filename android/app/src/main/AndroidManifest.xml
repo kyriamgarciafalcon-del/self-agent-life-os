@@ -74,6 +74,13 @@
             android:name=".health.GadgetbridgeImportActivity"
             android:exported="false"
             android:theme="@style/AppTheme" />
+        <receiver
+            android:name=".health.GadgetbridgeExportReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="nodomain.freeyourgadget.gadgetbridge.action.DATABASE_EXPORT_SUCCESS" />
+            </intent-filter>
+        </receiver>
         <activity-alias
             android:name="ViewPermissionUsageActivity"
             android:exported="true"

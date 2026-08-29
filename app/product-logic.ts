@@ -107,13 +107,22 @@ export function isBackupPayload(value: unknown): value is Record<string, unknown
 }
 
 export type AssetAccount = { currency: string; balance: number };
+export type AssetLine = { currency: string; amount: number };
 
-export function totalAssets(accounts: AssetAccount[], currency: string): number {
-  return accounts
-    .filter((account) => account.currency === currency)
-    .reduce((sum, account) => sum + (Number.isFinite(account.balance) ? account.balance : 0), 0);
-}
+const ASSET_CURRENCY_ORDER = ['CNY', 'USD', 'HKD', 'EUR', 'JPY'];
 
-export function otherAssetCurrencies(accounts: AssetAccount[], currency: string): string[] {
-  return [...new Set(accounts.filter((account) => account.currency !== currency).map((account) => account.currency))];
+export function assetTotals(accounts: AssetAccount[]): AssetLine[] {
+  const totals = new Map<string, number>();
+  for (const account of accounts) {
+    const currency = account.currency || 'CNY';
+    const balance = Number.isFinite(account.balance) ? account.balance : 0;
+    totals.set(currency, (totals.get(currency) ?? 0) + balance);
+  }
+  return [...totals.entries()]
+    .map(([currency, amount]) => ({ currency, amount }))
+    .sort((left, right) => {
+      const leftRank = ASSET_CURRENCY_ORDER.indexOf(left.currency);
+      const rightRank = ASSET_CURRENCY_ORDER.indexOf(right.currency);
+      return (leftRank === -1 ? 99 : leftRank) - (rightRank === -1 ? 99 : rightRank) || left.currency.localeCompare(right.currency);
+    });
 }

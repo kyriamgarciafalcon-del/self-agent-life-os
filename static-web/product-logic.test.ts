@@ -5,9 +5,8 @@ import {
   detectLegacyDemoData,
   isBackupPayload,
   localDateKey,
-  otherAssetCurrencies,
   parseNaturalCapture,
-  totalAssets,
+  assetTotals,
   weekDates,
 } from '../app/product-logic';
 
@@ -78,17 +77,15 @@ describe('truthful product state', () => {
     expect(isBackupPayload(null)).toBe(false);
   });
 
-  it('sums real account balances as total assets and stays zero when empty', () => {
-    expect(totalAssets([], 'CNY')).toBe(0);
-    expect(totalAssets([
+  it('sums every account into one total-assets view without dropping other currencies', () => {
+    expect(assetTotals([])).toEqual([]);
+    expect(assetTotals([
       { currency: 'CNY', balance: 1200.5 },
       { currency: 'CNY', balance: -80 },
       { currency: 'USD', balance: 99 },
-    ], 'CNY')).toBe(1120.5);
-    expect(otherAssetCurrencies([
-      { currency: 'CNY', balance: 1 },
-      { currency: 'USD', balance: 2 },
-      { currency: 'USD', balance: 3 },
-    ], 'CNY')).toEqual(['USD']);
+    ])).toEqual([
+      { currency: 'CNY', amount: 1120.5 },
+      { currency: 'USD', amount: 99 },
+    ]);
   });
 });

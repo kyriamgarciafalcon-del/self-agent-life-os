@@ -24,6 +24,7 @@ import androidx.webkit.WebViewAssetLoader
 import app.selfagent.capture.CaptureController
 import app.selfagent.health.HealthBus
 import app.selfagent.health.HealthImportActivity
+import app.selfagent.health.GadgetbridgeImportActivity
 import app.selfagent.ledger.ConfirmBus
 import app.selfagent.ledger.PendingTxn
 import app.selfagent.quotes.QuoteBus
@@ -174,6 +175,7 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        GadgetbridgeImportActivity.importSaved(this)
         if (::webView.isInitialized) flushPending()
     }
 
@@ -281,6 +283,11 @@ class MainActivity : Activity() {
         @JavascriptInterface
         fun importHealthConnect() {
             startActivity(Intent(this@MainActivity, HealthImportActivity::class.java))
+        }
+
+        @JavascriptInterface
+        fun importGadgetbridge() {
+            startActivity(Intent(this@MainActivity, GadgetbridgeImportActivity::class.java))
         }
 
         @JavascriptInterface

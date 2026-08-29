@@ -18,7 +18,7 @@
 .section-title{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
 .section-actions{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
 .capture-tools{display:flex;gap:8px;margin:8px 0 10px}
-.capture-tools button{flex:1;border:1px solid var(--line);background:#fff;border-radius:12px;padding:10px;font-weight:700}
+.capture-box .capture-tools button{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--line);background:var(--green-soft);color:var(--ink);border-radius:12px;padding:10px;min-height:44px;font-weight:700}
 .howto{margin-top:14px;padding:14px;border:1px solid var(--line);border-radius:16px;background:#fff}
 .howto h3{margin:0 0 8px;font-size:15px}
 .howto ol{margin:0;padding-left:18px}

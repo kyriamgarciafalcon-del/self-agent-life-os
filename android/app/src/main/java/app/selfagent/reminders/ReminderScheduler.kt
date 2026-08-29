@@ -20,7 +20,7 @@ object ReminderScheduler {
     const val PREFS = "self_agent_reminders"
     const val KEY_PAYLOAD = "payload"
     private const val KEY_SCHEDULED_KEYS = "scheduled_keys"
-    const val CHANNEL = "life_reminders_heads"
+    const val CHANNEL = "life_reminders_alarm"
     const val ACTION_FIRE = "app.selfagent.REMINDER_FIRE"
     const val EXTRA_TITLE = "title"
     const val EXTRA_BODY = "body"
@@ -133,6 +133,9 @@ object ReminderScheduler {
         return due
     }
 
+    internal fun reminderKeyFromData(data: String?): String =
+        data?.removePrefix("selfagent://reminder/").orEmpty()
+
     private fun parseLocal(date: String, time: String): Long = runCatching {
         val parts = date.split("-")
         val clock = time.split(":")
@@ -166,6 +169,9 @@ object ReminderScheduler {
     }
 
     private fun setAlarm(context: Context, alarm: AlarmManager, key: String, whenMs: Long, title: String, body: String) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString("msg:$key", "$title\u0000$body")
+            .apply()
         val pending = PendingIntent.getBroadcast(
             context,
             key.hashCode(),
@@ -174,58 +180,82 @@ object ReminderScheduler {
                 .putExtra(EXTRA_BODY, body),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        val show = PendingIntent.getActivity(
+            context,
+            key.hashCode(),
+            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         try {
-            if (Build.VERSION.SDK_INT >= 31 && !alarm.canScheduleExactAlarms()) {
-                alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, whenMs, pending)
-            } else {
-                alarm.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, whenMs, pending)
-            }
+            alarm.setAlarmClock(AlarmManager.AlarmClockInfo(whenMs, show), pending)
         } catch (_: Exception) {
-            alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, whenMs, pending)
+            try {
+                alarm.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, whenMs, pending)
+            } catch (_: Exception) {
+                alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, whenMs, pending)
+            }
         }
     }
 
     fun notify(context: Context, title: String, body: String) {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (Build.VERSION.SDK_INT >= 26 && nm.getNotificationChannel(CHANNEL) == null) {
-            nm.createNotificationChannel(NotificationChannel(CHANNEL, "日程弹窗提醒", NotificationManager.IMPORTANCE_HIGH).apply {
-                enableVibration(true)
-                enableLights(true)
-                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-            })
+        if (Build.VERSION.SDK_INT >= 26) {
+            val existing = nm.getNotificationChannel(CHANNEL)
+            if (existing == null || existing.importance < NotificationManager.IMPORTANCE_HIGH) {
+                if (existing != null) nm.deleteNotificationChannel(CHANNEL)
+                nm.createNotificationChannel(NotificationChannel(CHANNEL, "日程弹窗提醒", NotificationManager.IMPORTANCE_HIGH).apply {
+                    enableVibration(true)
+                    enableLights(true)
+                    lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                    setBypassDnd(true)
+                })
+            }
         }
         val open = PendingIntent.getActivity(
             context,
-            title.hashCode(),
+            (title + body).hashCode(),
             Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val builder = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(context, CHANNEL) else Notification.Builder(context)
         nm.notify(
             (title + body).hashCode() and 0x7fffffff,
-            builder.setSmallIcon(R.drawable.ic_launcher)
+            builder.setSmallIcon(R.drawable.ic_stat_notify)
                 .setContentTitle(title)
                 .setContentText(body)
                 .setAutoCancel(true)
                 .setContentIntent(open)
-                .setFullScreenIntent(open, true)
-                .setCategory(Notification.CATEGORY_REMINDER)
+                .setCategory(Notification.CATEGORY_ALARM)
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setDefaults(Notification.DEFAULT_ALL)
-                .setPriority(Notification.PRIORITY_HIGH)
+                .setPriority(Notification.PRIORITY_MAX)
                 .build()
         )
+    }
+
+    fun notifyKey(context: Context, key: String, fallbackTitle: String, fallbackBody: String) {
+        val stored = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("msg:$key", null)
+        val title = stored?.substringBefore('\u0000')?.ifBlank { null } ?: fallbackTitle
+        val body = stored?.substringAfter('\u0000', fallbackBody) ?: fallbackBody
+        notify(context, title, body)
     }
 }
 
 class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        ReminderScheduler.notify(
-            context,
-            intent.getStringExtra(ReminderScheduler.EXTRA_TITLE) ?: "提醒",
-            intent.getStringExtra(ReminderScheduler.EXTRA_BODY) ?: ""
-        )
-        ReminderScheduler.reschedule(context)
+        val pending = goAsync()
+        try {
+            val key = ReminderScheduler.reminderKeyFromData(intent.dataString)
+            ReminderScheduler.notifyKey(
+                context,
+                key,
+                intent.getStringExtra(ReminderScheduler.EXTRA_TITLE) ?: "日程提醒",
+                intent.getStringExtra(ReminderScheduler.EXTRA_BODY) ?: ""
+            )
+            ReminderScheduler.reschedule(context)
+        } finally {
+            pending.finish()
+        }
     }
 }
 

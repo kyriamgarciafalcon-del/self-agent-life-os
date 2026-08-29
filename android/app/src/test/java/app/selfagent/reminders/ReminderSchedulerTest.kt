@@ -64,4 +64,9 @@ class ReminderSchedulerTest {
         val now = calendar(2026, 8, 29, 15, 32).timeInMillis
         assertEquals(0, ReminderScheduler.eventReminders("walk", event, now, "散步").size)
     }
+
+    @Test
+    fun reminderKeyIsReadFromAlarmDataUri() {
+        assertEquals("schedule:walk:due", ReminderScheduler.reminderKeyFromData("selfagent://reminder/schedule:walk:due"))
+    }
 }

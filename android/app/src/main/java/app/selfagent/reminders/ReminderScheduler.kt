@@ -167,6 +167,7 @@ object ReminderScheduler {
             .putExtra("key", key)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         return intent
+    }
 
     private fun cancelAlarm(context: Context, alarm: AlarmManager, key: String) {
         val pending = PendingIntent.getActivity(

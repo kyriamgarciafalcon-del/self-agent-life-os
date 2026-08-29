@@ -21,9 +21,13 @@ class GadgetbridgeImportActivity : Activity() {
 
         fun importSaved(context: Context): Boolean {
             val uri = context.getSharedPreferences(PREFS, MODE_PRIVATE).getString(URI, null) ?: return false
+            context.sendBroadcast(Intent("nodomain.freeyourgadget.gadgetbridge.command.TRIGGER_EXPORT").setPackage("nodomain.freeyourgadget.gadgetbridge"))
             Thread { parse(context, android.net.Uri.parse(uri)) }.start()
             return true
         }
+
+        fun hasSaved(context: Context): Boolean =
+            context.getSharedPreferences(PREFS, MODE_PRIVATE).getString(URI, null) != null
 
         private fun parse(context: Context, uri: android.net.Uri) {
             try {

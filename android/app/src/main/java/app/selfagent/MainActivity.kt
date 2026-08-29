@@ -287,7 +287,9 @@ class MainActivity : Activity() {
 
         @JavascriptInterface
         fun importGadgetbridge() {
-            startActivity(Intent(this@MainActivity, GadgetbridgeImportActivity::class.java))
+            if (!GadgetbridgeImportActivity.importSaved(this@MainActivity)) {
+                startActivity(Intent(this@MainActivity, GadgetbridgeImportActivity::class.java))
+            }
         }
 
         @JavascriptInterface

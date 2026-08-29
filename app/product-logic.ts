@@ -205,8 +205,15 @@ export type ExchangeRate = {
 
 export type CnyWealthTotal = { convertedCny: number; unresolved: AssetLine[] };
 
+function validRateDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+}
+
 export function cnyWealthTotal(accounts: WealthAccount[], transactions: WealthTxn[] = [], rates: ExchangeRate[] = []): CnyWealthTotal {
-  const ratesByCurrency = new Map(rates.filter((rate) => Number.isFinite(rate.cnyRate) && rate.cnyRate > 0).map((rate) => [rate.currency, rate]));
+  const ratesByCurrency = new Map(rates.filter((rate) => Number.isFinite(rate.cnyRate) && rate.cnyRate > 0 && validRateDate(rate.asOf) && Number.isFinite(Date.parse(rate.updatedAt))).map((rate) => [rate.currency, rate]));
   let convertedCny = 0;
   const unresolved = new Map<string, number>();
   for (const line of wealthTotals(accounts, transactions)) {
@@ -221,6 +228,30 @@ export function cnyWealthTotal(accounts: WealthAccount[], transactions: WealthTx
     convertedCny,
     unresolved: [...unresolved.entries()].map(([currency, amount]) => ({ currency, amount })).filter((line) => line.amount !== 0),
   };
+}
+
+export type LegacyReimbursementTxn = WealthTxn & { reimburseAccountId?: string };
+
+export function migrateLegacyReimbursementAccounts<TA extends WealthAccount & { id: string }, TT extends LegacyReimbursementTxn>(
+  accounts: TA[],
+  transactions: TT[],
+): { accounts: TA[]; transactions: TT[] } {
+  const legacyIds = new Set(accounts.filter((account) => /报销账户/.test(account.type)).map((account) => account.id));
+  if (!legacyIds.size) return { accounts, transactions };
+  const linkedAmount = new Map<string, number>();
+  for (const transaction of transactions) {
+    if (transaction.kind !== 'expense' || !transaction.reimbursable || transaction.reimbursed || !transaction.reimburseAccountId || !legacyIds.has(transaction.reimburseAccountId)) continue;
+    linkedAmount.set(transaction.reimburseAccountId, (linkedAmount.get(transaction.reimburseAccountId) ?? 0) + Math.abs(Number(transaction.accountAmount ?? transaction.amount ?? 0)));
+  }
+  const migratedAccounts = accounts.flatMap((account) => {
+    if (!legacyIds.has(account.id)) return [account];
+    const residual = Math.max(0, normalizeAccountBalance(account.type, account.balance) - (linkedAmount.get(account.id) ?? 0));
+    return residual ? [{ ...account, type: '待收回', balance: residual } as TA] : [];
+  });
+  const migratedTransactions = transactions.map((transaction) => legacyIds.has(transaction.reimburseAccountId ?? '')
+    ? { ...transaction, reimburseAccountId: undefined } as TT
+    : transaction);
+  return { accounts: migratedAccounts, transactions: migratedTransactions };
 }
 
 export type LedgerAccount = { id: string; name?: string; type: string; currency: string; balance: number };
@@ -269,7 +300,12 @@ function ledgerDelta(account: LedgerAccount, transaction: LedgerTxn): number {
   return 0;
 }
 
+export function canApplyLedger(accounts: LedgerAccount[], transaction: LedgerTxn, factor: 1 | -1 = 1): boolean {
+  return accounts.every((account) => !isDebtRole(accountRole(account.type)) || account.balance + ledgerDelta(account, transaction) * factor >= 0);
+}
+
 export function applyLedger<T extends LedgerAccount>(accounts: T[], transaction: LedgerTxn, factor: 1 | -1): T[] {
+  if (!canApplyLedger(accounts, transaction, factor)) return accounts;
   return accounts.map((account) => {
     const delta = ledgerDelta(account, transaction) * factor;
     if (!delta) return account;

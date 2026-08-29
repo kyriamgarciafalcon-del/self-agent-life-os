@@ -6,10 +6,12 @@ import {
   detectLegacyDemoData,
   isBackupPayload,
   localDateKey,
+  migrateLegacyReimbursementAccounts,
   parseNaturalCapture,
   assetTotals,
   accountRole,
   applyLedger,
+  canApplyLedger,
   defaultCashId,
   removeLedgerTransactionState,
   resolvePaymentAccountId,
@@ -187,6 +189,29 @@ describe('truthful product state', () => {
     ];
     expect(cnyWealthTotal(accounts, [])).toEqual({ convertedCny: 100, unresolved: [{ currency: 'USD', amount: 100 }] });
     expect(cnyWealthTotal(accounts, [], [{ currency: 'USD', cnyRate: 7.2, asOf: '2026-08-29', source: 'manual', updatedAt: '2026-08-29T12:00:00' }])).toEqual({ convertedCny: 820, unresolved: [] });
+    expect(cnyWealthTotal(accounts, [], [{ currency: 'USD', cnyRate: 7.2, asOf: '', source: 'manual', updatedAt: '2026-08-29T12:00:00' }])).toEqual({ convertedCny: 100, unresolved: [{ currency: 'USD', amount: 100 }] });
+  });
+
+  it('migrates a legacy reimbursement balance without counting linked expenses twice', () => {
+    const migrated = migrateLegacyReimbursementAccounts(
+      [
+        { id: 'cash', type: '资金账户', currency: 'CNY', balance: 800 },
+        { id: 'legacy-reimburse', type: '报销账户', currency: 'CNY', balance: 200 },
+      ],
+      [{ id: 'expense', kind: 'expense', currency: 'CNY', accountAmount: 200, reimbursable: true, reimbursed: false, reimburseAccountId: 'legacy-reimburse' }],
+    );
+    expect(migrated.accounts).toEqual([{ id: 'cash', type: '资金账户', currency: 'CNY', balance: 800 }]);
+    expect(migrated.transactions[0]).toMatchObject({ reimbursable: true, reimbursed: false, reimburseAccountId: undefined });
+    expect(wealthTotals(migrated.accounts, migrated.transactions)).toEqual([{ currency: 'CNY', assets: 800, receivable: 200, liability: 0, payable: 0, net: 1000 }]);
+  });
+
+  it('rejects a debt payment that exceeds the open balance', () => {
+    const accounts = [
+      { id: 'cash', type: '资金账户', currency: 'CNY', balance: 100 },
+      { id: 'debt', type: '欠款', currency: 'CNY', balance: 50 },
+    ];
+    const payment = { kind: 'transfer' as const, accountId: 'cash', targetAccountId: 'debt', accountAmount: 80 };
+    expect(canApplyLedger(accounts, payment)).toBe(false);
   });
 
   it('repaying 欠款 reduces debt instead of counting it as an asset', () => {

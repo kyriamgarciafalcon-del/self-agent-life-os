@@ -1,7 +1,7 @@
 'use client';
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { accountRole, addDaysKey, applyLedger, buildScopedSummary, cnyWealthTotal, defaultCashId, detectLegacyDemoData, isBackupPayload, isDebtRole, localDateKey, normalizeAccountBalance, parseNaturalCapture, removeLedgerTransactionState, resolvePaymentAccountId, settleReimbursementState, wealthTotals, weekDates } from './product-logic';
+import { accountRole, addDaysKey, applyLedger, buildScopedSummary, canApplyLedger, cnyWealthTotal, defaultCashId, detectLegacyDemoData, isBackupPayload, isDebtRole, localDateKey, migrateLegacyReimbursementAccounts, normalizeAccountBalance, parseNaturalCapture, removeLedgerTransactionState, resolvePaymentAccountId, settleReimbursementState, wealthTotals, weekDates } from './product-logic';
 
 type Tab = 'home' | 'schedule' | 'capture' | 'finance' | 'profile' | 'health' | 'travel' | 'data' | 'butler' | 'privacy' | 'memory' | 'vault';
 type ScheduleColor = 'blue' | 'green' | 'orange';
@@ -162,13 +162,21 @@ function syncInvestmentBalances(accounts: Account[], investments: InvestmentHold
 function normalizeData(raw: Partial<AppData>): AppData {
   const investments = raw.investments ?? [];
   const rawAccounts = (raw.accounts ?? []).map((account) => ({ ...account, currency: account.currency ?? 'CNY' as Currency, balance: normalizeAccountBalance(account.type, account.balance) }));
-  const accounts = syncInvestmentBalances(rawAccounts, investments);
+  const rawTransactions = (raw.transactions ?? []).map((item) => ({
+    ...item,
+    currency: item.currency ?? rawAccounts.find((account) => account.id === item.accountId)?.currency ?? 'CNY',
+    accountAmount: item.accountAmount ?? item.amount,
+    reimbursable: item.reimbursable ?? false,
+    reimbursed: item.reimbursed ?? false,
+  }));
+  const migrated = migrateLegacyReimbursementAccounts(rawAccounts, rawTransactions);
+  const accounts = syncInvestmentBalances(migrated.accounts, investments);
   return {
     schemaVersion: 2,
     demoMode: raw.demoMode ?? detectLegacyDemoData(raw),
     schedules: raw.schedules ?? [],
     accounts,
-    transactions: (raw.transactions ?? []).map((item) => ({
+    transactions: migrated.transactions.map((item) => ({
       ...item,
       currency: item.currency ?? accounts.find((account) => account.id === item.accountId)?.currency ?? 'CNY',
       accountAmount: item.accountAmount ?? item.amount,
@@ -362,6 +370,10 @@ export default function Home() {
         }
         const fingerprint = String(detail.id || `${detail.source}-${amount}-${merchant}`);
         const transaction: Transaction = { id: fingerprint.startsWith('transaction-') ? fingerprint : `txn-${fingerprint}`, kind, amount, accountAmount: amount, currency: 'CNY', merchant, category: detail.category || (kind === 'income' ? '收入' : '其他'), accountId, source: String(detail.source || 'Android 自动记账'), reimbursable: false, createdAt: localStamp() };
+        if (!canApplyLedger(data.accounts, transaction)) {
+          onPayment(new CustomEvent('x', { detail: { amount, merchant, category: detail.category, source: detail.source, accountHint: detail.accountHint } }));
+          return;
+        }
         setData((current) => {
           if (current.transactions.some((item) => item.id === transaction.id || (item.merchant === merchant && item.amount === amount && Math.abs(Date.parse(item.createdAt) - Date.now()) < 180000))) return current;
           return { ...current, transactions: [transaction, ...current.transactions], accounts: adjustAccounts(current.accounts, transaction, 1) };
@@ -437,6 +449,8 @@ export default function Home() {
     if (reimbursable && (!canHoldMoney(reimburseAccount) || reimburseAccount?.currency !== sourceAccount?.currency)) { notify('报销到账账户必须是同币种资金账户'); return; }
     const wasSettled = Boolean(previous?.reimbursementTransactionId);
     const transaction: Transaction = { id: previous?.id ?? uid('transaction'), kind, amount: Math.abs(amount), accountAmount: Math.abs(amount * Number(form.get('exchangeRate') || 1)), currency: String(form.get('currency')) as Currency, merchant: String(form.get('merchant')), category: kind === 'income' ? '收入' : kind === 'transfer' ? '账户转账' : String(form.get('category')), accountId: paidFrom, targetAccountId: targetId, source: previous?.source ?? '手动记录', reimbursable, reimburseAccountId: reimbursable ? reimburseTo : undefined, reimbursed: reimbursable ? (wasSettled ? false : previous?.reimbursed ?? false) : false, createdAt: previous?.createdAt ?? localStamp() };
+    const baseline = previous ? removeLedgerTransactionState(data.accounts, data.transactions, previous.id) : { accounts: data.accounts, transactions: data.transactions };
+    if (!canApplyLedger(baseline.accounts, transaction)) { notify('还款金额不能超过当前欠款；请拆分或修改金额'); return; }
     setData((current) => {
       const removed = previous ? removeLedgerTransactionState(current.accounts, current.transactions, previous.id) : { accounts: current.accounts, transactions: current.transactions };
       return { ...current, accounts: applyLedger(removed.accounts, transaction, 1), transactions: [transaction, ...removed.transactions] };
@@ -535,10 +549,11 @@ export default function Home() {
     const selected = data.recurringRules.find((rule) => rule.id === id);
     if (!selected || !selected.enabled || selected.lastRunPeriod === MONTH) { notify('本月已经处理'); return; }
     if (selected.dueDay > Number(TODAY.slice(-2))) { notify(`将在本月 ${selected.dueDay} 日到期`); return; }
+    const transaction: Transaction = { id: uid('transaction'), kind: selected.kind === 'subscription' ? 'expense' : 'transfer', amount: selected.amount, accountAmount: selected.amount, currency: selected.currency, merchant: selected.name, category: selected.kind === 'subscription' ? '订阅' : '信用卡还款', accountId: selected.accountId, targetAccountId: selected.targetAccountId, source: '自动扣款确认', reimbursable: false, reimbursed: false, recurringRuleId: selected.id, createdAt: localStamp() };
+    if (!canApplyLedger(data.accounts, transaction)) { notify('还款金额不能超过当前欠款；请先编辑账单金额'); return; }
     setData((current) => {
       const rule = current.recurringRules.find((item) => item.id === id);
-      if (!rule || !rule.enabled || rule.lastRunPeriod === MONTH) return current;
-      const transaction: Transaction = { id: uid('transaction'), kind: rule.kind === 'subscription' ? 'expense' : 'transfer', amount: rule.amount, accountAmount: rule.amount, currency: rule.currency, merchant: rule.name, category: rule.kind === 'subscription' ? '订阅' : '信用卡还款', accountId: rule.accountId, targetAccountId: rule.targetAccountId, source: '自动扣款确认', reimbursable: false, reimbursed: false, recurringRuleId: rule.id, createdAt: localStamp() };
+      if (!rule || !rule.enabled || rule.lastRunPeriod === MONTH || !canApplyLedger(current.accounts, transaction)) return current;
       return { ...current, transactions: [transaction, ...current.transactions], accounts: applyLedger(current.accounts, transaction, 1), recurringRules: current.recurringRules.map((item) => item.id === id ? { ...item, lastRunPeriod: MONTH } : item) };
     });
     notify(selected.kind === 'subscription' ? '订阅扣款已确认入账' : '信用卡还款已确认转账');

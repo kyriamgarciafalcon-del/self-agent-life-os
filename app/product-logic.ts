@@ -199,7 +199,7 @@ export type ExchangeRate = {
   currency: string;
   cnyRate: number;
   asOf: string;
-  source: 'manual';
+  source: 'manual' | 'daily';
   updatedAt: string;
 };
 
@@ -257,6 +257,31 @@ export function migrateLegacyReimbursementAccounts<TA extends WealthAccount & { 
 export function upsertByExternalKey<T extends { externalKey?: string }>(current: T[], incoming: T[]): T[] {
   const keys = new Set(incoming.map((item) => item.externalKey).filter((key): key is string => Boolean(key)));
   return [...incoming, ...current.filter((item) => !item.externalKey || !keys.has(item.externalKey))];
+}
+
+export type DailyPriceQuote = { holdingId: string; price: number; asOf: string; source: string };
+
+export function applyDailyPriceQuotes<T extends { id: string; currentPrice: number; updatedAt: string; quoteStatus: unknown; history: { date: string; price: number }[] }>(holdings: T[], quotes: DailyPriceQuote[]): T[] {
+  const latest = new Map<string, DailyPriceQuote>();
+  for (const quote of quotes) if (quote.holdingId && Number.isFinite(quote.price) && quote.price > 0 && /^\d{4}-\d{2}-\d{2}/.test(quote.asOf)) latest.set(quote.holdingId, quote);
+  return holdings.map((holding) => {
+    const quote = latest.get(holding.id);
+    if (!quote) return holding;
+    const date = quote.asOf.slice(5, 10);
+    return { ...holding, currentPrice: quote.price, updatedAt: quote.asOf, quoteStatus: 'live', history: [...holding.history.filter((point) => point.date !== date), { date, price: quote.price }].slice(-30) } as T;
+  });
+}
+
+export function applyDailyFxRates(current: ExchangeRate[], incoming: ExchangeRate[]): ExchangeRate[] {
+  const next = [...current];
+  for (const rate of incoming) {
+    if (!rate.currency || rate.currency === 'CNY' || !(rate.cnyRate > 0) || !validRateDate(rate.asOf)) continue;
+    const item: ExchangeRate = { currency: rate.currency, cnyRate: rate.cnyRate, asOf: rate.asOf, source: 'daily', updatedAt: rate.updatedAt || rate.asOf };
+    const index = next.findIndex((existing) => existing.currency === rate.currency);
+    if (index >= 0) next[index] = item;
+    else next.push(item);
+  }
+  return next;
 }
 
 export type LedgerAccount = { id: string; name?: string; type: string; currency: string; balance: number };

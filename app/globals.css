@@ -7,13 +7,16 @@
 .bottom-nav{padding-bottom:env(safe-area-inset-bottom,0px)}
 .schedule-row{display:flex;align-items:stretch;gap:8px;flex:1;min-width:0}
 .schedule-row .schedule-card{flex:1;min-width:0}
-.row-ops{display:flex;flex-direction:column;justify-content:center;gap:6px;flex:none}
-.row-ops button{width:52px;min-height:36px;border:0;border-radius:10px;color:#fff;font-size:12px;font-weight:700}
+.row-ops{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:6px;flex:none}
+.row-ops button{width:auto;min-width:44px;min-height:36px;border:0;border-radius:10px;color:#fff;font-size:12px;font-weight:700;padding:0 10px}
 .row-ops .edit{background:#356c4e}
 .row-ops .del{background:#b84d52}
-.transaction-list article,.recurring-list article{display:flex;align-items:center;gap:8px}
+.transaction-list article,.recurring-list article{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
 .transaction-list article>div:not(.row-ops),.recurring-list article>div:not(.row-ops){flex:1;min-width:0}
 .transaction-list article>b,.recurring-list article>b{flex:none;font-size:13px}
+.transaction-list article>.row-ops,.recurring-list article>.row-ops{flex:1 0 100%;justify-content:flex-end}
+.section-title{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
+.section-actions{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
 .howto{margin-top:14px;padding:14px;border:1px solid var(--line);border-radius:16px;background:#fff}
 .howto h3{margin:0 0 8px;font-size:15px}
 .howto ol{margin:0;padding-left:18px}

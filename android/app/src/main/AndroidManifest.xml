@@ -67,6 +67,13 @@
             </intent-filter>
         </receiver>
         <receiver
+            android:name=".quotes.QuoteReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="app.selfagent.QUOTE_FIRE" />
+            </intent-filter>
+        </receiver>
+        <receiver
             android:name=".reminders.ReminderReceiver"
             android:exported="false">
             <intent-filter>

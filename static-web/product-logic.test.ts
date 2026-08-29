@@ -11,6 +11,8 @@ import {
   assetTotals,
   accountRole,
   applyLedger,
+  applyDailyFxRates,
+  applyDailyPriceQuotes,
   canApplyLedger,
   defaultCashId,
   removeLedgerTransactionState,
@@ -212,6 +214,22 @@ describe('truthful product state', () => {
       [{ id: 'new', externalKey: 'health:2026-08-29:steps', value: 15 }],
     );
     expect(result).toEqual([{ id: 'new', externalKey: 'health:2026-08-29:steps', value: 15 }, { id: 'manual', value: 8 }]);
+  });
+
+  it('upserts a daily CNY rate without touching other currencies', () => {
+    const next = applyDailyFxRates(
+      [{ currency: 'USD', cnyRate: 7.1, asOf: '2026-08-28', source: 'manual', updatedAt: '2026-08-28T12:00:00' }, { currency: 'EUR', cnyRate: 8.1, asOf: '2026-08-28', source: 'manual', updatedAt: '2026-08-28T12:00:00' }],
+      [{ currency: 'USD', cnyRate: 6.72, asOf: '2026-08-29', source: 'daily', updatedAt: '2026-08-29T18:00:00' }],
+    );
+    expect(next).toEqual([{ currency: 'USD', cnyRate: 6.72, asOf: '2026-08-29', source: 'daily', updatedAt: '2026-08-29T18:00:00' }, { currency: 'EUR', cnyRate: 8.1, asOf: '2026-08-28', source: 'manual', updatedAt: '2026-08-28T12:00:00' }]);
+  });
+
+  it('replaces the same daily price point without altering the prior close', () => {
+    const next = applyDailyPriceQuotes(
+      [{ id: 'etf', currentPrice: 10, updatedAt: '2026-08-28', quoteStatus: 'manual', history: [{ date: '08-28', price: 10 }] }],
+      [{ holdingId: 'etf', price: 12.5, asOf: '2026-08-29T18:00:00', source: 'stooq' }],
+    );
+    expect(next).toEqual([{ id: 'etf', currentPrice: 12.5, updatedAt: '2026-08-29T18:00:00', quoteStatus: 'live', history: [{ date: '08-28', price: 10 }, { date: '08-29', price: 12.5 }] }]);
   });
 
   it('rejects a debt payment that exceeds the open balance', () => {

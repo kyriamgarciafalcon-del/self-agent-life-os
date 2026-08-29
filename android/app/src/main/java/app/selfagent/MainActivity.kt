@@ -25,6 +25,8 @@ import app.selfagent.health.HealthBus
 import app.selfagent.health.HealthImportActivity
 import app.selfagent.ledger.ConfirmBus
 import app.selfagent.ledger.PendingTxn
+import app.selfagent.quotes.QuoteBus
+import app.selfagent.quotes.QuoteSync
 import app.selfagent.travel.TravelBus
 import app.selfagent.vault.EncryptedVault
 import org.json.JSONArray
@@ -50,6 +52,7 @@ class MainActivity : Activity() {
     private val pendingTransactions = ConcurrentLinkedQueue<PendingTxn>()
     private val pendingTravels = ConcurrentLinkedQueue<JSONObject>()
     private val pendingHealth = ConcurrentLinkedQueue<JSONObject>()
+    private val pendingQuotes = ConcurrentLinkedQueue<JSONObject>()
     private var backCallback: OnBackInvokedCallback? = null
     private var pageReady = false
 
@@ -128,6 +131,10 @@ class MainActivity : Activity() {
             pendingHealth.add(payload)
             runOnUiThread { flushPending() }
         }
+        QuoteBus.sink = { payload ->
+            pendingQuotes.add(payload)
+            runOnUiThread { flushPending() }
+        }
         if (Build.VERSION.SDK_INT >= 33) {
             backCallback = OnBackInvokedCallback { handleWebBack() }
             onBackInvokedDispatcher.registerOnBackInvokedCallback(
@@ -166,6 +173,7 @@ class MainActivity : Activity() {
         ConfirmBus.sink = null
         TravelBus.sink = null
         HealthBus.sink = null
+        QuoteBus.sink = null
         if (Build.VERSION.SDK_INT >= 33) {
             backCallback?.let { onBackInvokedDispatcher.unregisterOnBackInvokedCallback(it) }
         }
@@ -195,6 +203,13 @@ class MainActivity : Activity() {
             val health = pendingHealth.poll() ?: HealthBus.pending.poll() ?: break
             webView.evaluateJavascript(
                 "window.dispatchEvent(new CustomEvent('self-agent:health-import',{detail:$health}));",
+                null
+            )
+        }
+        while (true) {
+            val quotes = pendingQuotes.poll() ?: QuoteBus.pending.poll() ?: break
+            webView.evaluateJavascript(
+                "window.dispatchEvent(new CustomEvent('self-agent:quotes-updated',{detail:$quotes}));",
                 null
             )
         }
@@ -256,6 +271,16 @@ class MainActivity : Activity() {
         @JavascriptInterface
         fun syncReminders(json: String) {
             app.selfagent.reminders.ReminderScheduler.sync(this@MainActivity, json)
+        }
+
+        @JavascriptInterface
+        fun syncQuotes(json: String) {
+            QuoteSync.sync(this@MainActivity, json)
+        }
+
+        @JavascriptInterface
+        fun refreshQuotes() {
+            QuoteSync.refreshNow(this@MainActivity)
         }
     }
 }

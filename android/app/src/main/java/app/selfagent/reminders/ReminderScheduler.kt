@@ -209,7 +209,10 @@ class ReminderBootReceiver : BroadcastReceiver() {
         when (intent.action) {
             Intent.ACTION_BOOT_COMPLETED,
             Intent.ACTION_TIME_CHANGED,
-            Intent.ACTION_TIMEZONE_CHANGED -> ReminderScheduler.reschedule(context)
+            Intent.ACTION_TIMEZONE_CHANGED -> {
+                ReminderScheduler.reschedule(context)
+                app.selfagent.quotes.QuoteSync.reschedule(context)
+            }
         }
     }
 }

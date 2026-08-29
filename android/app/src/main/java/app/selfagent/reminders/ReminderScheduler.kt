@@ -162,7 +162,7 @@ object ReminderScheduler {
     }.getOrDefault(0L)
 
     private fun alarmIntent(context: Context, key: String): Intent {
-        val intent = Intent(context, ReminderFireActivity::class.java)
+        val intent = Intent(context, ReminderReceiver::class.java)
             .setData(Uri.parse("selfagent://reminder/$key"))
             .putExtra("key", key)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -170,7 +170,7 @@ object ReminderScheduler {
     }
 
     private fun cancelAlarm(context: Context, alarm: AlarmManager, key: String) {
-        val pending = PendingIntent.getActivity(
+        val pending = PendingIntent.getBroadcast(
             context,
             key.hashCode(),
             alarmIntent(context, key),
@@ -184,7 +184,7 @@ object ReminderScheduler {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putString("msg:$key", "$title\u0000$body")
             .apply()
-        val pending = PendingIntent.getActivity(
+        val pending = PendingIntent.getBroadcast(
             context,
             key.hashCode(),
             alarmIntent(context, key)
@@ -209,7 +209,7 @@ object ReminderScheduler {
         }
     }
 
-    fun notify(context: Context, title: String, body: String) {
+    fun notify(context: Context, title: String, body: String, fullScreenKey: String? = null) {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= 26) {
             val existing = nm.getNotificationChannel(CHANNEL)
@@ -229,7 +229,20 @@ object ReminderScheduler {
             Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        val fullScreen = fullScreenKey?.let { key ->
+            PendingIntent.getActivity(
+                context,
+                ("fullscreen:$key").hashCode(),
+                Intent(context, ReminderFireActivity::class.java)
+                    .setData(Uri.parse("selfagent://reminder/$key"))
+                    .putExtra("key", key)
+                    .putExtra("from_notification", true)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        }
         val builder = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(context, CHANNEL) else Notification.Builder(context)
+        if (fullScreen != null) builder.setFullScreenIntent(fullScreen, true)
         nm.notify(
             (title + body).hashCode() and 0x7fffffff,
             builder.setSmallIcon(R.drawable.ic_stat_notify)
@@ -249,7 +262,7 @@ object ReminderScheduler {
         val stored = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("msg:$key", null)
         val title = stored?.substringBefore('\u0000')?.ifBlank { null } ?: fallbackTitle
         val body = stored?.substringAfter('\u0000', fallbackBody) ?: fallbackBody
-        notify(context, title, body)
+        notify(context, title, body, key)
     }
 }
 

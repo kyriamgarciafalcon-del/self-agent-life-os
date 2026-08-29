@@ -27,8 +27,8 @@ class ReminderFireActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle("⏰  $actualTitle")
             .setMessage(actualBody)
-            .setPositiveButton("知道了") { _, _ -> closeReminder(key, actualTitle, actualBody) }
-            .setOnCancelListener { closeReminder(key, actualTitle, actualBody) }
+            .setPositiveButton("知道了") { _, _ -> closeReminder(key) }
+            .setOnCancelListener { closeReminder(key) }
             .setCancelable(false)
             .create()
             .apply {
@@ -39,8 +39,7 @@ class ReminderFireActivity : Activity() {
             }
     }
 
-    private fun closeReminder(key: String, title: String, body: String) {
-        ReminderScheduler.notify(this, title, body)
+    private fun closeReminder(key: String) {
         ReminderScheduler.reschedule(this)
         finishAndRemoveTask()
     }

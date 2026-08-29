@@ -10,6 +10,7 @@ import {
   parseNaturalCapture,
   assetTotals,
   accountRole,
+  planAccountSettlement,
   applyLedger,
   applyDailyFxRates,
   applyDailyPriceQuotes,
@@ -112,6 +113,38 @@ describe('truthful product state', () => {
       { type: '欠款', currency: 'CNY', balance: 80 },
       { type: '信用卡', currency: 'CNY', balance: -200 },
     ])).toEqual([{ currency: 'CNY', assets: 1000, receivable: 36, liability: 280, payable: 280, net: 756 }]);
+  });
+
+  it('plans a partial 待收回 collection into a chosen cash account', () => {
+    const accounts = [
+      { id: 'claim', type: '待收回', currency: 'CNY', balance: 100 },
+      { id: 'wechat', type: '资金账户', currency: 'CNY', balance: 20 },
+    ];
+    const plan = planAccountSettlement(accounts, 'claim', 'wechat', 40);
+    expect(plan).toMatchObject({ ok: true, transaction: { kind: 'transfer', accountId: 'claim', targetAccountId: 'wechat', accountAmount: 40 } });
+    const next = applyLedger(accounts, plan.ok ? plan.transaction : { kind: 'transfer', accountId: 'claim', targetAccountId: 'wechat', accountAmount: 0 }, 1);
+    expect(next.find((item) => item.id === 'claim')?.balance).toBe(60);
+    expect(next.find((item) => item.id === 'wechat')?.balance).toBe(60);
+  });
+
+  it('plans a partial credit-card repayment from a chosen cash account', () => {
+    const accounts = [
+      { id: 'card', type: '信用卡', currency: 'CNY', balance: 200 },
+      { id: 'bank', type: '储蓄卡', currency: 'CNY', balance: 80 },
+    ];
+    const plan = planAccountSettlement(accounts, 'card', 'bank', 50);
+    expect(plan).toMatchObject({ ok: true, transaction: { kind: 'transfer', accountId: 'bank', targetAccountId: 'card', accountAmount: 50 } });
+    const next = applyLedger(accounts, plan.ok ? plan.transaction : { kind: 'transfer', accountId: 'bank', targetAccountId: 'card', accountAmount: 0 }, 1);
+    expect(next.find((item) => item.id === 'card')?.balance).toBe(150);
+    expect(next.find((item) => item.id === 'bank')?.balance).toBe(30);
+  });
+
+  it('rejects a 待收回 collection larger than the open receivable', () => {
+    const accounts = [
+      { id: 'claim', type: '待收回', currency: 'CNY', balance: 30 },
+      { id: 'wechat', type: '资金账户', currency: 'CNY', balance: 100 },
+    ];
+    expect(planAccountSettlement(accounts, 'claim', 'wechat', 40).ok).toBe(false);
   });
 
   it('credits a 待收回 claim account when a reimbursable WeChat expense is posted', () => {

@@ -350,6 +350,33 @@ export function applyLedger<T extends LedgerAccount>(accounts: T[], transaction:
   });
 }
 
+export type SettlementPlan =
+  | { ok: true; transaction: LedgerTxn }
+  | { ok: false; reason: string };
+
+export function planAccountSettlement(accounts: LedgerAccount[], accountId: string, counterpartId: string, amount: number): SettlementPlan {
+  const account = accounts.find((item) => item.id === accountId);
+  const counterpart = accounts.find((item) => item.id === counterpartId);
+  if (!account || account.balance <= 0) return { ok: false, reason: '没有可结算的余额' };
+  if (!counterpart || counterpart.id === account.id) return { ok: false, reason: '请选择另一个账户' };
+  if (counterpart.currency !== account.currency) return { ok: false, reason: '请选择同币种账户' };
+  if (!(amount > 0)) return { ok: false, reason: '请输入大于 0 的金额' };
+  if (amount > account.balance) return { ok: false, reason: '金额不能超过当前余额' };
+  const counterpartIsCash = accountRole(counterpart.type) === 'asset' && !/物品资产|订阅账户/.test(counterpart.type);
+  if (!counterpartIsCash) return { ok: false, reason: '请选择资金账户' };
+  const role = accountRole(account.type);
+  if (role === 'receivable') {
+    const transaction: LedgerTxn = { kind: 'transfer', accountId: account.id, targetAccountId: counterpart.id, accountAmount: amount };
+    return { ok: true, transaction };
+  }
+  if (isDebtRole(role)) {
+    const transaction: LedgerTxn = { kind: 'transfer', accountId: counterpart.id, targetAccountId: account.id, accountAmount: amount };
+    if (!canApplyLedger(accounts, transaction)) return { ok: false, reason: '资金账户余额不足，或超过当前欠款' };
+    return { ok: true, transaction };
+  }
+  return { ok: false, reason: '这个账户不需要收回或还款' };
+}
+
 export type LinkedLedgerTxn = LedgerTxn & {
   id: string;
   reimbursementForId?: string;

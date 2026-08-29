@@ -21,6 +21,7 @@ import android.webkit.WebViewClient
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
 import androidx.webkit.WebViewAssetLoader
+import app.selfagent.capture.CaptureController
 import app.selfagent.health.HealthBus
 import app.selfagent.health.HealthImportActivity
 import app.selfagent.ledger.ConfirmBus
@@ -53,6 +54,8 @@ class MainActivity : Activity() {
     private val pendingTravels = ConcurrentLinkedQueue<JSONObject>()
     private val pendingHealth = ConcurrentLinkedQueue<JSONObject>()
     private val pendingQuotes = ConcurrentLinkedQueue<JSONObject>()
+    private val pendingCapture = ConcurrentLinkedQueue<String>()
+    private lateinit var capture: CaptureController
     private var backCallback: OnBackInvokedCallback? = null
     private var pageReady = false
 
@@ -135,6 +138,10 @@ class MainActivity : Activity() {
             pendingQuotes.add(payload)
             runOnUiThread { flushPending() }
         }
+        capture = CaptureController(this) { text ->
+            pendingCapture.add(text)
+            runOnUiThread { flushPending() }
+        }
         if (Build.VERSION.SDK_INT >= 33) {
             backCallback = OnBackInvokedCallback { handleWebBack() }
             onBackInvokedDispatcher.registerOnBackInvokedCallback(
@@ -174,6 +181,7 @@ class MainActivity : Activity() {
         TravelBus.sink = null
         HealthBus.sink = null
         QuoteBus.sink = null
+        if (::capture.isInitialized) capture.destroy()
         if (Build.VERSION.SDK_INT >= 33) {
             backCallback?.let { onBackInvokedDispatcher.unregisterOnBackInvokedCallback(it) }
         }
@@ -210,6 +218,14 @@ class MainActivity : Activity() {
             val quotes = pendingQuotes.poll() ?: QuoteBus.pending.poll() ?: break
             webView.evaluateJavascript(
                 "window.dispatchEvent(new CustomEvent('self-agent:quotes-updated',{detail:$quotes}));",
+                null
+            )
+        }
+        while (true) {
+            val text = pendingCapture.poll() ?: break
+            val payload = JSONObject().put("text", text)
+            webView.evaluateJavascript(
+                "window.dispatchEvent(new CustomEvent('self-agent:capture-text',{detail:$payload}));",
                 null
             )
         }
@@ -281,6 +297,31 @@ class MainActivity : Activity() {
         @JavascriptInterface
         fun refreshQuotes() {
             QuoteSync.refreshNow(this@MainActivity)
+        }
+
+        @JavascriptInterface
+        fun startVoiceCapture() {
+            runOnUiThread { capture.startVoice() }
+        }
+
+        @JavascriptInterface
+        fun pickCaptureImage() {
+            runOnUiThread { capture.pickImage() }
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (::capture.isInitialized) {
+            capture.onPermission(requestCode, grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED)
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == CaptureController.REQUEST_IMAGE && ::capture.isInitialized) {
+            capture.onImage(if (resultCode == RESULT_OK) data?.data else null)
         }
     }
 }

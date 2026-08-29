@@ -31,4 +31,37 @@ class ReminderSchedulerTest {
         assertEquals(Calendar.FEBRUARY, next.get(Calendar.MONTH))
         assertEquals(15, next.get(Calendar.DAY_OF_MONTH))
     }
+
+    @Test
+    fun eventRemindersArmTenMinuteLeadAndOnTimeAlarms() {
+        val event = calendar(2026, 8, 29, 15, 32).timeInMillis
+        val now = calendar(2026, 8, 29, 15, 0).timeInMillis
+        val alarms = ReminderScheduler.eventReminders("walk", event, now, "散步")
+
+        assertEquals(2, alarms.size)
+        assertEquals("schedule:walk:lead", alarms[0].key)
+        assertEquals(event - 10 * 60 * 1000, alarms[0].whenMs)
+        assertEquals("散步 将在 10 分钟后开始", alarms[0].body)
+        assertEquals("schedule:walk:due", alarms[1].key)
+        assertEquals(event, alarms[1].whenMs)
+        assertEquals("散步 到点了", alarms[1].body)
+    }
+
+    @Test
+    fun eventRemindersKeepOnlyTheOnTimeAlarmAfterTheLeadHasPassed() {
+        val event = calendar(2026, 8, 29, 15, 32).timeInMillis
+        val now = calendar(2026, 8, 29, 15, 25).timeInMillis
+        val alarms = ReminderScheduler.eventReminders("walk", event, now, "散步")
+
+        assertEquals(1, alarms.size)
+        assertEquals("schedule:walk:due", alarms[0].key)
+        assertEquals(event, alarms[0].whenMs)
+    }
+
+    @Test
+    fun eventRemindersSkipAlarmsOnceTheEventHasStarted() {
+        val event = calendar(2026, 8, 29, 15, 32).timeInMillis
+        val now = calendar(2026, 8, 29, 15, 32).timeInMillis
+        assertEquals(0, ReminderScheduler.eventReminders("walk", event, now, "散步").size)
+    }
 }

@@ -17,6 +17,8 @@
 .transaction-list article>.row-ops,.recurring-list article>.row-ops{flex:1 0 100%;justify-content:flex-end}
 .section-title{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
 .section-actions{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
+.capture-tools{display:flex;gap:8px;margin:8px 0 10px}
+.capture-tools button{flex:1;border:1px solid var(--line);background:#fff;border-radius:12px;padding:10px;font-weight:700}
 .howto{margin-top:14px;padding:14px;border:1px solid var(--line);border-radius:16px;background:#fff}
 .howto h3{margin:0 0 8px;font-size:15px}
 .howto ol{margin:0;padding-left:18px}

@@ -20,7 +20,7 @@ object ReminderScheduler {
     const val PREFS = "self_agent_reminders"
     const val KEY_PAYLOAD = "payload"
     private const val KEY_SCHEDULED_KEYS = "scheduled_keys"
-    const val CHANNEL = "life_reminders"
+    const val CHANNEL = "life_reminders_heads"
     const val ACTION_FIRE = "app.selfagent.REMINDER_FIRE"
     const val EXTRA_TITLE = "title"
     const val EXTRA_BODY = "body"
@@ -65,11 +65,12 @@ object ReminderScheduler {
         for (index in 0 until schedules.length()) {
             val item = schedules.optJSONObject(index) ?: continue
             if (!isActive(item)) continue
-            val key = "schedule:${item.optString("id")}".takeUnless { it == "schedule:" } ?: continue
-            val whenMs = parseLocal(item.optString("date"), item.optString("time")) - 10 * 60 * 1000
-            if (whenMs > now) {
-                setAlarm(context, alarm, key, whenMs, "日程提醒", "${item.optString("title")} 将在 10 分钟后开始")
-                scheduledKeys += key
+            val id = item.optString("id")
+            if (id.isBlank()) continue
+            val eventMs = parseLocal(item.optString("date"), item.optString("time"))
+            for (reminder in eventReminders(id, eventMs, now, item.optString("title"))) {
+                setAlarm(context, alarm, reminder.key, reminder.whenMs, "日程提醒", reminder.body)
+                scheduledKeys += reminder.key
             }
         }
 
@@ -104,6 +105,17 @@ object ReminderScheduler {
 
     private fun monthKey(calendar: Calendar): String =
         "%04d-%02d".format(calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH) + 1)
+
+    data class TimedReminder(val key: String, val whenMs: Long, val body: String)
+
+    internal fun eventReminders(id: String, eventMs: Long, nowMs: Long, title: String): List<TimedReminder> {
+        if (eventMs <= 0L) return emptyList()
+        val leadMs = eventMs - 10 * 60 * 1000
+        val items = mutableListOf<TimedReminder>()
+        if (leadMs > nowMs) items += TimedReminder("schedule:$id:lead", leadMs, "$title 将在 10 分钟后开始")
+        if (eventMs > nowMs) items += TimedReminder("schedule:$id:due", eventMs, "$title 到点了")
+        return items
+    }
 
     internal fun nextMonthlyDue(dueDay: Int, now: Calendar): Calendar {
         val due = (now.clone() as Calendar).apply {
@@ -163,21 +175,29 @@ object ReminderScheduler {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         try {
-            alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, whenMs, pending)
+            if (Build.VERSION.SDK_INT >= 31 && !alarm.canScheduleExactAlarms()) {
+                alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, whenMs, pending)
+            } else {
+                alarm.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, whenMs, pending)
+            }
         } catch (_: Exception) {
-            alarm.set(AlarmManager.RTC_WAKEUP, whenMs, pending)
+            alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, whenMs, pending)
         }
     }
 
     fun notify(context: Context, title: String, body: String) {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= 26 && nm.getNotificationChannel(CHANNEL) == null) {
-            nm.createNotificationChannel(NotificationChannel(CHANNEL, "日程与账单提醒", NotificationManager.IMPORTANCE_HIGH))
+            nm.createNotificationChannel(NotificationChannel(CHANNEL, "日程弹窗提醒", NotificationManager.IMPORTANCE_HIGH).apply {
+                enableVibration(true)
+                enableLights(true)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            })
         }
         val open = PendingIntent.getActivity(
             context,
             title.hashCode(),
-            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val builder = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(context, CHANNEL) else Notification.Builder(context)
@@ -188,6 +208,11 @@ object ReminderScheduler {
                 .setContentText(body)
                 .setAutoCancel(true)
                 .setContentIntent(open)
+                .setFullScreenIntent(open, true)
+                .setCategory(Notification.CATEGORY_REMINDER)
+                .setVisibility(Notification.VISIBILITY_PUBLIC)
+                .setDefaults(Notification.DEFAULT_ALL)
+                .setPriority(Notification.PRIORITY_HIGH)
                 .build()
         )
     }

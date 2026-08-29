@@ -61,8 +61,31 @@ class GadgetbridgeImportActivity : Activity() {
                 val cols = columns(db, table); val time = pick(cols, "TIMESTAMP", "TIME") ?: return@forEach
                 val steps = pick(cols, "STEPS", "STEP_COUNT", "STEPS_COUNT", "SAMPLE_STEPS") ?: return@forEach
                 db.rawQuery("SELECT $time,$steps FROM $table", null).use { c -> while (c.moveToNext()) add(days, c.getLong(0), "steps", c.getDouble(1)) }
+                val stress = pick(cols, "STRESS")
+                if (stress != null) db.rawQuery("SELECT $time,$stress FROM $table", null).use { c -> while (c.moveToNext()) add(days, c.getLong(0), "stress", c.getDouble(1)) }
+                val heart = pick(cols, "HEART_RATE")
+                if (heart != null) db.rawQuery("SELECT $time,$heart FROM $table", null).use { c -> while (c.moveToNext()) add(days, c.getLong(0), "heartRate", c.getDouble(1)) }
+            }
+            tables.filter { it.uppercase(Locale.ROOT).contains("DAILY_SUMMARY") }.forEach { table ->
+                val cols = columns(db, table); val time = pick(cols, "TIMESTAMP") ?: return@forEach
+                pick(cols, "STEPS")?.let { col -> db.rawQuery("SELECT $time,$col FROM $table", null).use { c -> while (c.moveToNext()) setMetric(days, c.getLong(0), "steps", c.getDouble(1)) } }
+                pick(cols, "STRESS_AVG", "STRESS")?.let { col -> db.rawQuery("SELECT $time,$col FROM $table", null).use { c -> while (c.moveToNext()) setMetric(days, c.getLong(0), "stress", c.getDouble(1)) } }
+                pick(cols, "HR_AVG", "HEART_RATE")?.let { col -> db.rawQuery("SELECT $time,$col FROM $table", null).use { c -> while (c.moveToNext()) setMetric(days, c.getLong(0), "heartRate", c.getDouble(1)) } }
+            }
+            tables.filter { it.uppercase(Locale.ROOT) == "USER_ATTRIBUTES" }.forEach { table ->
+                val cols = columns(db, table); val height = pick(cols, "HEIGHT_CM"); val weight = pick(cols, "WEIGHT_KG")
+                if (height != null || weight != null) db.rawQuery("SELECT ${height ?: "NULL"},${weight ?: "NULL"},VALID_FROM_UTC FROM $table ORDER BY VALID_FROM_UTC DESC LIMIT 1", null).use { c ->
+                    if (c.moveToFirst()) { val timestamp = c.getLong(2); if (height != null && !c.isNull(0)) add(days, timestamp, "height", c.getDouble(0)); if (weight != null && !c.isNull(1)) add(days, timestamp, "weight", c.getDouble(1)) }
+                }
             }
             val out = JSONArray(); days.toSortedMap().forEach { (_, row) -> row.remove("_paiAt"); row.remove("_stressAt"); out.put(row) }; return out
+        }
+
+        private fun setMetric(days: MutableMap<String, JSONObject>, rawMs: Long, kind: String, value: Double) {
+            if (value <= 0 || rawMs <= 0) return
+            val instant = if (rawMs < 10_000_000_000L) Instant.ofEpochSecond(rawMs) else Instant.ofEpochMilli(rawMs)
+            val date = instant.atZone(ZoneId.systemDefault()).toLocalDate().toString()
+            days.getOrPut(date) { JSONObject().put("date", date).put("source", "gadgetbridge-direct") }.put(kind, value)
         }
 
         private fun columns(db: SQLiteDatabase, table: String): Set<String> = buildSet {

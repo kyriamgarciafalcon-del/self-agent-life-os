@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addDays,
   buildScopedSummary,
+  cnyWealthTotal,
   detectLegacyDemoData,
   isBackupPayload,
   localDateKey,
@@ -9,6 +10,10 @@ import {
   assetTotals,
   accountRole,
   applyLedger,
+  defaultCashId,
+  removeLedgerTransactionState,
+  resolvePaymentAccountId,
+  settleReimbursementState,
   wealthTotals,
   weekDates,
 } from '../app/product-logic';
@@ -130,6 +135,58 @@ describe('truthful product state', () => {
     }, 1);
     expect(repaid.find((item) => item.id === 'wechat')?.balance).toBe(64);
     expect(repaid.find((item) => item.id === 'bank')?.balance).toBe(36);
+  });
+
+  it('undoes a reimbursement deposit without losing the pending receivable', () => {
+    const paid = [
+      { id: 'pay', type: '资金账户', currency: 'CNY', balance: 800 },
+      { id: 'deposit', type: '储蓄卡', currency: 'CNY', balance: 100 },
+    ];
+    const original = { id: 'expense', kind: 'expense' as const, accountId: 'pay', accountAmount: 200, reimbursable: true, reimbursed: false };
+    const credit = { id: 'credit', kind: 'income' as const, accountId: 'deposit', accountAmount: 200 };
+    const settled = settleReimbursementState(paid, [original], original.id, credit);
+    expect(settled.accounts.find((item) => item.id === 'deposit')?.balance).toBe(300);
+    expect(settled.transactions.find((item) => item.id === original.id)).toMatchObject({ reimbursed: true, reimbursementTransactionId: 'credit' });
+    expect(settled.transactions.find((item) => item.id === credit.id)).toMatchObject({ reimbursementForId: 'expense' });
+
+    const undone = removeLedgerTransactionState(settled.accounts, settled.transactions, credit.id);
+    expect(undone.accounts.find((item) => item.id === 'deposit')?.balance).toBe(100);
+    expect(undone.transactions.find((item) => item.id === original.id)).toMatchObject({ reimbursed: false });
+  });
+
+  it('removes both sides when deleting an already reimbursed expense', () => {
+    const paid = [
+      { id: 'pay', type: '资金账户', currency: 'CNY', balance: 800 },
+      { id: 'deposit', type: '储蓄卡', currency: 'CNY', balance: 300 },
+    ];
+    const original = { id: 'expense', kind: 'expense' as const, accountId: 'pay', accountAmount: 200, reimbursable: true, reimbursed: true, reimbursementTransactionId: 'credit' };
+    const credit = { id: 'credit', kind: 'income' as const, accountId: 'deposit', accountAmount: 200, reimbursementForId: 'expense' };
+    const removed = removeLedgerTransactionState(paid, [credit, original], original.id);
+    expect(removed.accounts.find((item) => item.id === 'pay')?.balance).toBe(1000);
+    expect(removed.accounts.find((item) => item.id === 'deposit')?.balance).toBe(100);
+    expect(removed.transactions).toEqual([]);
+  });
+
+  it('resolves an auto-ledger hint to the actual user-created payment account', () => {
+    const accounts = [
+      { id: 'account-random', name: '我的支付宝', type: '资金账户', currency: 'CNY', balance: 500 },
+      { id: 'object', name: '笔记本电脑', type: '物品资产', currency: 'CNY', balance: 5000 },
+    ];
+    expect(resolvePaymentAccountId(accounts, 'alipay', '支付宝')).toBe('account-random');
+    expect(resolvePaymentAccountId([accounts[1]], 'alipay', '支付宝')).toBeUndefined();
+  });
+
+  it('does not use a physical asset as a default cash account', () => {
+    expect(defaultCashId([{ id: 'object', name: '电脑', type: '物品资产', currency: 'CNY', balance: 5000 }], 'CNY')).toBeUndefined();
+  });
+
+  it('converts all wealth to CNY only with a dated rate and leaves unknown currency out', () => {
+    const accounts = [
+      { id: 'cny', type: '资金账户', currency: 'CNY', balance: 100 },
+      { id: 'usd', type: '储蓄卡', currency: 'USD', balance: 100 },
+    ];
+    expect(cnyWealthTotal(accounts, [])).toEqual({ convertedCny: 100, unresolved: [{ currency: 'USD', amount: 100 }] });
+    expect(cnyWealthTotal(accounts, [], [{ currency: 'USD', cnyRate: 7.2, asOf: '2026-08-29', source: 'manual', updatedAt: '2026-08-29T12:00:00' }])).toEqual({ convertedCny: 820, unresolved: [] });
   });
 
   it('repaying 欠款 reduces debt instead of counting it as an asset', () => {

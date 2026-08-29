@@ -195,7 +195,35 @@ export function wealthTotals(accounts: WealthAccount[], transactions: WealthTxn[
     });
 }
 
-export type LedgerAccount = { id: string; type: string; currency: string; balance: number };
+export type ExchangeRate = {
+  currency: string;
+  cnyRate: number;
+  asOf: string;
+  source: 'manual';
+  updatedAt: string;
+};
+
+export type CnyWealthTotal = { convertedCny: number; unresolved: AssetLine[] };
+
+export function cnyWealthTotal(accounts: WealthAccount[], transactions: WealthTxn[] = [], rates: ExchangeRate[] = []): CnyWealthTotal {
+  const ratesByCurrency = new Map(rates.filter((rate) => Number.isFinite(rate.cnyRate) && rate.cnyRate > 0).map((rate) => [rate.currency, rate]));
+  let convertedCny = 0;
+  const unresolved = new Map<string, number>();
+  for (const line of wealthTotals(accounts, transactions)) {
+    const rate = line.currency === 'CNY' ? 1 : ratesByCurrency.get(line.currency)?.cnyRate;
+    if (!rate) {
+      unresolved.set(line.currency, (unresolved.get(line.currency) ?? 0) + line.net);
+      continue;
+    }
+    convertedCny += line.net * rate;
+  }
+  return {
+    convertedCny,
+    unresolved: [...unresolved.entries()].map(([currency, amount]) => ({ currency, amount })).filter((line) => line.amount !== 0),
+  };
+}
+
+export type LedgerAccount = { id: string; name?: string; type: string; currency: string; balance: number };
 export type LedgerTxn = {
   kind: 'expense' | 'income' | 'transfer';
   accountId: string;
@@ -206,9 +234,24 @@ export type LedgerTxn = {
   reimbursed?: boolean;
 };
 
+const POSTING_ACCOUNT_RE = /资金账户|储蓄卡|现金|储值账户|信用卡/;
+
+export function resolvePaymentAccountId(accounts: LedgerAccount[], source?: string, accountHint?: string): string | undefined {
+  const candidates = accounts.filter((account) => POSTING_ACCOUNT_RE.test(account.type));
+  const exact = candidates.find((account) => account.id === source || account.id === accountHint);
+  if (exact) return exact.id;
+  const raw = `${source ?? ''}${accountHint ?? ''}`.toLowerCase();
+  const tokens = [
+    /alipay|支付宝/.test(raw) ? '支付宝' : '',
+    /wechat|微信/.test(raw) ? '微信' : '',
+    accountHint?.trim() ?? '',
+  ].filter(Boolean);
+  return candidates.find((account) => tokens.some((token) => `${account.name ?? ''}${account.type}${account.id}`.toLowerCase().includes(token.toLowerCase())))?.id;
+}
+
 export function defaultCashId(accounts: LedgerAccount[], currency: string): string | undefined {
-  const matches = accounts.filter((account) => accountRole(account.type) === 'asset' && account.currency === currency);
-  return (matches.find((account) => /资金|储蓄|现金|支付宝|微信|银行/.test(`${account.type}${account.id}`)) ?? matches[0])?.id;
+  const matches = accounts.filter((account) => accountRole(account.type) === 'asset' && account.currency === currency && !/物品资产|理财账户/.test(account.type));
+  return (matches.find((account) => /资金|储蓄|现金|支付宝|微信|银行/.test(`${account.type}${account.name ?? ''}${account.id}`)) ?? matches[0])?.id;
 }
 
 function ledgerDelta(account: LedgerAccount, transaction: LedgerTxn): number {
@@ -233,4 +276,52 @@ export function applyLedger<T extends LedgerAccount>(accounts: T[], transaction:
     const next = account.balance + delta;
     return { ...account, balance: isDebtRole(accountRole(account.type)) ? Math.max(0, next) : next };
   });
+}
+
+export type LinkedLedgerTxn = LedgerTxn & {
+  id: string;
+  reimbursementForId?: string;
+  reimbursementTransactionId?: string;
+};
+
+export function settleReimbursementState<TA extends LedgerAccount, TT extends LinkedLedgerTxn>(
+  accounts: TA[],
+  transactions: TT[],
+  originalId: string,
+  credit: TT,
+): { accounts: TA[]; transactions: TT[] } {
+  const original = transactions.find((item) => item.id === originalId);
+  if (!original?.reimbursable || original.reimbursed) return { accounts, transactions };
+  const linkedCredit = { ...credit, reimbursementForId: original.id } as TT;
+  return {
+    accounts: applyLedger(accounts, linkedCredit, 1),
+    transactions: [
+      linkedCredit,
+      ...transactions.map((item) => item.id === original.id
+        ? { ...item, reimbursed: true, reimbursementTransactionId: linkedCredit.id } as TT
+        : item),
+    ],
+  };
+}
+
+export function removeLedgerTransactionState<TA extends LedgerAccount, TT extends LinkedLedgerTxn>(
+  accounts: TA[],
+  transactions: TT[],
+  id: string,
+): { accounts: TA[]; transactions: TT[] } {
+  const previous = transactions.find((item) => item.id === id);
+  if (!previous) return { accounts, transactions };
+  let nextAccounts = applyLedger(accounts, previous, -1);
+  let nextTransactions = transactions.filter((item) => item.id !== previous.id);
+  if (previous.reimbursementForId) {
+    nextTransactions = nextTransactions.map((item) => item.id === previous.reimbursementForId
+      ? { ...item, reimbursed: false, reimbursementTransactionId: undefined } as TT
+      : item);
+  }
+  if (previous.reimbursementTransactionId) {
+    const credit = transactions.find((item) => item.id === previous.reimbursementTransactionId);
+    if (credit) nextAccounts = applyLedger(nextAccounts, credit, -1);
+    nextTransactions = nextTransactions.filter((item) => item.id !== previous.reimbursementTransactionId);
+  }
+  return { accounts: nextAccounts, transactions: nextTransactions };
 }

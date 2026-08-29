@@ -177,8 +177,7 @@ class MainActivity : Activity() {
         while (true) {
             val transaction = pendingTransactions.poll() ?: break
             val json = ConfirmBus.toJson(transaction)
-            val script = "window.dispatchEvent(new CustomEvent('self-agent:auto-txn',{detail:$json}));" +
-                "window.onAutoTxn && window.onAutoTxn($json);"
+            val script = "window.dispatchEvent(new CustomEvent('self-agent:auto-txn',{detail:$json}));"
             webView.evaluateJavascript(script, null)
         }
         val trips = JSONArray()

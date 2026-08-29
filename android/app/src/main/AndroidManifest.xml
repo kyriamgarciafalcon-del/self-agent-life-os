@@ -57,7 +57,7 @@
             android:exported="false"
             android:excludeFromRecents="true"
             android:taskAffinity=""
-            android:theme="@android:style/Theme.NoDisplay" />
+            android:theme="@style/ReminderPopupTheme" />
         <activity
             android:name=".vault.VaultSettingsActivity"
             android:exported="true"

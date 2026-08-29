@@ -161,11 +161,12 @@ object ReminderScheduler {
         }.timeInMillis
     }.getOrDefault(0L)
 
-    private fun alarmIntent(context: Context, key: String): Intent =
-        Intent(context, ReminderFireActivity::class.java)
+    private fun alarmIntent(context: Context, key: String): Intent {
+        val intent = Intent(context, ReminderFireActivity::class.java)
             .setData(Uri.parse("selfagent://reminder/$key"))
             .putExtra("key", key)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        return intent
 
     private fun cancelAlarm(context: Context, alarm: AlarmManager, key: String) {
         val pending = PendingIntent.getActivity(

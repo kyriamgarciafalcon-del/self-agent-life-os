@@ -126,3 +126,103 @@ export function assetTotals(accounts: AssetAccount[]): AssetLine[] {
       return (leftRank === -1 ? 99 : leftRank) - (rightRank === -1 ? 99 : rightRank) || left.currency.localeCompare(right.currency);
     });
 }
+
+export type AccountRole = 'asset' | 'receivable' | 'liability' | 'payable' | 'plan';
+
+export function accountRole(type: string): AccountRole {
+  if (/报销|待收回|应收/.test(type)) return 'receivable';
+  if (/信用卡|待还款|信贷|花呗|白条/.test(type)) return 'liability';
+  if (/欠款|应付/.test(type)) return 'payable';
+  if (/订阅/.test(type)) return 'plan';
+  return 'asset';
+}
+
+export function isDebtRole(role: AccountRole): boolean {
+  return role === 'liability' || role === 'payable';
+}
+
+export function normalizeAccountBalance(type: string, balance: number): number {
+  const value = Number.isFinite(balance) ? balance : 0;
+  return isDebtRole(accountRole(type)) ? Math.abs(value) : value;
+}
+
+export type WealthAccount = { id?: string; type: string; currency: string; balance: number };
+export type WealthLine = {
+  currency: string;
+  assets: number;
+  receivable: number;
+  liability: number;
+  payable: number;
+  net: number;
+};
+
+export function wealthTotals(accounts: WealthAccount[]): WealthLine[] {
+  const map = new Map<string, WealthLine>();
+  const line = (currency: string) => map.get(currency) ?? { currency, assets: 0, receivable: 0, liability: 0, payable: 0, net: 0 };
+  for (const account of accounts) {
+    const currency = account.currency || 'CNY';
+    const current = line(currency);
+    const amount = normalizeAccountBalance(account.type, account.balance);
+    const role = accountRole(account.type);
+    if (role === 'asset') current.assets += amount;
+    else if (role === 'receivable') current.receivable += amount;
+    else if (role === 'liability') current.liability += amount;
+    else if (role === 'payable') current.payable += amount;
+    map.set(currency, current);
+  }
+  return [...map.values()]
+    .map((item) => ({ ...item, net: item.assets + item.receivable - item.liability - item.payable }))
+    .sort((left, right) => {
+      const leftRank = ASSET_CURRENCY_ORDER.indexOf(left.currency);
+      const rightRank = ASSET_CURRENCY_ORDER.indexOf(right.currency);
+      return (leftRank === -1 ? 99 : leftRank) - (rightRank === -1 ? 99 : rightRank) || left.currency.localeCompare(right.currency);
+    });
+}
+
+export type LedgerAccount = { id: string; type: string; currency: string; balance: number };
+export type LedgerTxn = {
+  kind: 'expense' | 'income' | 'transfer';
+  accountId: string;
+  targetAccountId?: string;
+  accountAmount: number;
+  reimbursable?: boolean;
+  reimburseAccountId?: string;
+  reimbursed?: boolean;
+};
+
+export function defaultReceivableId(accounts: LedgerAccount[], currency: string): string | undefined {
+  const matches = accounts.filter((account) => accountRole(account.type) === 'receivable' && account.currency === currency);
+  return (matches.find((account) => /报销/.test(account.type)) ?? matches[0])?.id;
+}
+
+export function defaultCashId(accounts: LedgerAccount[], currency: string): string | undefined {
+  const matches = accounts.filter((account) => accountRole(account.type) === 'asset' && account.currency === currency);
+  return (matches.find((account) => /资金|储蓄|现金|支付宝|微信|银行/.test(`${account.type}${account.id}`)) ?? matches[0])?.id;
+}
+
+function ledgerDelta(account: LedgerAccount, transaction: LedgerTxn): number {
+  const amount = transaction.accountAmount;
+  const role = accountRole(account.type);
+  const debt = isDebtRole(role);
+  if (account.id === transaction.accountId) {
+    if (transaction.kind === 'income') return debt ? -amount : amount;
+    if (transaction.kind === 'expense') return debt ? amount : -amount;
+    if (transaction.kind === 'transfer') return debt ? amount : -amount;
+  }
+  if (transaction.kind === 'transfer' && account.id === transaction.targetAccountId) {
+    return debt ? -amount : amount;
+  }
+  if (transaction.kind === 'expense' && transaction.reimbursable && !transaction.reimbursed && account.id === transaction.reimburseAccountId) {
+    return amount;
+  }
+  return 0;
+}
+
+export function applyLedger<T extends LedgerAccount>(accounts: T[], transaction: LedgerTxn, factor: 1 | -1): T[] {
+  return accounts.map((account) => {
+    const delta = ledgerDelta(account, transaction) * factor;
+    if (!delta) return account;
+    const next = account.balance + delta;
+    return { ...account, balance: isDebtRole(accountRole(account.type)) ? Math.max(0, next) : next };
+  });
+}

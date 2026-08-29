@@ -7,6 +7,9 @@ import {
   localDateKey,
   parseNaturalCapture,
   assetTotals,
+  accountRole,
+  applyLedger,
+  wealthTotals,
   weekDates,
 } from '../app/product-logic';
 
@@ -87,5 +90,58 @@ describe('truthful product state', () => {
       { currency: 'CNY', amount: 1120.5 },
       { currency: 'USD', amount: 99 },
     ]);
+  });
+
+  it('treats reimbursement as receivable and 欠款 as payable debt', () => {
+    expect(accountRole('报销账户')).toBe('receivable');
+    expect(accountRole('待收回')).toBe('receivable');
+    expect(accountRole('欠款')).toBe('payable');
+    expect(accountRole('信用卡')).toBe('liability');
+    expect(wealthTotals([
+      { type: '资金账户', currency: 'CNY', balance: 1000 },
+      { type: '报销账户', currency: 'CNY', balance: 36 },
+      { type: '欠款', currency: 'CNY', balance: 80 },
+      { type: '信用卡', currency: 'CNY', balance: -200 },
+    ])).toEqual([{ currency: 'CNY', assets: 1000, receivable: 36, liability: 200, payable: 80, net: 756 }]);
+  });
+
+  it('posts a reimbursable expense onto cash and the reimbursement account', () => {
+    const accounts = [
+      { id: 'wechat', type: '资金账户', currency: 'CNY', balance: 100 },
+      { id: 'reimburse', type: '报销账户', currency: 'CNY', balance: 0 },
+    ];
+    const posted = applyLedger(accounts, {
+      kind: 'expense',
+      accountId: 'wechat',
+      accountAmount: 36,
+      reimbursable: true,
+      reimburseAccountId: 'reimburse',
+    }, 1);
+    expect(posted.find((item) => item.id === 'wechat')?.balance).toBe(64);
+    expect(posted.find((item) => item.id === 'reimburse')?.balance).toBe(36);
+    const repaid = applyLedger(posted, {
+      kind: 'transfer',
+      accountId: 'reimburse',
+      targetAccountId: 'wechat',
+      accountAmount: 36,
+    }, 1);
+    expect(repaid.find((item) => item.id === 'wechat')?.balance).toBe(100);
+    expect(repaid.find((item) => item.id === 'reimburse')?.balance).toBe(0);
+  });
+
+  it('repaying 欠款 reduces debt instead of counting it as an asset', () => {
+    const accounts = [
+      { id: 'cash', type: '资金账户', currency: 'CNY', balance: 200 },
+      { id: 'owe', type: '欠款', currency: 'CNY', balance: 80 },
+    ];
+    const next = applyLedger(accounts, {
+      kind: 'transfer',
+      accountId: 'cash',
+      targetAccountId: 'owe',
+      accountAmount: 80,
+    }, 1);
+    expect(next.find((item) => item.id === 'cash')?.balance).toBe(120);
+    expect(next.find((item) => item.id === 'owe')?.balance).toBe(0);
+    expect(wealthTotals(next)[0].net).toBe(120);
   });
 });

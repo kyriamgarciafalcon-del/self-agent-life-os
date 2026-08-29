@@ -105,3 +105,15 @@ export function isBackupPayload(value: unknown): value is Record<string, unknown
   const optionalArrays = ['recurringRules', 'healthRecords', 'travels', 'investments', 'memories', 'vaultItems'];
   return optionalArrays.every((key) => raw[key] === undefined || Array.isArray(raw[key]));
 }
+
+export type AssetAccount = { currency: string; balance: number };
+
+export function totalAssets(accounts: AssetAccount[], currency: string): number {
+  return accounts
+    .filter((account) => account.currency === currency)
+    .reduce((sum, account) => sum + (Number.isFinite(account.balance) ? account.balance : 0), 0);
+}
+
+export function otherAssetCurrencies(accounts: AssetAccount[], currency: string): string[] {
+  return [...new Set(accounts.filter((account) => account.currency !== currency).map((account) => account.currency))];
+}

@@ -4,12 +4,16 @@ import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
 import java.util.Locale
 
 class CaptureController(
@@ -35,8 +39,22 @@ class CaptureController(
         activity.startActivityForResult(Intent(Intent.ACTION_GET_CONTENT).setType("image/*"), REQUEST_IMAGE)
     }
 
-    fun onImage(uri: android.net.Uri?) {
-        // Image OCR models are not bundled; they inflated the APK from ~4MB to ~47MB.
+    fun onImage(uri: Uri?) {
+        if (uri == null) {
+            emit("")
+            return
+        }
+        val image = runCatching { InputImage.fromFilePath(activity, uri) }.getOrNull()
+        if (image == null) {
+            emit("")
+            return
+        }
+        TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
+            .process(image)
+            .addOnSuccessListener { result ->
+                emit(result.text.replace('\n', ' ').trim())
+            }
+            .addOnFailureListener { emit("") }
     }
 
     fun destroy() {

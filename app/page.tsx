@@ -640,7 +640,7 @@ export default function Home() {
   function pickCaptureImage() {
     const native = (window as Window & { SelfAgentNative?: { pickCaptureImage?: () => void } }).SelfAgentNative;
     if (!native?.pickCaptureImage) { notify('请在 Android App 中选择图片'); return; }
-    notify('请对照图片把文字打进输入框');
+    notify('正在识别图片文字');
     native.pickCaptureImage();
   }
   function confirmDraft() {

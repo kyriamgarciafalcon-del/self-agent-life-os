@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
   addDays,
+  buildHealthBriefing,
+  buildButlerSystemPrompt,
   buildScopedSummary,
   cnyWealthTotal,
   detectLegacyDemoData,
   isBackupPayload,
   localDateKey,
   migrateLegacyReimbursementAccounts,
+  normalizeMemory,
+  parseButlerModelOutput,
   parseNaturalCapture,
   assetTotals,
   accountRole,
@@ -64,6 +68,128 @@ describe('natural capture', () => {
       category: '餐饮',
       source: '微信',
     });
+  });
+
+  it('parses a train trip with number, stations and time as travel', () => {
+    expect(parseNaturalCapture('明天 G123 北京南到上海虹桥 09:00', '2026-08-29')).toMatchObject({
+      kind: 'travel',
+      travelKind: 'train',
+      number: 'G123',
+      from: '北京南',
+      to: '上海虹桥',
+      date: '2026-08-30',
+      departTime: '09:00',
+    });
+  });
+
+  it('parses a flight with number, airports and time as travel', () => {
+    expect(parseNaturalCapture('航班 MU5101 明天上海虹桥到北京首都 08:20', '2026-08-29')).toMatchObject({
+      kind: 'travel',
+      travelKind: 'flight',
+      number: 'MU5101',
+      from: '上海虹桥',
+      to: '北京首都',
+      date: '2026-08-30',
+      departTime: '08:20',
+    });
+  });
+
+  it('parses health metrics for steps heart rate stress sleep PAI height and weight', () => {
+    expect(parseNaturalCapture('今天走了8000步', '2026-08-29')).toEqual({ kind: 'health', metric: 'steps', value: 8000 });
+    expect(parseNaturalCapture('心率 62', '2026-08-29')).toEqual({ kind: 'health', metric: 'heartRate', value: 62 });
+    expect(parseNaturalCapture('压力41', '2026-08-29')).toEqual({ kind: 'health', metric: 'stress', value: 41 });
+    expect(parseNaturalCapture('睡眠 6.5 小时', '2026-08-29')).toEqual({ kind: 'health', metric: 'sleep', value: 6.5 });
+    expect(parseNaturalCapture('PAI 88', '2026-08-29')).toEqual({ kind: 'health', metric: 'pai', value: 88 });
+    expect(parseNaturalCapture('身高 172', '2026-08-29')).toEqual({ kind: 'health', metric: 'height', value: 172 });
+    expect(parseNaturalCapture('体重 68.5 公斤', '2026-08-29')).toEqual({ kind: 'health', metric: 'weight', value: 68.5 });
+  });
+});
+
+describe('butler action protocol', () => {
+  it('parses only allowed drafts and never treats the model output as a mutation', () => {
+    const parsed = parseButlerModelOutput(JSON.stringify({
+      reply: '建议记下这趟车，确认后才会保存。',
+      actions: [
+        { type: 'create_schedule', payload: { title: '吃药', date: '2026-08-30', time: '09:00' } },
+        { type: 'create_expense', payload: { amount: 36, merchant: '午饭' } },
+        { type: 'create_travel', payload: { travelKind: 'train', number: 'G123', from: '北京南', to: '上海虹桥', date: '2026-08-30', departTime: '09:00' } },
+        { type: 'create_health', payload: { metric: 'steps', value: 8000 } },
+        { type: 'add_memory', payload: { title: '早睡', note: '23:30 前准备' } },
+        { type: 'update_memory', payload: { id: 'm1', title: '每月结余至少 2000 元' } },
+        { type: 'pause_memory', payload: { id: 'm2' } },
+        { type: 'delete_memory', payload: { id: 'm3' } },
+        { type: 'wipe_vault', payload: { id: 'v1' } },
+      ],
+    }));
+    expect(parsed.reply).toContain('确认后才会保存');
+    expect(parsed.actions.map((item) => item.type)).toEqual([
+      'create_schedule',
+      'create_expense',
+      'create_travel',
+      'create_health',
+      'add_memory',
+      'update_memory',
+      'pause_memory',
+      'delete_memory',
+    ]);
+    expect(parsed.mutatesState).toBe(false);
+  });
+
+  it('rejects incomplete expense drafts and secret-bearing payloads', () => {
+    const parsed = parseButlerModelOutput('```json\n{"reply":"草稿","actions":[{"type":"create_expense","payload":{"merchant":"午饭"}},{"type":"add_memory","payload":{"title":"邮箱","password":"secret123","note":"不要外传"}}]}\n```');
+    expect(parsed.actions).toEqual([]);
+  });
+
+  it('treats plain assistant text as a reply with no actions', () => {
+    expect(parseButlerModelOutput('今天先把午饭记上。')).toEqual({ reply: '今天先把午饭记上。', actions: [], mutatesState: false });
+  });
+});
+
+describe('butler privacy and health briefing', () => {
+  it('fills source purpose updatedAt and status for legacy memories', () => {
+    expect(normalizeMemory({ id: 'm1', kind: '目标', title: '每月结余至少 2,000 元', note: '用于生成财务提醒，不自动修改账户。', active: true })).toMatchObject({
+      id: 'm1',
+      title: '每月结余至少 2,000 元',
+      active: true,
+      status: '使用中',
+      source: '本机已有记忆',
+      purpose: '用于生成财务提醒，不自动修改账户。',
+      updatedAt: '',
+    });
+  });
+
+  it('lists health data range evidence missing metrics and a non-diagnosis boundary', () => {
+    const briefing = buildHealthBriefing([
+      { kind: 'height', value: 172, createdAt: '2026-08-01' },
+      { kind: 'sleep', value: 6.5, createdAt: '2026-08-29' },
+    ], true);
+    expect(briefing.allowed).toBe(true);
+    expect(briefing.rangeLabel).toContain('2026-08-01');
+    expect(briefing.rangeLabel).toContain('2026-08-29');
+    expect(briefing.evidence).toContain('身高172cm');
+    expect(briefing.evidence).toContain('睡眠6.5小时');
+    expect(briefing.missing).toEqual(expect.arrayContaining(['体重', '心率', '压力', 'PAI', '步数']));
+    expect(briefing.disclaimer).toContain('不是诊断');
+  });
+
+  it('keeps passwords out of the butler prompt and withholds health evidence when permission is off', () => {
+    const prompt = buildButlerSystemPrompt({
+      today: '2026-08-29',
+      month: '2026-08',
+      privacy: { schedule: true, finance: true, health: false },
+      schedules: [{ date: '2026-08-29', done: false, title: '周会' }],
+      transactions: [{ createdAt: '2026-08-29' }],
+      healthRecords: [{ kind: 'heartRate', value: 62, createdAt: '2026-08-29' }],
+      memories: [{ active: true, title: '每月还债', note: '优先完成', source: '用户确认', purpose: '财务提醒', updatedAt: '2026-08-20' }],
+      vaultItems: [{ title: '邮箱', password: 'hunter2' }],
+    });
+    expect(prompt).toContain('日程未完成=周会');
+    expect(prompt).toContain('健康权限关闭');
+    expect(prompt).not.toContain('hunter2');
+    expect(prompt).not.toContain('心率62');
+    expect(prompt).toContain('create_schedule');
+    expect(prompt).toContain('只能返回草稿');
+    expect(prompt).toContain('不是诊断');
   });
 });
 

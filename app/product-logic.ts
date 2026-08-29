@@ -33,9 +33,14 @@ export function weekDates(anchor: string): WeekDate[] {
   });
 }
 
+export type HealthMetric = 'steps' | 'heartRate' | 'stress' | 'sleep' | 'pai' | 'height' | 'weight';
+export type TravelKind = 'train' | 'flight';
+
 export type NaturalCapture =
   | { kind: 'expense'; amount: number; merchant: string; category: string; source: '微信' | '支付宝' | '银行卡' }
-  | { kind: 'schedule'; title: string; date: string; time: string };
+  | { kind: 'schedule'; title: string; date: string; time: string }
+  | { kind: 'travel'; travelKind: TravelKind; number: string; from: string; to: string; date: string; departTime: string; arriveTime?: string }
+  | { kind: 'health'; metric: HealthMetric; value: number };
 
 function categoryForText(text: string): string {
   if (/饭|餐|咖啡|奶茶|菜/.test(text)) return '餐饮';
@@ -45,7 +50,62 @@ function categoryForText(text: string): string {
   return '其他';
 }
 
+const HEALTH_CAPTURE_PATTERNS: { metric: HealthMetric; pattern: RegExp }[] = [
+  { metric: 'steps', pattern: /(?:走了?|步数)\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*步/ },
+  { metric: 'heartRate', pattern: /心率\s*(\d+(?:\.\d+)?)|(\d+)\s*(?:次\/分|bpm)/i },
+  { metric: 'stress', pattern: /压力\s*(\d+(?:\.\d+)?)/ },
+  { metric: 'sleep', pattern: /睡眠?\s*(\d+(?:\.\d+)?)\s*小时?/ },
+  { metric: 'pai', pattern: /PAI\s*(\d+(?:\.\d+)?)/i },
+  { metric: 'height', pattern: /身高\s*(\d+(?:\.\d+)?)/ },
+  { metric: 'weight', pattern: /体重\s*(\d+(?:\.\d+)?)/ },
+];
+
+function parseHealthCapture(text: string): Extract<NaturalCapture, { kind: 'health' }> | null {
+  if (/(?:¥|￥)?\s*\d+(?:\.\d{1,2})?\s*(?:元|块)/.test(text) && /花|付|买|消费|微信|支付宝|银行卡|银行/.test(text)) return null;
+  for (const item of HEALTH_CAPTURE_PATTERNS) {
+    const match = text.match(item.pattern);
+    const raw = match?.[1] || match?.[2];
+    if (!raw) continue;
+    const value = Number(raw);
+    if (Number.isFinite(value) && value > 0) return { kind: 'health', metric: item.metric, value };
+  }
+  return null;
+}
+
+function captureDate(text: string, today: string): string {
+  if (/后天/.test(text)) return addDaysKey(today, 2);
+  if (/明天/.test(text)) return addDaysKey(today, 1);
+  const dateMatch = text.match(/(?:(\d{4})年)?(\d{1,2})月(\d{1,2})日/);
+  if (!dateMatch) return today;
+  const year = dateMatch[1] || today.slice(0, 4);
+  return `${year}-${String(dateMatch[2]).padStart(2, '0')}-${String(dateMatch[3]).padStart(2, '0')}`;
+}
+
+function parseTravelCapture(text: string, today: string): Extract<NaturalCapture, { kind: 'travel' }> | null {
+  const train = text.match(/([GDCZTK]\d{1,5})次?/i);
+  const flight = text.match(/\b([A-Z]{2}\d{3,4})\b/i);
+  const travelKind: TravelKind | null = train ? 'train' : (flight && /航班|起飞|登机|机场|飞机/.test(text) ? 'flight' : null);
+  if (!travelKind) return null;
+  const number = (train?.[1] || flight?.[1] || '').toUpperCase();
+  const routeSource = text.replace(/今天|明天|后天/g, ' ');
+  const route = routeSource.match(/([\u4e00-\u9fa5]{2,12})(?:站|机场)?\s*[-—至到]\s*([\u4e00-\u9fa5]{2,12})(?:站|机场)?/);
+  const times = [...text.matchAll(/(\d{1,2})\s*(?::|：)\s*(\d{2})/g)].map((item) => `${String(Math.min(Number(item[1]), 23)).padStart(2, '0')}:${item[2]}`);
+  return {
+    kind: 'travel',
+    travelKind,
+    number,
+    from: route?.[1] || '待确认',
+    to: route?.[2] || '待确认',
+    date: captureDate(text, today),
+    departTime: times[0] || '08:00',
+    arriveTime: times[1],
+  };
+}
+
 export function parseNaturalCapture(text: string, today = localDateKey()): NaturalCapture {
+  const health = parseHealthCapture(text);
+  if (health) return health;
+
   const amountMatch = text.match(/(?:¥|￥)?\s*(\d+(?:\.\d{1,2})?)\s*(?:元|块)/);
   if (amountMatch && /花|付|买|消费|微信|支付宝|银行卡|银行|元|块/.test(text)) {
     const source = /支付宝/.test(text) ? '支付宝' : /银行卡|银行/.test(text) ? '银行卡' : '微信';
@@ -58,10 +118,13 @@ export function parseNaturalCapture(text: string, today = localDateKey()): Natur
     return { kind: 'expense', amount: Number(amountMatch[1]), merchant, category: categoryForText(text), source };
   }
 
+  const travel = parseTravelCapture(text, today);
+  if (travel) return travel;
+
   const timeMatch = text.match(/(\d{1,2})\s*(?::|：|点)\s*(\d{0,2})/);
   const hour = Math.min(Number(timeMatch?.[1] ?? 10), 23);
   const minute = Math.min(Number(timeMatch?.[2] || 0), 59);
-  const date = /后天/.test(text) ? addDaysKey(today, 2) : /明天/.test(text) ? addDaysKey(today, 1) : today;
+  const date = captureDate(text, today);
   const title = text
     .replace(/今天|明天|后天/g, ' ')
     .replace(/\d{1,2}\s*(?::|：|点)\s*\d{0,2}/, ' ')
@@ -79,7 +142,7 @@ type ScopedSummaryInput = {
   schedules: { date: string; done: boolean; title: string }[];
   transactions: { createdAt: string }[];
   healthRecords: HealthMetricRecord[];
-  memories: { active: boolean; title: string; note: string }[];
+  memories: { active: boolean; title: string; note: string; source?: string; purpose?: string; updatedAt?: string }[];
 };
 
 export type HealthMetricRecord = { kind: string; value: number; createdAt?: string; note?: string; externalKey?: string };
@@ -152,6 +215,192 @@ export function buildScopedSummary(input: ScopedSummaryInput): string {
   const health = input.privacy.health ? summarizeHealth(input.healthRecords) : '健康权限关闭';
   const memories = input.memories.filter((item) => item.active).map((item) => `${item.title}（${item.note}）`).join('；') || '无';
   return `你是 Self Agent 本机管家。只能使用这些摘要：${schedule}；${finance}；${health}；用户允许的记忆=${memories}。禁止索取或输出密码、验证码、私钥、助记词、完整卡号。健康不是诊断，财务不是投资建议。`;
+}
+
+export type MemoryStatus = '使用中' | '已暂停';
+export type MemoryRecord = {
+  id: string;
+  kind: string;
+  title: string;
+  note: string;
+  active: boolean;
+  status: MemoryStatus;
+  source: string;
+  purpose: string;
+  updatedAt: string;
+};
+
+export function normalizeMemory(raw: Partial<MemoryRecord> & { id?: string; title?: string; note?: string; active?: boolean }): MemoryRecord {
+  const note = String(raw.note || '');
+  const active = raw.active !== false;
+  return {
+    id: String(raw.id || ''),
+    kind: String(raw.kind || '观察'),
+    title: String(raw.title || '未命名记忆'),
+    note,
+    active,
+    status: active ? '使用中' : '已暂停',
+    source: String(raw.source || '本机已有记忆'),
+    purpose: String(raw.purpose || note || '用于管家建议'),
+    updatedAt: String(raw.updatedAt || ''),
+  };
+}
+
+export type HealthBriefing = {
+  allowed: boolean;
+  rangeLabel: string;
+  evidence: string;
+  missing: string[];
+  disclaimer: string;
+};
+
+export function buildHealthBriefing(records: HealthMetricRecord[], allowed: boolean): HealthBriefing {
+  const disclaimer = '这是本机记录摘要，不是诊断，也不能替代专业医疗意见。';
+  if (!allowed) {
+    return { allowed: false, rangeLabel: '健康权限关闭', evidence: '健康权限关闭', missing: HEALTH_SUMMARY_ORDER.map((item) => item.label), disclaimer };
+  }
+  const dates = records.map((item) => String(item.createdAt || '')).filter(Boolean).sort();
+  const rangeLabel = dates.length ? `${dates[0]} 至 ${dates[dates.length - 1]}，共 ${records.length} 条` : '尚无健康记录';
+  const missing = HEALTH_SUMMARY_ORDER.filter((item) => latestHealthByKind(records, item.kind) == null).map((item) => item.label);
+  return { allowed: true, rangeLabel, evidence: summarizeHealth(records), missing, disclaimer };
+}
+
+export const BUTLER_ACTION_TYPES = [
+  'create_schedule',
+  'create_expense',
+  'create_travel',
+  'create_health',
+  'add_memory',
+  'update_memory',
+  'pause_memory',
+  'delete_memory',
+] as const;
+
+export type ButlerActionType = typeof BUTLER_ACTION_TYPES[number];
+export type ButlerAction =
+  | { type: 'create_schedule'; payload: { title: string; date: string; time: string } }
+  | { type: 'create_expense'; payload: { amount: number; merchant: string; category?: string; source?: string } }
+  | { type: 'create_travel'; payload: { travelKind: TravelKind; number: string; from: string; to: string; date: string; departTime: string; arriveTime?: string } }
+  | { type: 'create_health'; payload: { metric: HealthMetric; value: number } }
+  | { type: 'add_memory'; payload: { title: string; note?: string; kind?: string; purpose?: string } }
+  | { type: 'update_memory'; payload: { id: string; title?: string; note?: string; purpose?: string } }
+  | { type: 'pause_memory'; payload: { id: string } }
+  | { type: 'delete_memory'; payload: { id: string } };
+
+export type ButlerModelResponse = { reply: string; actions: ButlerAction[]; mutatesState: false };
+
+const SECRET_FIELD = /password|passwd|secret|apikey|token|otp|seed|mnemonic|私钥|密码|验证码|助记词/i;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const TIME_RE = /^\d{2}:\d{2}$/;
+const HEALTH_METRICS: HealthMetric[] = ['steps', 'heartRate', 'stress', 'sleep', 'pai', 'height', 'weight'];
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function hasSecretFields(payload: Record<string, unknown>): boolean {
+  return Object.entries(payload).some(([key, value]) => SECRET_FIELD.test(key) || (typeof value === 'string' && SECRET_FIELD.test(value)));
+}
+
+function requiredString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+export function validateButlerAction(value: unknown): ButlerAction | null {
+  if (!isPlainObject(value)) return null;
+  const type = value.type;
+  const payload = value.payload;
+  if (typeof type !== 'string' || !BUTLER_ACTION_TYPES.includes(type as ButlerActionType) || !isPlainObject(payload) || hasSecretFields(payload)) return null;
+  if (type === 'create_schedule') {
+    const title = requiredString(payload.title);
+    const date = requiredString(payload.date);
+    const time = requiredString(payload.time);
+    if (!title || !date || !time || !DATE_RE.test(date) || !TIME_RE.test(time)) return null;
+    return { type, payload: { title, date, time } };
+  }
+  if (type === 'create_expense') {
+    const amount = Number(payload.amount);
+    const merchant = requiredString(payload.merchant);
+    if (!(amount > 0) || !merchant) return null;
+    return { type, payload: { amount, merchant, category: requiredString(payload.category) || undefined, source: requiredString(payload.source) || undefined } };
+  }
+  if (type === 'create_travel') {
+    const travelKind = payload.travelKind === 'flight' ? 'flight' : payload.travelKind === 'train' ? 'train' : null;
+    const number = requiredString(payload.number);
+    const from = requiredString(payload.from);
+    const to = requiredString(payload.to);
+    const date = requiredString(payload.date);
+    const departTime = requiredString(payload.departTime);
+    if (!travelKind || !number || !from || !to || !date || !departTime || !DATE_RE.test(date) || !TIME_RE.test(departTime)) return null;
+    const arriveTime = requiredString(payload.arriveTime);
+    return { type, payload: { travelKind, number, from, to, date, departTime, arriveTime: arriveTime && TIME_RE.test(arriveTime) ? arriveTime : undefined } };
+  }
+  if (type === 'create_health') {
+    const metric = HEALTH_METRICS.includes(payload.metric as HealthMetric) ? payload.metric as HealthMetric : null;
+    const metricValue = Number(payload.value);
+    if (!metric || !(metricValue > 0)) return null;
+    return { type, payload: { metric, value: metricValue } };
+  }
+  if (type === 'add_memory') {
+    const title = requiredString(payload.title);
+    if (!title) return null;
+    return { type, payload: { title, note: requiredString(payload.note) || undefined, kind: requiredString(payload.kind) || undefined, purpose: requiredString(payload.purpose) || undefined } };
+  }
+  const id = requiredString(payload.id);
+  if (!id) return null;
+  if (type === 'update_memory') {
+    return { type, payload: { id, title: requiredString(payload.title) || undefined, note: requiredString(payload.note) || undefined, purpose: requiredString(payload.purpose) || undefined } };
+  }
+  if (type === 'pause_memory' || type === 'delete_memory') return { type, payload: { id } };
+  return null;
+}
+
+function extractJsonObject(text: string): Record<string, unknown> | null {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = (fenced?.[1] || text).trim();
+  const start = candidate.indexOf('{');
+  const end = candidate.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+  try {
+    const parsed = JSON.parse(candidate.slice(start, end + 1)) as unknown;
+    return isPlainObject(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export function parseButlerModelOutput(text: string): ButlerModelResponse {
+  const parsed = extractJsonObject(text);
+  if (!parsed) return { reply: text.trim(), actions: [], mutatesState: false };
+  const reply = typeof parsed.reply === 'string' && parsed.reply.trim() ? parsed.reply.trim() : text.trim();
+  const actions = Array.isArray(parsed.actions)
+    ? parsed.actions.map(validateButlerAction).filter((item): item is ButlerAction => Boolean(item))
+    : [];
+  return { reply, actions, mutatesState: false };
+}
+
+export function describeButlerDataScope(privacy: { schedule: boolean; finance: boolean; health: boolean }) {
+  return [
+    { key: 'schedule', label: '日程', allowed: privacy.schedule },
+    { key: 'finance', label: '财务', allowed: privacy.finance },
+    { key: 'health', label: '健康', allowed: privacy.health },
+    { key: 'vault', label: '密码', allowed: false },
+  ] as const;
+}
+
+export function buildButlerSystemPrompt(input: ScopedSummaryInput & { vaultItems?: unknown }): string {
+  const briefing = buildHealthBriefing(input.healthRecords, input.privacy.health);
+  const healthLine = input.privacy.health
+    ? `健康数据范围=${briefing.rangeLabel}；证据=${briefing.evidence}；缺失=${briefing.missing.join('、') || '无'}；${briefing.disclaimer}`
+    : `健康权限关闭；${briefing.disclaimer}`;
+  return [
+    buildScopedSummary(input),
+    '模型只能返回草稿，禁止直接改本地状态。用户确认后才会写入。',
+    '可用动作：create_schedule、create_expense、create_travel、create_health、add_memory、update_memory、pause_memory、delete_memory。',
+    '请只输出 JSON：{"reply":"简体中文回复","actions":[{"type":"动作名","payload":{}}]}。没有动作时 actions 为空数组。',
+    healthLine,
+    '密码、验证码、私钥、助记词、完整卡号永不进入上下文，也不许索取。财务不是投资建议。健康分析不是诊断。',
+  ].join('\n');
 }
 
 export function detectLegacyDemoData(raw: { schedules?: { id?: string }[]; accounts?: { id?: string }[] }): boolean {

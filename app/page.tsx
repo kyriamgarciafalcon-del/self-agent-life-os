@@ -1,7 +1,7 @@
 'use client';
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { accountRole, addDaysKey, applyDailyFxRates, applyDailyPriceQuotes, applyLedger, buildScopedSummary, canApplyLedger, cnyWealthTotal, defaultCashId, detectLegacyDemoData, healthRecordsFromSnapshots, isBackupPayload, isDebtRole, latestHealthByKind, localDateKey, migrateLegacyReimbursementAccounts, normalizeAccountBalance, parseNaturalCapture, planAccountSettlement, reconcileRecurringConfirmations, releaseRecurringConfirmation, removeLedgerTransactionState, resolvePaymentAccountId, settleReimbursementState, summarizeHealth, upsertByExternalKey, wealthTotals, weekDates } from './product-logic';
+import { accountRole, addDaysKey, applyDailyFxRates, applyDailyPriceQuotes, applyLedger, buildButlerSystemPrompt, buildHealthBriefing, canApplyLedger, cnyWealthTotal, defaultCashId, describeButlerDataScope, detectLegacyDemoData, healthRecordsFromSnapshots, isBackupPayload, isDebtRole, latestHealthByKind, localDateKey, migrateLegacyReimbursementAccounts, normalizeAccountBalance, normalizeMemory, parseButlerModelOutput, parseNaturalCapture, planAccountSettlement, reconcileRecurringConfirmations, releaseRecurringConfirmation, removeLedgerTransactionState, resolvePaymentAccountId, settleReimbursementState, summarizeHealth, upsertByExternalKey, wealthTotals, weekDates, type ButlerAction, type HealthMetric, type TravelKind } from './product-logic';
 
 type Tab = 'home' | 'schedule' | 'capture' | 'finance' | 'profile' | 'health' | 'travel' | 'data' | 'butler' | 'privacy' | 'memory' | 'vault';
 type ScheduleColor = 'blue' | 'green' | 'orange';
@@ -22,7 +22,7 @@ type Account = { id: string; name: string; type: string; balance: number; curren
 type Transaction = { id: string; kind: TransactionKind; amount: number; accountAmount: number; currency: Currency; merchant: string; category: string; accountId: string; targetAccountId?: string; source: string; reimbursable: boolean; reimburseAccountId?: string; reimbursed?: boolean; reimbursementForId?: string; reimbursementTransactionId?: string; recurringRuleId?: string; createdAt: string };
 type RecurringRule = { id: string; name: string; kind: 'subscription' | 'credit-card'; amount: number; currency: Currency; accountId: string; targetAccountId?: string; dueDay: number; enabled: boolean; lastRunPeriod?: string };
 type HealthRecord = { id: string; kind: 'sleep' | 'meal' | 'exercise' | 'steps' | 'height' | 'weight' | 'heartRate' | 'stress' | 'pai'; value: number; note: string; createdAt: string; externalKey?: string };
-type MemoryItem = { id: string; kind: '目标' | '偏好' | '观察'; title: string; note: string; active: boolean };
+type MemoryItem = { id: string; kind: '目标' | '偏好' | '观察'; title: string; note: string; active: boolean; source: string; purpose: string; updatedAt: string };
 type PrivacySettings = { health: boolean; finance: boolean; schedule: boolean };
 type VaultItem = { id: string; title: string; usernameHint: string; note: string };
 type TravelItem = { id: string; kind: 'train' | 'flight'; number: string; from: string; to: string; departAt: string; arriveAt: string; seat: string; terminal: string; status: 'upcoming' | 'completed' | 'changed'; source: 'manual' | 'calendar' | 'notification' | 'import'; verified: boolean };
@@ -33,7 +33,10 @@ type ExchangeRate = { currency: Exclude<Currency, 'CNY'>; cnyRate: number; asOf:
 type AppData = { schemaVersion: 2; demoMode: boolean; schedules: ScheduleItem[]; accounts: Account[]; transactions: Transaction[]; recurringRules: RecurringRule[]; healthRecords: HealthRecord[]; travels: TravelItem[]; investments: InvestmentHolding[]; exchangeRates: ExchangeRate[]; memories: MemoryItem[]; privacy: PrivacySettings; vaultItems: VaultItem[]; theme: 'light' | 'dark' };
 type ExpenseDraft = { kind: 'expense'; amount: number; merchant: string; category: string; accountId: string; source: string; currency: Currency; reimbursable: boolean };
 type ScheduleDraft = { kind: 'schedule'; title: string; date: string; time: string };
-type CaptureDraft = ExpenseDraft | ScheduleDraft;
+type TravelDraft = { kind: 'travel'; travelKind: TravelKind; number: string; from: string; to: string; date: string; departTime: string; arriveTime?: string };
+type HealthDraft = { kind: 'health'; metric: HealthMetric; value: number };
+type CaptureDraft = ExpenseDraft | ScheduleDraft | TravelDraft | HealthDraft;
+const HEALTH_METRIC_LABELS: Record<HealthMetric, string> = { steps: '步数', heartRate: '心率', stress: '压力', sleep: '睡眠', pai: 'PAI', height: '身高', weight: '体重' };
 
 const TODAY = localDateKey();
 const STORAGE_KEY = 'self-agent:local-data:v1';
@@ -101,9 +104,9 @@ const demoData: AppData = {
   ],
   exchangeRates: [],
   memories: [
-    { id: 'm1', kind: '目标', title: '每月结余至少 2,000 元', note: '用于生成财务提醒，不自动修改账户。', active: true },
-    { id: 'm2', kind: '偏好', title: '23:30 前开始睡前准备', note: '提醒保持温和，不因一次未完成而批评。', active: true },
-    { id: 'm3', kind: '观察', title: '睡眠不足后外卖支出可能上升', note: '只是相关性观察，7 天后复核。', active: false },
+    { id: 'm1', kind: '目标', title: '每月结余至少 2,000 元', note: '用于生成财务提醒，不自动修改账户。', active: true, source: '演示数据', purpose: '用于生成财务提醒，不自动修改账户。', updatedAt: TODAY },
+    { id: 'm2', kind: '偏好', title: '23:30 前开始睡前准备', note: '提醒保持温和，不因一次未完成而批评。', active: true, source: '演示数据', purpose: '用于提醒语气与作息建议', updatedAt: TODAY },
+    { id: 'm3', kind: '观察', title: '睡眠不足后外卖支出可能上升', note: '只是相关性观察，7 天后复核。', active: false, source: '演示数据', purpose: '用于观察复核，不自动下诊断', updatedAt: TODAY },
   ],
   privacy: { health: true, finance: true, schedule: true },
   vaultItems: [
@@ -193,7 +196,11 @@ function normalizeData(raw: Partial<AppData>): AppData {
     travels: raw.travels ?? [],
     investments,
     exchangeRates: (raw.exchangeRates ?? []).filter((rate): rate is ExchangeRate => Boolean(rate && rate.currency !== 'CNY' && currencies.includes(rate.currency as Currency) && Number.isFinite(rate.cnyRate) && rate.cnyRate > 0 && typeof rate.asOf === 'string' && typeof rate.updatedAt === 'string')).map((rate) => ({ ...rate, source: rate.source === 'daily' ? 'daily' : 'manual' })),
-    memories: raw.memories ?? [],
+    memories: (raw.memories ?? []).map((item) => {
+      const memory = normalizeMemory(item);
+      const kind: MemoryItem['kind'] = memory.kind === '目标' || memory.kind === '偏好' ? memory.kind : '观察';
+      return { ...memory, kind };
+    }),
     privacy: { ...emptyData.privacy, ...(raw.privacy ?? {}) },
     vaultItems: raw.vaultItems ?? [],
     theme: raw.theme ?? 'light',
@@ -204,7 +211,7 @@ function adjustAccounts(accounts: Account[], transaction: Transaction, factor: 1
 }
 function parseCapture(text: string, accounts: Account[]): CaptureDraft {
   const parsed = parseNaturalCapture(text, TODAY);
-  if (parsed.kind === 'schedule') return parsed;
+  if (parsed.kind === 'schedule' || parsed.kind === 'travel' || parsed.kind === 'health') return parsed;
   const preferredId = parsed.source === '支付宝' ? 'alipay' : parsed.source === '银行卡' ? 'bank' : 'wechat';
   const account = accounts.find((item) => item.id === preferredId) ?? accounts.find((item) => item.name.includes(parsed.source)) ?? accounts[0];
   return {
@@ -661,8 +668,22 @@ export default function Home() {
       if (!draft.amount) { notify('请先补充金额'); return; }
       if (!draft.accountId || !data.accounts.some((account) => account.id === draft.accountId)) { notify('请先到财务页添加一个账户'); return; }
       saveTransaction(draft); notify('已确认并记入账本');
+    } else if (draft.kind === 'travel') {
+      if (!draft.number || !draft.from || !draft.to) { notify('请补充车次/航班和起终点'); return; }
+      const item: TravelItem = { id: uid('travel'), kind: draft.travelKind, number: draft.number, from: draft.from, to: draft.to, departAt: `${draft.date}T${draft.departTime}`, arriveAt: `${draft.date}T${draft.arriveTime || draft.departTime}`, seat: '待分配', terminal: '待确认', status: 'upcoming', source: 'import', verified: false };
+      setData((current) => ({ ...current, travels: [...current.travels, item].sort((a, b) => a.departAt.localeCompare(b.departAt)) }));
+      notify('已确认并加入行程');
+    } else if (draft.kind === 'health') {
+      if (!(draft.value > 0)) { notify('请补充有效数值'); return; }
+      const record: HealthRecord = { id: uid('health'), kind: draft.metric, value: draft.value, note: `一句话记录 · ${HEALTH_METRIC_LABELS[draft.metric]}`, createdAt: localStamp() };
+      setData((current) => ({ ...current, healthRecords: [record, ...current.healthRecords] }));
+      notify('已确认并加入健康记录');
     } else {
-      setData((current) => ({ ...current, schedules: [...current.schedules, { id: uid('schedule'), title: draft.title, date: draft.date, time: draft.time, detail: '一句话记录 · 提前 10 分钟提醒', color: 'orange', done: false }] })); notify('已确认并加入日程');
+      const item: ScheduleItem = { id: uid('schedule'), title: draft.title, date: draft.date, time: draft.time, detail: '一句话记录 · 提前 10 分钟提醒', color: 'orange', done: false };
+      const nextSchedules = [...data.schedules, item];
+      setData((current) => ({ ...current, schedules: nextSchedules }));
+      pushReminders(nextSchedules, data.recurringRules);
+      notify('已确认并加入日程');
     }
     setDraft(null); setCaptureText('');
   }
@@ -727,8 +748,66 @@ export default function Home() {
     setEditingHoldingId(null); setSelectedHoldingId(null); setSheet(null); notify('理财产品已删除');
   }
   function togglePrivacy(key: keyof PrivacySettings) { setData((current) => ({ ...current, privacy: { ...current.privacy, [key]: !current.privacy[key] } })); }
-  function toggleMemory(id: string) { setData((current) => ({ ...current, memories: current.memories.map((item) => item.id === id ? { ...item, active: !item.active } : item) })); }
+  function toggleMemory(id: string) { setData((current) => ({ ...current, memories: current.memories.map((item) => item.id === id ? { ...item, active: !item.active, updatedAt: localStamp() } : item) })); }
   function deleteMemory(id: string) { if (window.confirm('确定删除这条管家记忆吗？')) setData((current) => ({ ...current, memories: current.memories.filter((item) => item.id !== id) })); }
+  function upsertMemory(next: MemoryItem, previousId?: string) {
+    setData((current) => ({
+      ...current,
+      memories: previousId
+        ? current.memories.map((item) => item.id === previousId ? next : item)
+        : [...current.memories, next],
+    }));
+  }
+  function applyButlerAction(action: ButlerAction) {
+    if (action.type === 'create_schedule') {
+      const item: ScheduleItem = { id: uid('schedule'), title: action.payload.title, date: action.payload.date, time: action.payload.time, detail: '管家草稿 · 提前 10 分钟提醒', color: 'orange', done: false };
+      const nextSchedules = [...data.schedules, item];
+      setData((current) => ({ ...current, schedules: nextSchedules }));
+      pushReminders(nextSchedules, data.recurringRules);
+      notify('已确认并加入日程');
+      return;
+    }
+    if (action.type === 'create_expense') {
+      const accountId = defaultCashId(data.accounts, 'CNY') || data.accounts[0]?.id || '';
+      if (!accountId) { notify('请先到财务页添加一个账户'); return; }
+      const account = data.accounts.find((item) => item.id === accountId);
+      saveTransaction({ kind: 'expense', amount: action.payload.amount, merchant: action.payload.merchant, category: action.payload.category || '其他', accountId, source: action.payload.source || '管家草稿确认', currency: account?.currency ?? 'CNY', reimbursable: false });
+      notify('已确认并记入账本');
+      return;
+    }
+    if (action.type === 'create_travel') {
+      const item: TravelItem = { id: uid('travel'), kind: action.payload.travelKind, number: action.payload.number, from: action.payload.from, to: action.payload.to, departAt: `${action.payload.date}T${action.payload.departTime}`, arriveAt: `${action.payload.date}T${action.payload.arriveTime || action.payload.departTime}`, seat: '待分配', terminal: '待确认', status: 'upcoming', source: 'import', verified: false };
+      setData((current) => ({ ...current, travels: [...current.travels, item].sort((left, right) => left.departAt.localeCompare(right.departAt)) }));
+      notify('已确认并加入行程');
+      return;
+    }
+    if (action.type === 'create_health') {
+      const record: HealthRecord = { id: uid('health'), kind: action.payload.metric, value: action.payload.value, note: `管家草稿 · ${HEALTH_METRIC_LABELS[action.payload.metric]}`, createdAt: localStamp() };
+      setData((current) => ({ ...current, healthRecords: [record, ...current.healthRecords] }));
+      notify('已确认并加入健康记录');
+      return;
+    }
+    if (action.type === 'add_memory') {
+      const memory = normalizeMemory({ id: uid('memory'), kind: action.payload.kind === '目标' || action.payload.kind === '偏好' ? action.payload.kind : '观察', title: action.payload.title, note: action.payload.note || '', active: true, source: '用户确认的管家草稿', purpose: action.payload.purpose || action.payload.note || '用于管家建议', updatedAt: localStamp() });
+      upsertMemory({ ...memory, kind: memory.kind === '目标' || memory.kind === '偏好' ? memory.kind : '观察' });
+      notify('已确认并新增记忆');
+      return;
+    }
+    if (action.type === 'update_memory') {
+      setData((current) => ({
+        ...current,
+        memories: current.memories.map((item) => item.id === action.payload.id ? { ...item, title: action.payload.title || item.title, note: action.payload.note ?? item.note, purpose: action.payload.purpose || item.purpose, updatedAt: localStamp() } : item),
+      }));
+      notify('记忆已更新');
+      return;
+    }
+    if (action.type === 'pause_memory') {
+      setData((current) => ({ ...current, memories: current.memories.map((item) => item.id === action.payload.id ? { ...item, active: false, updatedAt: localStamp() } : item) }));
+      notify('记忆已暂停');
+      return;
+    }
+    if (action.type === 'delete_memory') deleteMemory(action.payload.id);
+  }
   function toggleTheme() { setData((current) => ({ ...current, theme: current.theme === 'dark' ? 'light' : 'dark' })); }
   function exportLocalData() {
     const safe = { ...data, vaultItems: data.vaultItems.map(({ id, title, usernameHint, note }) => ({ id, title, usernameHint, note })) };
@@ -773,7 +852,7 @@ export default function Home() {
 
     {tab === 'schedule' && <div className="page schedule-page"><section className="calendar"><div className="week-title"><button aria-label="上一周" onClick={() => setSelectedDate(addDaysKey(selectedDate, -7))}>‹</button><strong>{weekTitle}</strong><button aria-label="下一周" onClick={() => setSelectedDate(addDaysKey(selectedDate, 7))}>›</button></div><div className="dates">{dateOptions.map((date) => <button key={date.value} onClick={() => setSelectedDate(date.value)} className={selectedDate === date.value ? 'active' : ''}><span>{date.weekday}</span><b>{date.day}</b>{date.value === TODAY && <i />}</button>)}</div></section><section className="day-section"><div className="day-heading"><div><span>{selectedDate === TODAY ? '今天' : `${Number(selectedDate.slice(-2))}日`} · 星期{dateOptions.find((date) => date.value === selectedDate)?.weekday}</span><h2>{selectedSchedules.length ? '这一天的安排' : '给这一天留点空白'}</h2></div><small>{selectedSchedules.filter((item) => item.done).length}/{selectedSchedules.length} 完成</small></div>{selectedSchedules.length ? <div className="timeline">{selectedSchedules.map((item, index) => <article className={item.done ? 'done' : ''} key={item.id}><time>{item.time}</time><div className="track"><i className={item.color} />{index < selectedSchedules.length - 1 && <span />}</div><SwipeScheduleRow item={item} onToggle={() => toggleSchedule(item.id)} onEdit={() => { setEditingScheduleId(item.id); setSheet('schedule'); }} onDelete={() => deleteSchedule(item.id)} /></article>)}</div> : <div className="empty"><span>○</span><h3>没有日程</h3><p>给这一天留点空白，或添加一件事。</p><button onClick={() => setSheet('schedule')}>添加日程</button></div>}</section></div>}
 
-    {tab === 'capture' && <div className="page capture-page"><section className="capture-intro"><span>INBOX</span><h2>先说下来，我来整理。</h2><p>识别为日程或账目后，你确认才会保存。可用语音或图片文字。</p></section><form className="capture-box" onSubmit={organizeCapture}><textarea aria-label="一句话记录" maxLength={400} value={captureText} onChange={(event) => setCaptureText(event.target.value)} placeholder={'例如：明天 9 点提醒我交水电费\n或者：午饭 36 元，微信支付'} /><div className="capture-tools"><button type="button" onClick={startVoiceCapture}><span aria-hidden="true">🎤</span>语音</button><button type="button" onClick={pickCaptureImage}><span aria-hidden="true">🖼</span>图片</button></div><div><small>{captureText.length}/400</small><button type="submit">整理一下</button></div></form><div className="suggestion-row"><button onClick={() => setCaptureText('午饭 36 元，微信支付')}>午饭 36 元</button><button onClick={() => setCaptureText('明天 9 点提醒我交水电费')}>明天 9 点提醒</button></div>{draft && <section className="draft-card"><header><div><span>待确认 · {draft.kind === 'expense' ? '支出' : '日程'}</span><h3>我整理成这样</h3></div><button aria-label="取消草稿" onClick={() => setDraft(null)}>×</button></header>{draft.kind === 'expense' ? <><div className="draft-fields"><label>金额<input inputMode="decimal" value={draft.amount || ''} onChange={(event) => setDraft({ ...draft, amount: Number(event.target.value) })} /></label><label>币种<select value={draft.currency} onChange={(event) => setDraft({ ...draft, currency: event.target.value as Currency })}>{currencies.map((currency) => <option key={currency}>{currency}</option>)}</select></label><label>商家 / 用途<input value={draft.merchant} onChange={(event) => setDraft({ ...draft, merchant: event.target.value })} /></label><label>分类<select value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })}><option>餐饮</option><option>交通</option><option>生活</option><option>医疗</option><option>其他</option></select></label><label>账户<select value={draft.accountId} onChange={(event) => setDraft({ ...draft, accountId: event.target.value })}>{data.accounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {account.currency}</option>)}</select></label></div><label className="check-option"><input type="checkbox" checked={draft.reimbursable} onChange={(event) => setDraft({ ...draft, reimbursable: event.target.checked })} />加入待报销（记入债务·应收）</label></> : <div className="draft-fields"><label>日程名称<input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} /></label><label>日期<input type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} /></label><label>时间<input type="time" value={draft.time} onChange={(event) => setDraft({ ...draft, time: event.target.value })} /></label></div>}<button className="confirm-button" onClick={confirmDraft}>确认保存</button></section>}</div>}
+    {tab === 'capture' && <div className="page capture-page"><section className="capture-intro"><span>INBOX</span><h2>先说下来，我来整理。</h2><p>可识别日程、账目、出行或健康；确认后才会保存。可用语音或图片文字。</p></section><form className="capture-box" onSubmit={organizeCapture}><textarea aria-label="一句话记录" maxLength={400} value={captureText} onChange={(event) => setCaptureText(event.target.value)} placeholder={'例如：明天 9 点提醒我交水电费\n午饭 36 元，微信支付\n明天 G11 北京南到上海虹桥 9:00\n今天走了 8000 步'} /><div className="capture-tools"><button type="button" onClick={startVoiceCapture}><span aria-hidden="true">🎤</span>语音</button><button type="button" onClick={pickCaptureImage}><span aria-hidden="true">🖼</span>图片</button></div><div><small>{captureText.length}/400</small><button type="submit">整理一下</button></div></form><div className="suggestion-row"><button onClick={() => setCaptureText('午饭 36 元，微信支付')}>午饭 36 元</button><button onClick={() => setCaptureText('明天 9 点提醒我交水电费')}>明天 9 点提醒</button><button onClick={() => setCaptureText('明天 G11 北京南到上海虹桥 9:00')}>G11 出行</button><button onClick={() => setCaptureText('今天走了 8000 步')}>8000 步</button></div>{draft && <section className="draft-card"><header><div><span>待确认 · {draft.kind === 'expense' ? '支出' : draft.kind === 'travel' ? '出行' : draft.kind === 'health' ? '健康' : '日程'}</span><h3>我整理成这样</h3></div><button aria-label="取消草稿" onClick={() => setDraft(null)}>×</button></header>{draft.kind === 'expense' ? <><div className="draft-fields"><label>金额<input inputMode="decimal" value={draft.amount || ''} onChange={(event) => setDraft({ ...draft, amount: Number(event.target.value) })} /></label><label>币种<select value={draft.currency} onChange={(event) => setDraft({ ...draft, currency: event.target.value as Currency })}>{currencies.map((currency) => <option key={currency}>{currency}</option>)}</select></label><label>商家 / 用途<input value={draft.merchant} onChange={(event) => setDraft({ ...draft, merchant: event.target.value })} /></label><label>分类<select value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })}><option>餐饮</option><option>交通</option><option>生活</option><option>医疗</option><option>其他</option></select></label><label>账户<select value={draft.accountId} onChange={(event) => setDraft({ ...draft, accountId: event.target.value })}>{data.accounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {account.currency}</option>)}</select></label></div><label className="check-option"><input type="checkbox" checked={draft.reimbursable} onChange={(event) => setDraft({ ...draft, reimbursable: event.target.checked })} />加入待报销（记入债务·应收）</label></> : draft.kind === 'travel' ? <div className="draft-fields"><label>类型<select value={draft.travelKind} onChange={(event) => setDraft({ ...draft, travelKind: event.target.value as TravelKind })}><option value="train">火车</option><option value="flight">航班</option></select></label><label>车次 / 航班<input value={draft.number} onChange={(event) => setDraft({ ...draft, number: event.target.value })} /></label><label>出发地<input value={draft.from} onChange={(event) => setDraft({ ...draft, from: event.target.value })} /></label><label>目的地<input value={draft.to} onChange={(event) => setDraft({ ...draft, to: event.target.value })} /></label><label>日期<input type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} /></label><label>出发时间<input type="time" value={draft.departTime} onChange={(event) => setDraft({ ...draft, departTime: event.target.value })} /></label><label>到达时间<input type="time" value={draft.arriveTime || ''} onChange={(event) => setDraft({ ...draft, arriveTime: event.target.value })} /></label></div> : draft.kind === 'health' ? <div className="draft-fields"><label>指标<select value={draft.metric} onChange={(event) => setDraft({ ...draft, metric: event.target.value as HealthMetric })}>{(Object.keys(HEALTH_METRIC_LABELS) as HealthMetric[]).map((metric) => <option key={metric} value={metric}>{HEALTH_METRIC_LABELS[metric]}</option>)}</select></label><label>数值<input inputMode="decimal" value={draft.value || ''} onChange={(event) => setDraft({ ...draft, value: Number(event.target.value) })} /></label></div> : <div className="draft-fields"><label>日程名称<input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} /></label><label>日期<input type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} /></label><label>时间<input type="time" value={draft.time} onChange={(event) => setDraft({ ...draft, time: event.target.value })} /></label></div>}<button className="confirm-button" onClick={confirmDraft}>确认保存</button></section>}</div>}
 
     {tab === 'finance' && <FinancePanel data={data} currency={financeCurrency} selectedAccountId={selectedAccountId} selectedHoldingId={selectedHoldingId} onCurrency={setFinanceCurrency} onSelectAccount={(id) => { setSelectedAccountId(id); setSelectedHoldingId(null); }} onSelectHolding={setSelectedHoldingId} onBackAccount={() => setSelectedAccountId(null)} onBackHolding={() => setSelectedHoldingId(null)} onNewTransaction={() => { setEditingTransactionId(null); setSheet('transaction'); }} onEditTransaction={(id) => { setEditingTransactionId(id); setSheet('transaction'); }} onNewAccount={() => { setEditingAccountId(null); setSheet('account'); }} onEditAccount={(id) => { setEditingAccountId(id); setSheet('account'); }} onNewHolding={() => { setEditingHoldingId(null); setSheet('holding'); }} onEditHolding={(id) => { setEditingHoldingId(id); setSheet('holding'); }} onNewRecurring={() => { setEditingRecurringId(null); setSheet('recurring'); }} onEditRecurring={(id) => { setEditingRecurringId(id); setSheet('recurring'); }} onDeleteRecurring={(id) => deleteRecurringRule(id)} onDeleteTransaction={(id) => deleteTransaction(id)} onRunRecurring={runRecurringRule} onToggleRecurring={toggleRecurringRule} onSettleReimbursement={settleReimbursement} onSettleAccount={settleAccount} onNewRate={() => { setEditingRateCurrency(null); setSheet('exchange-rate'); }} onEditRate={(currency) => { setEditingRateCurrency(currency); setSheet('exchange-rate'); }} onDeleteRate={deleteExchangeRate} onRefreshQuotes={requestQuoteRefresh} />}
 
@@ -782,7 +861,7 @@ export default function Home() {
     {tab === 'health' && <HealthPanel records={data.healthRecords} onAdd={() => setSheet('health')} onImport={importHealth} onSaveBody={saveBodyMetrics} />}
     {tab === 'travel' && <TravelPanel items={data.travels} onSync={requestTravelSync} onAdd={() => setSheet('travel')} onDelete={(id) => { setData((current) => ({ ...current, travels: current.travels.filter((item) => item.id !== id) })); notify('行程已删除'); }} />}
     {tab === 'data' && <DataPanel data={data} />}
-    {tab === 'butler' && <ButlerPanel data={data} ai={aiConfig} />}
+    {tab === 'butler' && <ButlerPanel data={data} ai={aiConfig} onConfirmAction={applyButlerAction} />}
     {tab === 'privacy' && <PrivacyPanel settings={data.privacy} onToggle={togglePrivacy} />}
     {tab === 'memory' && <MemoryPanel items={data.memories} onToggle={toggleMemory} onDelete={deleteMemory} />}
     {tab === 'vault' && <VaultPanel items={nativeOn && vaultMeta.length ? vaultMeta : data.vaultItems} nativeOn={nativeOn} onReveal={(id) => (window as Window & { SelfAgentNative?: { revealPassword?: (id: string) => void } }).SelfAgentNative?.revealPassword?.(id)} />}
@@ -897,61 +976,113 @@ function DataPanel({ data }: { data: AppData }) {
   return <div className="page feature-page"><section className="data-hero"><span>本机摘要</span><h2>{hasEnough ? '已保存记录' : '暂无结论'}</h2><p>{hasEnough ? '只汇总你确认保存过的日程、账本和健康记录，没有预测分数。' : '记录几天真实数据后，这里才会出现摘要。'}</p></section><section className="feature-section"><div className="feature-title"><div><span>SUMMARY</span><h2>统一摘要</h2></div></div><div className="data-summary"><article><span>健</span><div><strong>健康</strong><small>{data.healthRecords.length ? healthLine : '还没有健康记录'}</small></div><b>{data.healthRecords.length ? `${data.healthRecords.length} 条` : '—'}</b></article><article><span>财</span><div><strong>财务</strong><small>{month.length ? `收入 ¥${money(income)} · 支出 ¥${money(expense)}` : '本月还没有流水'}</small></div><b>{month.length ? `${month.length} 笔` : '—'}</b></article><article><span>行</span><div><strong>行动</strong><small>今日 {todayItems.length} 项日程</small></div><b>{todayItems.length ? `${todayItems.filter((item) => item.done).length}/${todayItems.length}` : '—'}</b></article></div></section></div>;
 }
 
-function ButlerPanel({ data, ai }: { data: AppData; ai: AiConfig }) {
+function describeButlerAction(action: ButlerAction, memories: MemoryItem[]): { title: string; detail: string } {
+  const memoryTitle = (id: string) => memories.find((item) => item.id === id)?.title || id;
+  if (action.type === 'create_schedule') return { title: '安排日程', detail: `${action.payload.date} ${action.payload.time} · ${action.payload.title}` };
+  if (action.type === 'create_expense') return { title: '记一笔账', detail: `${action.payload.merchant} · ${action.payload.amount}` };
+  if (action.type === 'create_travel') return { title: '添加行程', detail: `${action.payload.travelKind === 'flight' ? '航班' : '火车'} ${action.payload.number} ${action.payload.from} → ${action.payload.to} ${action.payload.date} ${action.payload.departTime}` };
+  if (action.type === 'create_health') return { title: '记录健康', detail: `${HEALTH_METRIC_LABELS[action.payload.metric]} ${action.payload.value}` };
+  if (action.type === 'add_memory') return { title: '新增记忆', detail: action.payload.title };
+  if (action.type === 'update_memory') return { title: '更新记忆', detail: action.payload.title || memoryTitle(action.payload.id) };
+  if (action.type === 'pause_memory') return { title: '暂停记忆', detail: memoryTitle(action.payload.id) };
+  return { title: '删除记忆', detail: memoryTitle(action.payload.id) };
+}
+
+function formatHealthAnswer(briefing: { rangeLabel: string; evidence: string; missing: string[]; disclaimer: string }, extra = '') {
+  const missing = briefing.missing.length ? briefing.missing.join('、') : '无';
+  return [extra, `数据范围：${briefing.rangeLabel}`, `证据：${briefing.evidence}`, `缺失指标：${missing}`, briefing.disclaimer].filter(Boolean).join('\n');
+}
+
+function ButlerPanel({ data, ai, onConfirmAction }: { data: AppData; ai: AiConfig; onConfirmAction: (action: ButlerAction) => void }) {
+  const connected = Boolean(ai.baseUrl && ai.apiKey);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
-  const [messages, setMessages] = useState<{ role: 'user' | 'bot'; text: string }[]>([{ role: 'bot', text: ai.baseUrl ? '已连接你配置的 AI 接口。我只会发送允许的摘要，不会读取密码。' : '尚未配置 AI 接口时，我使用本机规则摘要。密码永远不会进入请求。' }]);
+  const [linkState, setLinkState] = useState<'unconfigured' | 'ready' | 'busy' | 'offline'>(connected ? 'ready' : 'unconfigured');
+  const [pending, setPending] = useState<ButlerAction[]>([]);
+  const briefing = buildHealthBriefing(data.healthRecords, data.privacy.health);
+  const scopes = describeButlerDataScope(data.privacy);
+  const [messages, setMessages] = useState<{ role: 'user' | 'bot'; text: string }[]>([{ role: 'bot', text: connected ? '已连接你配置的 AI 接口。我只会发送允许的摘要，不会读取密码。写操作都要你确认。' : '尚未配置 AI 接口时，我使用本机规则摘要。密码永远不会进入请求。' }]);
   function localAnswer(text: string) {
-    if (/密码|验证码|私钥|助记词/.test(text)) return '密码库是独立安全域。我不能读取或复述密码、验证码、私钥和助记词。';
+    if (/密码|验证码|私钥|助记词/.test(text)) return '密码库是独立安全域。我不能读取或复述密码、验证码、私钥和助记词。这个问题不会发给 AI。';
+    if (/睡眠|疲惫|健康|心率|压力|PAI|身高|体重|步数/.test(text)) {
+      if (!data.privacy.health) return formatHealthAnswer(briefing, '健康摘要权限已关闭，不会把健康记录发给 AI。');
+      return formatHealthAnswer(briefing, briefing.evidence.startsWith('尚无') ? '还没有足够的健康记录。可在健康页添加或导入手环。' : '以下是本机健康摘要。');
+    }
     if (/财务|花|钱|结余/.test(text)) {
       if (!data.privacy.finance) return '财务摘要权限已关闭。你可以在隐私与权限中重新开启。';
       const month = data.transactions.filter((item) => item.createdAt.startsWith(MONTH) && item.currency === 'CNY');
-      const income = month.filter((item) => item.kind === 'income').reduce((sum, item) => sum + item.amount, 0); const expense = month.filter((item) => item.kind === 'expense').reduce((sum, item) => sum + item.amount, 0);
-      return `本月已确认收入 ${money(income)} 元、支出 ${money(expense)} 元，结余 ${money(income - expense)} 元。未读取订单号或密码。`;
+      const income = month.filter((item) => item.kind === 'income').reduce((sum, item) => sum + item.amount, 0);
+      const expense = month.filter((item) => item.kind === 'expense').reduce((sum, item) => sum + item.amount, 0);
+      return `本月已确认收入 ${money(income)} 元、支出 ${money(expense)} 元，结余 ${money(income - expense)} 元。未读取订单号或密码。财务不是投资建议。`;
     }
-    if (/睡眠|疲惫|健康|心率|压力|PAI|身高|体重/.test(text)) {
-      if (!data.privacy.health) return '健康摘要权限已关闭。';
-      const line = summarizeHealth(data.healthRecords);
-      return line.startsWith('尚无') ? '还没有身高、体重、心率、压力、睡眠或 PAI 记录。可在健康页添加或导入手环。' : `最近健康摘要：${line}。这是本机记录，不等于诊断。`;
+    if (/记忆/.test(text)) {
+      const active = data.memories.filter((item) => item.active);
+      return active.length ? `当前使用中的记忆：${active.map((item) => item.title).join('、')}。修改需要确认管家动作。` : '还没有使用中的记忆。可以说出要记住的内容，确认后才会保存。';
     }
     if (!data.privacy.schedule) return '日程摘要权限已关闭。你可以在隐私与权限中重新开启。';
     const open = data.schedules.filter((item) => item.date === TODAY && !item.done);
     return open.length ? `建议先处理“${open[0].title}”，完成后再安排下一项。` : '今天没有未完成日程，可以保留一点空白。';
   }
-  function scopedSummary() {
-    return buildScopedSummary({
-      today: TODAY,
-      month: MONTH,
-      privacy: data.privacy,
-      schedules: data.schedules,
-      transactions: data.transactions,
-      healthRecords: data.healthRecords,
-      memories: data.memories,
-    });
-  }
   async function send(text = input) {
     const value = text.trim(); if (!value || busy) return;
-    setInput(''); setBusy(true); setMessages((current) => [...current, { role: 'user', text: value }]);
-    let reply = localAnswer(value);
-    if (ai.baseUrl && ai.apiKey && !/密码|验证码|私钥|助记词/.test(value)) {
-      try {
-        const response = await fetch(`${ai.baseUrl}/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ai.apiKey}` }, body: JSON.stringify({ model: ai.model || 'gpt-4o-mini', messages: [{ role: 'system', content: scopedSummary() }, { role: 'user', content: value }] }) });
-        const payload = await response.json() as { choices?: { message?: { content?: string } }[] };
-        reply = payload.choices?.[0]?.message?.content?.trim() || reply;
-      } catch { reply = `${reply}\n\n（AI 接口暂时不可用，以上为本机规则结果）`; }
+    setInput(''); setBusy(true); setLinkState(connected ? 'busy' : 'unconfigured');
+    setMessages((current) => [...current, { role: 'user', text: value }]);
+    if (/密码|验证码|私钥|助记词/.test(value)) {
+      setMessages((current) => [...current, { role: 'bot', text: localAnswer(value) }]);
+      setBusy(false); setLinkState(connected ? 'ready' : 'unconfigured');
+      return;
     }
-    setMessages((current) => [...current, { role: 'bot', text: reply }]); setBusy(false);
+    let reply = localAnswer(value);
+    let actions: ButlerAction[] = [];
+    if (connected) {
+      try {
+        const response = await fetch(`${ai.baseUrl}/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ai.apiKey}` }, body: JSON.stringify({ model: ai.model || 'gpt-4o-mini', messages: [{ role: 'system', content: buildButlerSystemPrompt({ today: TODAY, month: MONTH, privacy: data.privacy, schedules: data.schedules, transactions: data.transactions, healthRecords: data.privacy.health ? data.healthRecords : [], memories: data.memories }) }, { role: 'user', content: value }] }) });
+        const payload = await response.json() as { choices?: { message?: { content?: string } }[] };
+        const parsed = parseButlerModelOutput(payload.choices?.[0]?.message?.content?.trim() || reply);
+        reply = parsed.reply;
+        actions = parsed.actions;
+        if (/健康|心率|睡眠|压力|PAI|身高|体重|步数/.test(value) && !reply.includes('不是诊断')) reply = formatHealthAnswer(briefing, reply);
+        setLinkState('ready');
+      } catch {
+        reply = `${reply}\n\n（AI 接口暂时不可用，以上为本机规则结果）`;
+        setLinkState('offline');
+      }
+    }
+    setPending(actions);
+    setMessages((current) => [...current, { role: 'bot', text: reply }]);
+    setBusy(false);
   }
-  return <div className="page butler-page"><section className="butler-intro"><span>LOCAL BUTLER</span><h2>{ai.baseUrl ? '已接入你的 AI 接口。' : '先从本机摘要开始。'}</h2><p>密码不会进入模型。健康与财务建议仅供参考。</p></section><div className="chat-suggestions"><button onClick={() => send('我现在最该做什么？')}>我现在最该做什么？</button><button onClick={() => send('分析本月财务')}>分析本月财务</button><button onClick={() => send('分析最近的心率睡眠和PAI')}>分析心率睡眠和PAI</button></div><div className="chat-messages">{messages.map((message, index) => <div key={index} className={message.role}>{message.text}</div>)}</div><form className="butler-composer" onSubmit={(event) => { event.preventDefault(); send(); }}><input value={input} onChange={(event) => setInput(event.target.value)} placeholder={busy ? '正在生成…' : '问问今天的状态…'} /><button disabled={busy}>发送</button></form></div>;
+  const statusLabel = busy || linkState === 'busy' ? '正在连接' : linkState === 'offline' ? '接口不可用，已回退本机规则' : connected ? '已配置，可连接' : '未配置，使用本机规则';
+  return <div className="page butler-page">
+    <section className="butler-status"><span>AI 连接状态</span><strong>{statusLabel}</strong><small>{connected ? (ai.model || 'gpt-4o-mini') : '不会调用外部接口'}</small></section>
+    <section className="butler-scope"><span>当前允许的数据域</span><div>{scopes.map((item) => <b key={item.key} className={item.allowed ? 'on' : 'off'}>{item.label} · {item.allowed ? '开' : '关'}</b>)}</div></section>
+    <section className="butler-briefing"><span>健康回答边界</span><p>数据范围：{briefing.rangeLabel}</p><p>缺失指标：{briefing.missing.length ? briefing.missing.join('、') : '无'}</p><p>{briefing.disclaimer}</p></section>
+    <div className="butler-quick"><button type="button" onClick={() => send('帮我安排明天上午的日程')}>安排日程</button><button type="button" onClick={() => send('帮我记下今天的健康数据')}>记健康</button><button type="button" onClick={() => send('分析最近的健康记录')}>分析健康</button><button type="button" onClick={() => send('帮我查看并管理记忆')}>管理记忆</button></div>
+    <div className="chat-messages">{messages.map((message, index) => <div key={index} className={message.role}>{message.text}</div>)}</div>
+    {pending.length > 0 && <div className="butler-pending">{pending.map((action, index) => {
+      const card = describeButlerAction(action, data.memories);
+      return <article key={`${action.type}-${index}`}>
+        <span>待确认草稿</span>
+        <h3>{card.title}</h3>
+        <p>{card.detail}</p>
+        <small>确认后才会写入本机，模型不能直接改数据。</small>
+        <div>
+          <button type="button" onClick={() => { onConfirmAction(action); setPending((current) => current.filter((_, itemIndex) => itemIndex !== index)); }}>确认</button>
+          <button type="button" className="ghost" onClick={() => { setPending((current) => current.filter((_, itemIndex) => itemIndex !== index)); }}>取消</button>
+        </div>
+      </article>;
+    })}</div>}
+    <form className="butler-composer" onSubmit={(event) => { event.preventDefault(); send(); }}><input value={input} onChange={(event) => setInput(event.target.value)} placeholder={busy ? '正在生成…' : '问问今天的状态…'} /><button disabled={busy}>发送</button></form>
+  </div>;
+}
+
+function MemoryPanel({ items, onToggle, onDelete }: { items: MemoryItem[]; onToggle: (id: string) => void; onDelete: (id: string) => void }) {
+  return <div className="page feature-page"><section className="feature-heading"><span>MEMORY</span><h2>你决定管家记住什么。</h2><p>记忆可以随时暂停或删除。修改请让管家生成草稿，确认后才会写入。</p></section><div className="memory-list">{items.map((item) => { const memory = normalizeMemory(item); return <article key={item.id} className={!memory.active ? 'inactive' : ''}><header><span>{memory.kind}</span><b>{memory.status}</b></header><h3>{memory.title}</h3><p>{memory.note}</p><dl className="memory-meta"><div><dt>来源</dt><dd>{memory.source || '本机已有记忆'}</dd></div><div><dt>用途</dt><dd>{memory.purpose}</dd></div><div><dt>更新</dt><dd>{memory.updatedAt || '尚未更新'}</dd></div></dl><div><button onClick={() => onToggle(item.id)}>{memory.active ? '暂停使用' : '重新启用'}</button><button className="danger-text" onClick={() => onDelete(item.id)}>删除</button></div></article>; })}</div></div>;
 }
 
 function PrivacyPanel({ settings, onToggle }: { settings: PrivacySettings; onToggle: (key: keyof PrivacySettings) => void }) {
   const rows: { key: keyof PrivacySettings; title: string; note: string }[] = [{ key: 'health', title: '健康摘要', note: '身高、体重、心率、压力、睡眠和 PAI' }, { key: 'finance', title: '财务摘要', note: '收入、支出、分类和未来扣款' }, { key: 'schedule', title: '日程与行动', note: '用于排序、提醒与完成情况' }];
   return <div className="page feature-page"><section className="security-hero"><span>当前保护状态</span><h2>本机优先</h2><p>每类摘要可以单独关闭；密码权限永久不开放。</p></section><section className="permission-list">{rows.map((row) => <article key={row.key}><div><strong>{row.title}</strong><small>{row.note}</small></div><button className={settings[row.key] ? 'on' : ''} onClick={() => onToggle(row.key)} aria-label={`${row.title}权限`}><i /></button></article>)}<article><div><strong>密码与恢复码</strong><small>密码、验证码、私钥、助记词永久禁止</small></div><button disabled aria-label="密码权限永久关闭"><i /></button></article></section><p className="security-copy">当前开关会真实影响本机管家回答时可使用的摘要范围，不只是界面状态。</p></div>;
-}
-
-function MemoryPanel({ items, onToggle, onDelete }: { items: MemoryItem[]; onToggle: (id: string) => void; onDelete: (id: string) => void }) {
-  return <div className="page feature-page"><section className="feature-heading"><span>MEMORY</span><h2>你决定管家记住什么。</h2><p>记忆可以随时暂停或删除，停用后不再用于建议。</p></section><div className="memory-list">{items.map((item) => <article key={item.id} className={!item.active ? 'inactive' : ''}><header><span>{item.kind}</span><b>{item.active ? '使用中' : '已暂停'}</b></header><h3>{item.title}</h3><p>{item.note}</p><div><button onClick={() => onToggle(item.id)}>{item.active ? '暂停使用' : '重新启用'}</button><button className="danger-text" onClick={() => onDelete(item.id)}>删除</button></div></article>)}</div></div>;
 }
 
 function HowToNative() {

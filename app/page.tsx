@@ -1,7 +1,7 @@
 'use client';
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { accountRole, addDaysKey, applyLedger, buildScopedSummary, canApplyLedger, cnyWealthTotal, defaultCashId, detectLegacyDemoData, isBackupPayload, isDebtRole, localDateKey, migrateLegacyReimbursementAccounts, normalizeAccountBalance, parseNaturalCapture, removeLedgerTransactionState, resolvePaymentAccountId, settleReimbursementState, wealthTotals, weekDates } from './product-logic';
+import { accountRole, addDaysKey, applyLedger, buildScopedSummary, canApplyLedger, cnyWealthTotal, defaultCashId, detectLegacyDemoData, isBackupPayload, isDebtRole, localDateKey, migrateLegacyReimbursementAccounts, normalizeAccountBalance, parseNaturalCapture, removeLedgerTransactionState, resolvePaymentAccountId, settleReimbursementState, upsertByExternalKey, wealthTotals, weekDates } from './product-logic';
 
 type Tab = 'home' | 'schedule' | 'capture' | 'finance' | 'profile' | 'health' | 'travel' | 'data' | 'butler' | 'privacy' | 'memory' | 'vault';
 type ScheduleColor = 'blue' | 'green' | 'orange';
@@ -21,7 +21,7 @@ type ScheduleItem = {
 type Account = { id: string; name: string; type: string; balance: number; currency: Currency; tone: 'forest' | 'clay' | 'ink' };
 type Transaction = { id: string; kind: TransactionKind; amount: number; accountAmount: number; currency: Currency; merchant: string; category: string; accountId: string; targetAccountId?: string; source: string; reimbursable: boolean; reimburseAccountId?: string; reimbursed?: boolean; reimbursementForId?: string; reimbursementTransactionId?: string; recurringRuleId?: string; createdAt: string };
 type RecurringRule = { id: string; name: string; kind: 'subscription' | 'credit-card'; amount: number; currency: Currency; accountId: string; targetAccountId?: string; dueDay: number; enabled: boolean; lastRunPeriod?: string };
-type HealthRecord = { id: string; kind: 'sleep' | 'meal' | 'exercise'; value: number; note: string; createdAt: string };
+type HealthRecord = { id: string; kind: 'sleep' | 'meal' | 'exercise'; value: number; note: string; createdAt: string; externalKey?: string };
 type MemoryItem = { id: string; kind: '目标' | '偏好' | '观察'; title: string; note: string; active: boolean };
 type PrivacySettings = { health: boolean; finance: boolean; schedule: boolean };
 type VaultItem = { id: string; title: string; usernameHint: string; note: string };
@@ -292,14 +292,19 @@ export default function Home() {
       notify('已从通知导入火车/航班');
     }
     function onHealth(event: Event) {
-      const detail = (event as CustomEvent<{ date?: string; sleepHours?: number; steps?: number; exerciseMin?: number; source?: string }>).detail || {};
-      const date = detail.date || TODAY;
+      type HealthSnapshot = { date?: string; sleepHours?: number; steps?: number; exerciseMin?: number; source?: string };
+      const detail = (event as CustomEvent<HealthSnapshot & { records?: HealthSnapshot[] }>).detail || {};
+      const snapshots = Array.isArray(detail.records) ? detail.records : [detail];
       const records: HealthRecord[] = [];
-      if (Number(detail.sleepHours) > 0) records.push({ id: uid('health'), kind: 'sleep', value: Number(detail.sleepHours), note: `健康平台睡眠 · ${date}`, createdAt: date });
-      if (Number(detail.exerciseMin) > 0) records.push({ id: uid('health'), kind: 'exercise', value: Number(detail.exerciseMin), note: `健康平台运动 · ${date}`, createdAt: date });
-      if (Number(detail.steps) > 0) records.push({ id: uid('health'), kind: 'exercise', value: Math.round(Number(detail.steps) / 100), note: `步数 ${detail.steps} · ${date}`, createdAt: date });
+      for (const snapshot of snapshots) {
+        const date = snapshot.date || TODAY;
+        const source = snapshot.source || detail.source || 'health-connect';
+        if (Number(snapshot.sleepHours) > 0) records.push({ id: uid('health'), kind: 'sleep', value: Number(snapshot.sleepHours), note: `健康平台睡眠 · ${date}`, createdAt: date, externalKey: `${source}:${date}:sleep` });
+        if (Number(snapshot.exerciseMin) > 0) records.push({ id: uid('health'), kind: 'exercise', value: Number(snapshot.exerciseMin), note: `健康平台运动 · ${date}`, createdAt: date, externalKey: `${source}:${date}:exercise` });
+        if (Number(snapshot.steps) > 0) records.push({ id: uid('health'), kind: 'exercise', value: Math.round(Number(snapshot.steps) / 100), note: `步数 ${snapshot.steps} · ${date}`, createdAt: date, externalKey: `${source}:${date}:steps` });
+      }
       if (!records.length) { notify('健康平台暂无近两日数据'); return; }
-      setData((current) => ({ ...current, healthRecords: [...records, ...current.healthRecords] }));
+      setData((current) => ({ ...current, healthRecords: upsertByExternalKey(current.healthRecords, records) }));
       notify('已导入小米手环经健康平台的摘要');
     }
     window.addEventListener('self-agent:travel-updated', onTravel);

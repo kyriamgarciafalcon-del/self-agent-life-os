@@ -16,6 +16,7 @@ import {
   removeLedgerTransactionState,
   resolvePaymentAccountId,
   settleReimbursementState,
+  upsertByExternalKey,
   wealthTotals,
   weekDates,
 } from '../app/product-logic';
@@ -203,6 +204,14 @@ describe('truthful product state', () => {
     expect(migrated.accounts).toEqual([{ id: 'cash', type: '资金账户', currency: 'CNY', balance: 800 }]);
     expect(migrated.transactions[0]).toMatchObject({ reimbursable: true, reimbursed: false, reimburseAccountId: undefined });
     expect(wealthTotals(migrated.accounts, migrated.transactions)).toEqual([{ currency: 'CNY', assets: 800, receivable: 200, liability: 0, payable: 0, net: 1000 }]);
+  });
+
+  it('upserts native imports by stable external key', () => {
+    const result = upsertByExternalKey(
+      [{ id: 'old', externalKey: 'health:2026-08-29:steps', value: 12 }, { id: 'manual', value: 8 }],
+      [{ id: 'new', externalKey: 'health:2026-08-29:steps', value: 15 }],
+    );
+    expect(result).toEqual([{ id: 'new', externalKey: 'health:2026-08-29:steps', value: 15 }, { id: 'manual', value: 8 }]);
   });
 
   it('rejects a debt payment that exceeds the open balance', () => {

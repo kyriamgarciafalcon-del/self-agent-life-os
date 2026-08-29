@@ -17,6 +17,7 @@ import androidx.health.connect.client.time.TimeRangeFilter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Duration
 import java.time.Instant
@@ -67,20 +68,21 @@ class HealthImportActivity : ComponentActivity() {
                 val end = Instant.now()
                 val start = end.minus(2, ChronoUnit.DAYS)
                 val range = TimeRangeFilter.between(start, end)
-                val steps = client.readRecords(ReadRecordsRequest(StepsRecord::class, range)).records.sumOf { it.count }
-                val sleepMin = client.readRecords(ReadRecordsRequest(SleepSessionRecord::class, range)).records
-                    .sumOf { Duration.between(it.startTime, it.endTime).toMinutes() }
-                val exerciseMin = client.readRecords(ReadRecordsRequest(ExerciseSessionRecord::class, range)).records
-                    .sumOf { Duration.between(it.startTime, it.endTime).toMinutes() }
-                val today = java.time.LocalDate.now(ZoneId.systemDefault()).toString()
-                HealthBus.post(
-                    JSONObject()
-                        .put("date", today)
-                        .put("steps", steps)
-                        .put("sleepHours", if (sleepMin > 0) sleepMin / 60.0 else 0)
-                        .put("exerciseMin", exerciseMin)
-                        .put("source", "health-connect")
-                )
+                val zone = ZoneId.systemDefault()
+                val days = linkedMapOf<String, DoubleArray>()
+                fun bucket(instant: Instant): DoubleArray = days.getOrPut(instant.atZone(zone).toLocalDate().toString()) { DoubleArray(3) }
+                client.readRecords(ReadRecordsRequest(StepsRecord::class, range)).records.forEach { bucket(it.startTime)[0] += it.count.toDouble() }
+                client.readRecords(ReadRecordsRequest(SleepSessionRecord::class, range)).records.forEach {
+                    bucket(it.startTime)[1] += Duration.between(it.startTime, it.endTime).toMinutes() / 60.0
+                }
+                client.readRecords(ReadRecordsRequest(ExerciseSessionRecord::class, range)).records.forEach {
+                    bucket(it.startTime)[2] += Duration.between(it.startTime, it.endTime).toMinutes().toDouble()
+                }
+                val records = JSONArray()
+                days.toSortedMap().forEach { (date, values) ->
+                    records.put(JSONObject().put("date", date).put("steps", values[0].toLong()).put("sleepHours", values[1]).put("exerciseMin", values[2].toLong()).put("source", "health-connect"))
+                }
+                HealthBus.post(JSONObject().put("records", records).put("source", "health-connect"))
             } catch (_: Exception) {
                 runOnUiThread {
                     Toast.makeText(this@HealthImportActivity, "读取健康平台失败，请先在小米运动健康中打开 Health Connect", Toast.LENGTH_LONG).show()

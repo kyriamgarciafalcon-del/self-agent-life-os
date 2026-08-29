@@ -254,6 +254,11 @@ export function migrateLegacyReimbursementAccounts<TA extends WealthAccount & { 
   return { accounts: migratedAccounts, transactions: migratedTransactions };
 }
 
+export function upsertByExternalKey<T extends { externalKey?: string }>(current: T[], incoming: T[]): T[] {
+  const keys = new Set(incoming.map((item) => item.externalKey).filter((key): key is string => Boolean(key)));
+  return [...incoming, ...current.filter((item) => !item.externalKey || !keys.has(item.externalKey))];
+}
+
 export type LedgerAccount = { id: string; name?: string; type: string; currency: string; balance: number };
 export type LedgerTxn = {
   kind: 'expense' | 'income' | 'transfer';

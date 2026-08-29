@@ -52,6 +52,10 @@ jobs:
         with:
           gradle-version: "8.9"
 
+      - name: Run Android unit tests
+        working-directory: android
+        run: gradle --no-daemon :app:testDebugUnitTest
+
       - name: Build signed APK
         working-directory: android
         env:

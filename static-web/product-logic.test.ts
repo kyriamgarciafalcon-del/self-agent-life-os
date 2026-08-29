@@ -16,6 +16,8 @@ import {
   applyDailyPriceQuotes,
   canApplyLedger,
   defaultCashId,
+  reconcileRecurringConfirmations,
+  releaseRecurringConfirmation,
   removeLedgerTransactionState,
   resolvePaymentAccountId,
   settleReimbursementState,
@@ -145,6 +147,34 @@ describe('truthful product state', () => {
       { id: 'wechat', type: '资金账户', currency: 'CNY', balance: 100 },
     ];
     expect(planAccountSettlement(accounts, 'claim', 'wechat', 40).ok).toBe(false);
+  });
+
+  it('clears a stale monthly-bill confirmation when the posting is already gone', () => {
+    const rules = reconcileRecurringConfirmations(
+      [{ id: 'netflix', lastRunPeriod: '2026-08' }],
+      [],
+    );
+    expect(rules[0]?.lastRunPeriod).toBeUndefined();
+  });
+
+  it('reopens a monthly bill after its confirmed posting is deleted', () => {
+    const rules = [{ id: 'netflix', lastRunPeriod: '2026-08' }];
+    const remaining = releaseRecurringConfirmation(
+      rules,
+      [],
+      { recurringRuleId: 'netflix', createdAt: '2026-08-05T10:00:00' },
+    );
+    expect(remaining[0]?.lastRunPeriod).toBeUndefined();
+  });
+
+  it('keeps the monthly-bill confirmation if another posting for that period remains', () => {
+    const rules = [{ id: 'netflix', lastRunPeriod: '2026-08' }];
+    const remaining = releaseRecurringConfirmation(
+      rules,
+      [{ recurringRuleId: 'netflix', createdAt: '2026-08-06T10:00:00' }],
+      { recurringRuleId: 'netflix', createdAt: '2026-08-05T10:00:00' },
+    );
+    expect(remaining[0]?.lastRunPeriod).toBe('2026-08');
   });
 
   it('credits a 待收回 claim account when a reimbursable WeChat expense is posted', () => {

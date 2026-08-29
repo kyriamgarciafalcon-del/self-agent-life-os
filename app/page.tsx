@@ -1,7 +1,7 @@
 'use client';
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { accountRole, addDaysKey, applyDailyFxRates, applyDailyPriceQuotes, applyLedger, buildScopedSummary, canApplyLedger, cnyWealthTotal, defaultCashId, detectLegacyDemoData, isBackupPayload, isDebtRole, localDateKey, migrateLegacyReimbursementAccounts, normalizeAccountBalance, parseNaturalCapture, planAccountSettlement, removeLedgerTransactionState, resolvePaymentAccountId, settleReimbursementState, upsertByExternalKey, wealthTotals, weekDates } from './product-logic';
+import { accountRole, addDaysKey, applyDailyFxRates, applyDailyPriceQuotes, applyLedger, buildScopedSummary, canApplyLedger, cnyWealthTotal, defaultCashId, detectLegacyDemoData, isBackupPayload, isDebtRole, localDateKey, migrateLegacyReimbursementAccounts, normalizeAccountBalance, parseNaturalCapture, planAccountSettlement, reconcileRecurringConfirmations, releaseRecurringConfirmation, removeLedgerTransactionState, resolvePaymentAccountId, settleReimbursementState, upsertByExternalKey, wealthTotals, weekDates } from './product-logic';
 
 type Tab = 'home' | 'schedule' | 'capture' | 'finance' | 'profile' | 'health' | 'travel' | 'data' | 'butler' | 'privacy' | 'memory' | 'vault';
 type ScheduleColor = 'blue' | 'green' | 'orange';
@@ -188,7 +188,7 @@ function normalizeData(raw: Partial<AppData>): AppData {
         return item.reimburseAccountId;
       })(),
     })),
-    recurringRules: raw.recurringRules ?? [],
+    recurringRules: reconcileRecurringConfirmations(raw.recurringRules ?? [], migrated.transactions),
     healthRecords: raw.healthRecords ?? [],
     travels: raw.travels ?? [],
     investments,
@@ -519,7 +519,12 @@ export default function Home() {
     if (!previous || !window.confirm('确定删除这笔账目吗？对应账户余额会自动恢复。')) return;
     setData((current) => {
       const removed = removeLedgerTransactionState(current.accounts, current.transactions, previous.id);
-      return { ...current, accounts: removed.accounts, transactions: removed.transactions };
+      return {
+        ...current,
+        accounts: removed.accounts,
+        transactions: removed.transactions,
+        recurringRules: releaseRecurringConfirmation(current.recurringRules, removed.transactions, previous),
+      };
     });
     setEditingTransactionId(null); setSheet(null); notify('账目已删除，余额已恢复');
   }

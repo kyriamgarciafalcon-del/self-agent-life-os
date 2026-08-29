@@ -434,3 +434,31 @@ export function removeLedgerTransactionState<TA extends LedgerAccount, TT extend
   }
   return { accounts: nextAccounts, transactions: nextTransactions };
 }
+
+export type RecurringRuleState = { id: string; lastRunPeriod?: string };
+export type RecurringPosting = { recurringRuleId?: string; createdAt?: string };
+
+export function reconcileRecurringConfirmations<TR extends RecurringRuleState>(
+  rules: TR[],
+  transactions: RecurringPosting[],
+): TR[] {
+  return rules.map((rule) => {
+    if (!rule.lastRunPeriod) return rule;
+    const posted = transactions.some((item) => item.recurringRuleId === rule.id && item.createdAt?.slice(0, 7) === rule.lastRunPeriod);
+    return posted ? rule : { ...rule, lastRunPeriod: undefined };
+  });
+}
+
+export function releaseRecurringConfirmation<TR extends RecurringRuleState>(
+  rules: TR[],
+  remainingTransactions: RecurringPosting[],
+  deleted: RecurringPosting,
+): TR[] {
+  const period = deleted.createdAt?.slice(0, 7);
+  if (!deleted.recurringRuleId || !period) return reconcileRecurringConfirmations(rules, remainingTransactions);
+  const stillPosted = remainingTransactions.some((item) => item.recurringRuleId === deleted.recurringRuleId && item.createdAt?.slice(0, 7) === period);
+  if (stillPosted) return rules;
+  return rules.map((rule) => rule.id === deleted.recurringRuleId && rule.lastRunPeriod === period
+    ? { ...rule, lastRunPeriod: undefined }
+    : rule);
+}

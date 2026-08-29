@@ -24,6 +24,8 @@ import {
   upsertByExternalKey,
   wealthTotals,
   weekDates,
+  summarizeHealth,
+  healthRecordsFromSnapshots,
 } from '../app/product-logic';
 
 describe('local date logic', () => {
@@ -80,6 +82,41 @@ describe('truthful product state', () => {
     expect(summary).toContain('日程权限关闭');
     expect(summary).not.toContain('秘密日程');
     expect(summary).toContain('每月还债');
+  });
+
+  it('summarizes latest height weight heart rate stress sleep and PAI for AI', () => {
+    expect(summarizeHealth([
+      { kind: 'height', value: 170, createdAt: '2026-01-01' },
+      { kind: 'height', value: 172, createdAt: '2026-08-01' },
+      { kind: 'weight', value: 68.5, createdAt: '2026-08-28' },
+      { kind: 'heartRate', value: 62, createdAt: '2026-08-29' },
+      { kind: 'stress', value: 41, createdAt: '2026-08-29' },
+      { kind: 'sleep', value: 6.5, createdAt: '2026-08-29' },
+      { kind: 'pai', value: 88, createdAt: '2026-08-29' },
+    ])).toBe('身高172cm，体重68.5kg，心率62次/分，压力41，睡眠6.5小时，PAI88');
+  });
+
+  it('maps health-connect snapshots into typed records the AI can read', () => {
+    const records = healthRecordsFromSnapshots([{
+      date: '2026-08-29',
+      source: 'health-connect',
+      sleepHours: 7.2,
+      heightCm: 172,
+      weightKg: 68.5,
+      heartRate: 61,
+      stress: 35,
+      pai: 90,
+    }]);
+    expect(records.map((item) => item.kind)).toEqual(['height', 'weight', 'heartRate', 'stress', 'sleep', 'pai']);
+    expect(buildScopedSummary({
+      today: '2026-08-29',
+      month: '2026-08',
+      privacy: { schedule: true, finance: true, health: true },
+      schedules: [],
+      transactions: [],
+      healthRecords: records,
+      memories: [],
+    })).toContain('身高172cm，体重68.5kg，心率61次/分，压力35，睡眠7.2小时，PAI90');
   });
 
   it('recognizes the legacy bundled sample instead of presenting it as real data', () => {

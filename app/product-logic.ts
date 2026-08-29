@@ -78,9 +78,68 @@ type ScopedSummaryInput = {
   privacy: { schedule: boolean; finance: boolean; health: boolean };
   schedules: { date: string; done: boolean; title: string }[];
   transactions: { createdAt: string }[];
-  healthRecords: unknown[];
+  healthRecords: HealthMetricRecord[];
   memories: { active: boolean; title: string; note: string }[];
 };
+
+export type HealthMetricRecord = { kind: string; value: number; createdAt?: string; note?: string; externalKey?: string };
+
+export type HealthSnapshot = {
+  date?: string;
+  source?: string;
+  sleepHours?: number;
+  steps?: number;
+  exerciseMin?: number;
+  heightCm?: number;
+  weightKg?: number;
+  heartRate?: number;
+  stress?: number;
+  pai?: number;
+};
+
+const HEALTH_SUMMARY_ORDER: { kind: string; label: string; unit: string }[] = [
+  { kind: 'height', label: '身高', unit: 'cm' },
+  { kind: 'weight', label: '体重', unit: 'kg' },
+  { kind: 'heartRate', label: '心率', unit: '次/分' },
+  { kind: 'stress', label: '压力', unit: '' },
+  { kind: 'sleep', label: '睡眠', unit: '小时' },
+  { kind: 'pai', label: 'PAI', unit: '' },
+];
+
+export function latestHealthByKind(records: HealthMetricRecord[], kind: string): number | undefined {
+  const items = records.filter((item) => item.kind === kind && Number.isFinite(item.value));
+  if (!items.length) return undefined;
+  return [...items].sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))[0].value;
+}
+
+export function summarizeHealth(records: HealthMetricRecord[]): string {
+  const parts = HEALTH_SUMMARY_ORDER.flatMap(({ kind, label, unit }) => {
+    const value = latestHealthByKind(records, kind);
+    return value == null ? [] : [`${label}${value}${unit}`];
+  });
+  return parts.length ? parts.join('，') : '尚无身高体重心率压力睡眠PAI记录';
+}
+
+export function healthRecordsFromSnapshots(snapshots: HealthSnapshot[], sourceFallback = 'health-connect'): HealthMetricRecord[] {
+  const records: HealthMetricRecord[] = [];
+  for (const snapshot of snapshots) {
+    const date = snapshot.date || '';
+    const source = snapshot.source || sourceFallback;
+    const push = (kind: string, value: number | undefined, label: string, key = `${source}:${date}:${kind}`) => {
+      if (!(Number(value) > 0)) return;
+      records.push({ kind, value: Number(value), note: `${label} · ${date}`, createdAt: date, externalKey: key });
+    };
+    push('height', snapshot.heightCm, '身高', `${source}:profile:height`);
+    push('weight', snapshot.weightKg, '体重', `${source}:profile:weight`);
+    push('heartRate', snapshot.heartRate, '心率');
+    push('stress', snapshot.stress, '压力');
+    push('sleep', snapshot.sleepHours, '睡眠');
+    push('pai', snapshot.pai, 'PAI');
+    if (Number(snapshot.exerciseMin) > 0) push('exercise', snapshot.exerciseMin, '运动');
+    if (Number(snapshot.steps) > 0) push('exercise', Math.round(Number(snapshot.steps) / 100), `步数 ${snapshot.steps}`, `${source}:${date}:steps`);
+  }
+  return records;
+}
 
 export function buildScopedSummary(input: ScopedSummaryInput): string {
   const schedule = input.privacy.schedule
@@ -89,7 +148,7 @@ export function buildScopedSummary(input: ScopedSummaryInput): string {
   const finance = input.privacy.finance
     ? `本月流水 ${input.transactions.filter((item) => item.createdAt.startsWith(input.month)).length} 笔`
     : '财务权限关闭';
-  const health = input.privacy.health ? `健康记录 ${input.healthRecords.length} 条` : '健康权限关闭';
+  const health = input.privacy.health ? summarizeHealth(input.healthRecords) : '健康权限关闭';
   const memories = input.memories.filter((item) => item.active).map((item) => `${item.title}（${item.note}）`).join('；') || '无';
   return `你是 Self Agent 本机管家。只能使用这些摘要：${schedule}；${finance}；${health}；用户允许的记忆=${memories}。禁止索取或输出密码、验证码、私钥、助记词、完整卡号。健康不是诊断，财务不是投资建议。`;
 }

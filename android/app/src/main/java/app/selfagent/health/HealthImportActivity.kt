@@ -5,13 +5,16 @@ import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.ExerciseSessionRecord
+import androidx.health.connect.client.records.HeartRateRecord
+import androidx.health.connect.client.records.HeightRecord
+import androidx.health.connect.client.records.RestingHeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
+import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import kotlinx.coroutines.CoroutineScope
@@ -30,15 +33,19 @@ class HealthImportActivity : ComponentActivity() {
         HealthPermission.getReadPermission(StepsRecord::class),
         HealthPermission.getReadPermission(SleepSessionRecord::class),
         HealthPermission.getReadPermission(ExerciseSessionRecord::class),
+        HealthPermission.getReadPermission(HeartRateRecord::class),
+        HealthPermission.getReadPermission(RestingHeartRateRecord::class),
+        HealthPermission.getReadPermission(HeightRecord::class),
+        HealthPermission.getReadPermission(WeightRecord::class),
     )
 
     private val requestPermissions = registerForActivityResult(
         PermissionController.createRequestPermissionResultContract()
     ) { granted ->
-        if (granted.containsAll(permissions)) readAndFinish() else {
-            Toast.makeText(this, "未授权健康数据，无法从小米手环导入", Toast.LENGTH_LONG).show()
+        if (granted.isEmpty()) {
+            Toast.makeText(this, "未授权健康数据，无法导入", Toast.LENGTH_LONG).show()
             finish()
-        }
+        } else readAndFinish()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -66,26 +73,72 @@ class HealthImportActivity : ComponentActivity() {
             try {
                 val client = HealthConnectClient.getOrCreate(this@HealthImportActivity)
                 val end = Instant.now()
-                val start = end.minus(2, ChronoUnit.DAYS)
+                val start = end.minus(7, ChronoUnit.DAYS)
                 val range = TimeRangeFilter.between(start, end)
                 val zone = ZoneId.systemDefault()
-                val days = linkedMapOf<String, DoubleArray>()
-                fun bucket(instant: Instant): DoubleArray = days.getOrPut(instant.atZone(zone).toLocalDate().toString()) { DoubleArray(3) }
-                client.readRecords(ReadRecordsRequest(StepsRecord::class, range)).records.forEach { bucket(it.startTime)[0] += it.count.toDouble() }
-                client.readRecords(ReadRecordsRequest(SleepSessionRecord::class, range)).records.forEach {
-                    bucket(it.startTime)[1] += Duration.between(it.startTime, it.endTime).toMinutes() / 60.0
+                val days = linkedMapOf<String, JSONObject>()
+                fun day(date: String): JSONObject = days.getOrPut(date) {
+                    JSONObject().put("date", date).put("source", "health-connect")
                 }
-                client.readRecords(ReadRecordsRequest(ExerciseSessionRecord::class, range)).records.forEach {
-                    bucket(it.startTime)[2] += Duration.between(it.startTime, it.endTime).toMinutes().toDouble()
+                fun dateOf(instant: Instant): String = instant.atZone(zone).toLocalDate().toString()
+
+                runCatching {
+                    client.readRecords(ReadRecordsRequest(StepsRecord::class, range)).records.forEach {
+                        val row = day(dateOf(it.startTime))
+                        row.put("steps", row.optLong("steps") + it.count)
+                    }
                 }
+                runCatching {
+                    client.readRecords(ReadRecordsRequest(SleepSessionRecord::class, range)).records.forEach {
+                        val row = day(dateOf(it.startTime))
+                        row.put("sleepHours", row.optDouble("sleepHours") + Duration.between(it.startTime, it.endTime).toMinutes() / 60.0)
+                    }
+                }
+                runCatching {
+                    client.readRecords(ReadRecordsRequest(ExerciseSessionRecord::class, range)).records.forEach {
+                        val row = day(dateOf(it.startTime))
+                        row.put("exerciseMin", row.optLong("exerciseMin") + Duration.between(it.startTime, it.endTime).toMinutes())
+                    }
+                }
+                runCatching {
+                    client.readRecords(ReadRecordsRequest(HeartRateRecord::class, range)).records.forEach { record ->
+                        record.samples.forEach { sample ->
+                            val row = day(dateOf(sample.time))
+                            val count = row.optInt("heartCount") + 1
+                            val sum = row.optDouble("heartSum") + sample.beatsPerMinute
+                            row.put("heartCount", count)
+                            row.put("heartSum", sum)
+                            row.put("heartRate", kotlin.math.round(sum / count).toLong())
+                        }
+                    }
+                }
+                runCatching {
+                    client.readRecords(ReadRecordsRequest(RestingHeartRateRecord::class, range)).records.forEach {
+                        val row = day(dateOf(it.time))
+                        if (!row.has("heartRate")) row.put("heartRate", it.beatsPerMinute)
+                    }
+                }
+                runCatching {
+                    client.readRecords(ReadRecordsRequest(HeightRecord::class, range)).records.maxByOrNull { it.time }?.let {
+                        day(dateOf(it.time)).put("heightCm", kotlin.math.round(it.height.inMeters * 1000) / 10.0)
+                    }
+                }
+                runCatching {
+                    client.readRecords(ReadRecordsRequest(WeightRecord::class, range)).records.maxByOrNull { it.time }?.let {
+                        day(dateOf(it.time)).put("weightKg", kotlin.math.round(it.weight.inKilograms * 10) / 10.0)
+                    }
+                }
+
                 val records = JSONArray()
-                days.toSortedMap().forEach { (date, values) ->
-                    records.put(JSONObject().put("date", date).put("steps", values[0].toLong()).put("sleepHours", values[1]).put("exerciseMin", values[2].toLong()).put("source", "health-connect"))
+                days.toSortedMap().forEach { (_, row) ->
+                    row.remove("heartCount")
+                    row.remove("heartSum")
+                    records.put(row)
                 }
                 HealthBus.post(JSONObject().put("records", records).put("source", "health-connect"))
             } catch (_: Exception) {
                 runOnUiThread {
-                    Toast.makeText(this@HealthImportActivity, "读取健康平台失败，请先在小米运动健康中打开 Health Connect", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@HealthImportActivity, "读取健康平台失败，请先在运动健康中打开 Health Connect", Toast.LENGTH_LONG).show()
                 }
             } finally {
                 runOnUiThread { finish() }

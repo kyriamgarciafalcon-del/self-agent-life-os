@@ -21,7 +21,7 @@ type ScheduleItem = {
 type Account = { id: string; name: string; type: string; balance: number; currency: Currency; tone: 'forest' | 'clay' | 'ink' };
 type Transaction = { id: string; kind: TransactionKind; amount: number; accountAmount: number; currency: Currency; merchant: string; category: string; accountId: string; targetAccountId?: string; source: string; reimbursable: boolean; reimburseAccountId?: string; reimbursed?: boolean; reimbursementForId?: string; reimbursementTransactionId?: string; recurringRuleId?: string; createdAt: string };
 type RecurringRule = { id: string; name: string; kind: 'subscription' | 'credit-card'; amount: number; currency: Currency; accountId: string; targetAccountId?: string; dueDay: number; enabled: boolean; lastRunPeriod?: string };
-type HealthRecord = { id: string; kind: 'sleep' | 'meal' | 'exercise' | 'height' | 'weight' | 'heartRate' | 'stress' | 'pai'; value: number; note: string; createdAt: string; externalKey?: string };
+type HealthRecord = { id: string; kind: 'sleep' | 'meal' | 'exercise' | 'steps' | 'height' | 'weight' | 'heartRate' | 'stress' | 'pai'; value: number; note: string; createdAt: string; externalKey?: string };
 type MemoryItem = { id: string; kind: '目标' | '偏好' | '观察'; title: string; note: string; active: boolean };
 type PrivacySettings = { health: boolean; finance: boolean; schedule: boolean };
 type VaultItem = { id: string; title: string; usernameHint: string; note: string };
@@ -669,9 +669,18 @@ export default function Home() {
   function addHealthRecord(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = new FormData(event.currentTarget);
     const kind = String(form.get('kind')) as HealthRecord['kind'];
-    const labels: Record<HealthRecord['kind'], string> = { sleep: '睡眠', meal: '饮食', exercise: '运动', height: '身高', weight: '体重', heartRate: '心率', stress: '压力', pai: 'PAI' };
+    const labels: Record<HealthRecord['kind'], string> = { sleep: '睡眠', meal: '饮食', exercise: '运动', steps: '步数', height: '身高', weight: '体重', heartRate: '心率', stress: '压力', pai: 'PAI' };
     const record: HealthRecord = { id: uid('health'), kind, value: Number(form.get('value')), note: String(form.get('note') || labels[kind]), createdAt: localStamp() };
     setData((current) => ({ ...current, healthRecords: [record, ...current.healthRecords] })); setSheet(null); notify('健康记录已保存到本机');
+  }
+  function saveBodyMetrics(height: number, weight: number) {
+    const createdAt = localStamp();
+    const records: HealthRecord[] = [
+      { id: uid('health'), kind: 'height', value: height, note: '身体资料 · 身高', createdAt, externalKey: 'manual:profile:height' },
+      { id: uid('health'), kind: 'weight', value: weight, note: '身体资料 · 体重', createdAt, externalKey: 'manual:profile:weight' },
+    ];
+    setData((current) => ({ ...current, healthRecords: upsertByExternalKey(current.healthRecords, records) }));
+    notify('身高体重已保存，管家可以读取');
   }
   function addTravel(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = new FormData(event.currentTarget);
@@ -770,7 +779,7 @@ export default function Home() {
 
     {tab === 'profile' && <div className="page profile-page"><section className="profile-heading"><div>SA</div><span>SELF AGENT</span><h2>数据留在你的设备上</h2><p>界面和记录都在手机里运行，不依赖服务器。敏感能力由系统权限授权。</p></section><section className="profile-menu"><button onClick={() => navigate('memory')}><span>忆</span><div><strong>AI 记忆管理</strong><small>查看、暂停或删除管家记忆</small></div><b>›</b></button><button onClick={() => navigate('privacy')}><span>盾</span><div><strong>隐私与权限</strong><small>分别控制健康、财务和日程摘要</small></div><b>›</b></button><button onClick={() => navigate('vault')}><span>钥</span><div><strong>密码库</strong><small>不在网页保存密码明文</small></div><b>›</b></button><button onClick={() => navigate('data')}><span>数</span><div><strong>数据中心</strong><small>健康、财务与行动统一摘要</small></div><b>›</b></button></section><form className="ai-box" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const next = { baseUrl: String(form.get('baseUrl')).trim().replace(/\/$/, ''), model: String(form.get('model')).trim() || 'gpt-4o-mini', apiKey: String(form.get('apiKey')).trim() }; setAiConfig(next); window.localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(next)); notify('AI 接口已保存在本机，不会进入密码库或导出文件'); }}><strong>AI 接口</strong><p>兼容 OpenAI Chat Completions。密钥只存在本机，提问时不会发送密码。</p><label>接口地址<input name="baseUrl" placeholder="https://api.openai.com/v1" defaultValue={aiConfig.baseUrl} /></label><label>模型<input name="model" defaultValue={aiConfig.model} /></label><label>API Key<input name="apiKey" type="password" autoComplete="off" defaultValue={aiConfig.apiKey} /></label><button className="save" type="submit" style={{ marginTop: 12 }}>保存接口</button></form>{nativeOn && <div className="native-actions"><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openAccessibilitySettings?: () => void } }).SelfAgentNative?.openAccessibilitySettings?.()}>第1步：打开无障碍（自动记账）</button><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openNotificationAccess?: () => void } }).SelfAgentNative?.openNotificationAccess?.()}>第2步：打开通知使用权</button><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openAutofillSettings?: () => void } }).SelfAgentNative?.openAutofillSettings?.()}>第3步：设为自动填充服务</button></div>}<HowToNative /><section className="profile-actions"><button onClick={toggleTheme}>{data.theme === 'dark' ? '切换浅色模式' : '切换深色模式'}</button><button onClick={exportLocalData}>导出全部数据</button><label className="file-action">从备份恢复<input hidden type="file" accept="application/json,.json" onChange={importLocalData} /></label><button onClick={loadDemoData}>加载演示数据</button><button className="danger-text" onClick={clearLocalData}>清空本机数据</button></section><p className="privacy-note">Android 通知记账需系统授权；确认前不会改余额。密码只进入 Keystore，不会发给 AI。</p></div>}
 
-    {tab === 'health' && <HealthPanel records={data.healthRecords} onAdd={() => setSheet('health')} onImport={importHealth} />}
+    {tab === 'health' && <HealthPanel records={data.healthRecords} onAdd={() => setSheet('health')} onImport={importHealth} onSaveBody={saveBodyMetrics} />}
     {tab === 'travel' && <TravelPanel items={data.travels} onSync={requestTravelSync} onAdd={() => setSheet('travel')} onDelete={(id) => { setData((current) => ({ ...current, travels: current.travels.filter((item) => item.id !== id) })); notify('行程已删除'); }} />}
     {tab === 'data' && <DataPanel data={data} />}
     {tab === 'butler' && <ButlerPanel data={data} ai={aiConfig} />}
@@ -809,7 +818,7 @@ function SwipeScheduleRow({ item, onToggle, onEdit, onDelete }: { item: Schedule
   );
 }
 
-function HealthPanel({ records, onAdd, onImport }: { records: HealthRecord[]; onAdd: () => void; onImport: () => void }) {
+function HealthPanel({ records, onAdd, onImport, onSaveBody }: { records: HealthRecord[]; onAdd: () => void; onImport: () => void; onSaveBody: (height: number, weight: number) => void }) {
   const cards: { kind: HealthRecord['kind']; mark: string; name: string; unit: string }[] = [
     { kind: 'height', mark: '高', name: '身高', unit: 'cm' },
     { kind: 'weight', mark: '重', name: '体重', unit: 'kg' },
@@ -817,8 +826,9 @@ function HealthPanel({ records, onAdd, onImport }: { records: HealthRecord[]; on
     { kind: 'stress', mark: '压', name: '压力', unit: '' },
     { kind: 'sleep', mark: '睡', name: '睡眠', unit: '小时' },
     { kind: 'pai', mark: 'P', name: 'PAI', unit: '' },
+    { kind: 'steps', mark: '步', name: '步数', unit: '步' },
   ];
-  const marks: Record<string, string> = { height: '高', weight: '重', heartRate: '心', stress: '压', sleep: '睡', pai: 'P', exercise: '动', meal: '食' };
+  const marks: Record<string, string> = { height: '高', weight: '重', heartRate: '心', stress: '压', sleep: '睡', pai: 'P', steps: '步', exercise: '动', meal: '食' };
   function format(kind: string, value: number) {
     if (kind === 'height') return `${value} cm`;
     if (kind === 'weight') return `${value} kg`;
@@ -826,9 +836,13 @@ function HealthPanel({ records, onAdd, onImport }: { records: HealthRecord[]; on
     if (kind === 'sleep') return `${value} 小时`;
     if (kind === 'exercise') return `${value} 分钟`;
     if (kind === 'meal') return `${value} 餐`;
+    if (kind === 'steps') return `${value} 步`;
     return String(value);
   }
-  return <div className="page feature-page"><section className="health-hero"><span>本机健康记录</span><strong>{records.length || '—'}</strong><div><h2>{records.length ? summarizeHealth(records) : '还没有健康记录'}</h2><p>身高、体重、心率、压力、睡眠和 PAI 会给本机管家做分析。不是诊断。压力和 PAI 多数手环不会写入健康平台，可手动补。</p></div></section><section className="feature-section"><div className="feature-title"><div><span>HEALTH</span><h2>健康项目</h2></div><div><button type="button" onClick={onImport}>导入手环</button><button onClick={onAdd}>＋ 添加</button></div></div><div className="health-grid">{cards.map((card) => { const value = latestHealthByKind(records, card.kind); return <article key={card.kind}><span>{card.mark}</span><div><strong>{card.name}</strong><small>最近一次</small></div><b>{value == null ? '待记录' : format(card.kind, value)}</b></article>; })}</div></section><section className="feature-section"><div className="feature-title"><div><span>HISTORY</span><h2>最近记录</h2></div></div><div className="plain-list">{records.map((item) => <article key={item.id}><span>{marks[item.kind] || '健'}</span><div><strong>{item.note}</strong><small>{format(item.kind, item.value)}</small></div></article>)}</div></section><section className="howto"><h3>小米手环怎么导入</h3><ol><li>手环连上 <b>小米运动健康</b></li><li>打开 <b>第三方数据 / Health Connect</b>，允许身高、体重、心率、睡眠写入</li><li>回到这里点 <b>导入手环</b></li></ol><p>压力和 PAI 如果平台没有，就在这里手动添加。打开「健康摘要」后，管家才能读这些数。</p></section></div>;
+  const currentHeight = latestHealthByKind(records, 'height');
+  const currentWeight = latestHealthByKind(records, 'weight');
+  function submitBody(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = new FormData(event.currentTarget); const height = Number(form.get('height')); const weight = Number(form.get('weight')); if (!(height > 0) || !(weight > 0)) return; onSaveBody(height, weight); }
+  return <div className="page feature-page"><section className="health-hero"><span>本机健康记录</span><strong>{records.length || '—'}</strong><div><h2>{records.length ? summarizeHealth(records) : '还没有健康记录'}</h2><p>身高、体重、心率、压力、睡眠和 PAI 会给本机管家做分析。不是诊断。压力和 PAI 多数手环不会写入健康平台，可手动补。</p></div></section><section className="feature-section"><div className="feature-title"><div><span>BODY PROFILE</span><h2>身体资料</h2></div></div><form className="body-profile-form" onSubmit={submitBody}><label>身高（cm）<input required name="height" type="number" min="50" max="250" step="0.1" defaultValue={currentHeight ?? ''} /></label><label>体重（kg）<input required name="weight" type="number" min="10" max="400" step="0.1" defaultValue={currentWeight ?? ''} /></label><button className="save" type="submit">保存身高体重</button></form></section><section className="feature-section"><div className="feature-title"><div><span>HEALTH</span><h2>健康项目</h2></div><div><button type="button" onClick={onImport}>导入手环</button><button onClick={onAdd}>＋ 添加</button></div></div><div className="health-grid">{cards.map((card) => { const value = latestHealthByKind(records, card.kind); return <article key={card.kind}><span>{card.mark}</span><div><strong>{card.name}</strong><small>最近一次</small></div><b>{value == null ? '待记录' : format(card.kind, value)}</b></article>; })}</div></section><section className="feature-section"><div className="feature-title"><div><span>HISTORY</span><h2>最近记录</h2></div></div><div className="plain-list">{records.map((item) => <article key={item.id}><span>{marks[item.kind] || '健'}</span><div><strong>{item.note}</strong><small>{format(item.kind, item.value)}</small></div></article>)}</div></section><section className="howto"><h3>小米手环怎么导入</h3><ol><li>手环连上 <b>小米运动健康</b></li><li>在 Gadgetbridge 的 Health Connect 设置中打开标准字段：步数、心率、睡眠、身高、体重</li><li>在 Android「健康 Connect」里确认 Gadgetbridge 有写入权限；本应用点 <b>导入手环</b> 时再给读取权限</li></ol><p>当前 Health Connect 标准接口不包含 Gadgetbridge 的压力和 PAI，所以它们不会随 Health Connect 导入；请在这里手动添加，或等待 Gadgetbridge 将来提供标准化写出。</p></section></div>;
 }
 
 function parseTravelText(text: string): TravelItem | null {

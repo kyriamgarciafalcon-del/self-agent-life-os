@@ -104,6 +104,7 @@ const HEALTH_SUMMARY_ORDER: { kind: string; label: string; unit: string }[] = [
   { kind: 'stress', label: '压力', unit: '' },
   { kind: 'sleep', label: '睡眠', unit: '小时' },
   { kind: 'pai', label: 'PAI', unit: '' },
+  { kind: 'steps', label: '步数', unit: '步' },
 ];
 
 export function latestHealthByKind(records: HealthMetricRecord[], kind: string): number | undefined {
@@ -135,8 +136,8 @@ export function healthRecordsFromSnapshots(snapshots: HealthSnapshot[], sourceFa
     push('stress', snapshot.stress, '压力');
     push('sleep', snapshot.sleepHours, '睡眠');
     push('pai', snapshot.pai, 'PAI');
+    push('steps', snapshot.steps, '步数');
     if (Number(snapshot.exerciseMin) > 0) push('exercise', snapshot.exerciseMin, '运动');
-    if (Number(snapshot.steps) > 0) push('exercise', Math.round(Number(snapshot.steps) / 100), `步数 ${snapshot.steps}`, `${source}:${date}:steps`);
   }
   return records;
 }

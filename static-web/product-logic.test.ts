@@ -106,8 +106,9 @@ describe('truthful product state', () => {
       heartRate: 61,
       stress: 35,
       pai: 90,
+      steps: 3344,
     }]);
-    expect(records.map((item) => item.kind)).toEqual(['height', 'weight', 'heartRate', 'stress', 'sleep', 'pai']);
+    expect(records.map((item) => item.kind)).toEqual(['height', 'weight', 'heartRate', 'stress', 'sleep', 'pai', 'steps']);
     expect(buildScopedSummary({
       today: '2026-08-29',
       month: '2026-08',

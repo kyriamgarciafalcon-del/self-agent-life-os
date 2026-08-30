@@ -411,7 +411,7 @@ export function isBackupPayload(value: unknown): value is Record<string, unknown
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const raw = value as Record<string, unknown>;
   if (!Array.isArray(raw.schedules) || !Array.isArray(raw.accounts) || !Array.isArray(raw.transactions)) return false;
-  const optionalArrays = ['recurringRules', 'healthRecords', 'travels', 'investments', 'memories', 'vaultItems', 'inboxItems'];
+  const optionalArrays = ['recurringRules', 'healthRecords', 'travels', 'investments', 'memories', 'vaultItems', 'inboxItems', 'auditLog'];
   return optionalArrays.every((key) => raw[key] === undefined || Array.isArray(raw[key]));
 }
 
@@ -1213,5 +1213,204 @@ export function inboxItemFromTravelNotice(input: {
     createdAt: input.createdAt,
     status: 'pending',
   }) as InboxItem;
+}
 
+export const AUDIT_OUTCOMES = ['pending', 'confirmed', 'ignored', 'undone', 'failed'] as const;
+export type AuditOutcome = typeof AUDIT_OUTCOMES[number];
+export const AUDIT_LOG_LIMIT = 200;
+export const AUDIT_OUTCOME_LABELS: Record<AuditOutcome, string> = {
+  pending: '待确认',
+  confirmed: '已确认',
+  ignored: '已忽略',
+  undone: '已撤销',
+  failed: '失败',
+};
+export const AUDIT_REASON_LABELS: Record<string, string> = {
+  missing_amount: '缺少金额',
+  missing_account: '缺少账户',
+  invalid_health: '健康数值无效',
+  invalid_travel: '行程信息不完整',
+  ledger_rejected: '无法入账',
+};
+const AUDIT_OUTCOME_SET = new Set<string>(AUDIT_OUTCOMES);
+const AUDIT_HEALTH_METRICS = new Set(['steps', 'heartRate', 'stress', 'sleep', 'pai', 'height', 'weight']);
+
+export type AuditEntry = {
+  id: string;
+  timestamp: string;
+  source: InboxSource;
+  action: InboxProposedAction;
+  itemId: string;
+  outcome: AuditOutcome;
+  summary: string;
+  reason?: string;
+  dataScope?: string;
+};
+
+export type InboxAuditStore = {
+  inboxItems: InboxItem[];
+  auditLog: AuditEntry[];
+};
+
+export type InboxLifecycleEvent =
+  | { type: 'enqueue'; item: InboxItem | null; timestamp: string; id?: string }
+  | { type: 'confirm'; itemId: string; resultEntityId?: string; timestamp: string; id?: string }
+  | { type: 'ignore'; itemId: string; timestamp: string; id?: string }
+  | { type: 'undo'; itemId: string; timestamp: string; id?: string }
+  | { type: 'fail'; itemId: string; reason: string; dataScope?: string; timestamp: string; id?: string };
+
+export function auditOutcomeLabel(outcome: AuditOutcome | string): string {
+  return AUDIT_OUTCOME_LABELS[outcome as AuditOutcome] || '未知状态';
+}
+
+export function auditReasonLabel(reason: string | undefined): string {
+  if (!reason) return '';
+  return AUDIT_REASON_LABELS[reason] || reason;
+}
+
+export function canUndoAuditEntry(_entry: AuditEntry | undefined | null): boolean {
+  return false;
+}
+
+function sanitizeAuditText(value: unknown, fallback = ''): string {
+  const text = String(value ?? '').trim();
+  if (!text || INBOX_SECRET.test(text)) return fallback;
+  return text.slice(0, 200);
+}
+
+export function normalizeAuditEntry(raw: unknown): AuditEntry | null {
+  if (!inboxIsPlainObject(raw)) return null;
+  const source = INBOX_SOURCE_SET.has(String(raw.source)) ? String(raw.source) as InboxSource : null;
+  const action = INBOX_ACTION_SET.has(String(raw.action || raw.proposedAction)) ? String(raw.action || raw.proposedAction) as InboxProposedAction : null;
+  const outcome = AUDIT_OUTCOME_SET.has(String(raw.outcome)) ? String(raw.outcome) as AuditOutcome : null;
+  const itemId = sanitizeAuditText(raw.itemId);
+  if (!source || !action || !outcome || !itemId) return null;
+  const timestamp = sanitizeAuditText(raw.timestamp);
+  const id = sanitizeAuditText(raw.id) || `audit-${timestamp || 'legacy'}-${itemId}-${outcome}`;
+  const entry: AuditEntry = {
+    id,
+    timestamp,
+    source,
+    action,
+    itemId,
+    outcome,
+    summary: sanitizeAuditText(raw.summary, inboxPreviewFor(action, {})),
+  };
+  const reason = sanitizeAuditText(raw.reason);
+  const dataScope = sanitizeAuditText(raw.dataScope);
+  if (reason) entry.reason = reason;
+  if (dataScope) entry.dataScope = dataScope;
+  return entry;
+}
+
+export function normalizeAuditEntries(raw: unknown): AuditEntry[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const entries: AuditEntry[] = [];
+  for (const item of raw) {
+    const entry = normalizeAuditEntry(item);
+    if (!entry || seen.has(entry.id)) continue;
+    seen.add(entry.id);
+    entries.push(entry);
+    if (entries.length >= AUDIT_LOG_LIMIT) break;
+  }
+  return entries;
+}
+
+export function migrateAuditLog(raw: unknown): AuditEntry[] {
+  if (Array.isArray(raw)) return normalizeAuditEntries(raw);
+  if (inboxIsPlainObject(raw)) return normalizeAuditEntries(raw.auditLog);
+  return [];
+}
+
+export function appendAuditEntry(entries: AuditEntry[], incoming: unknown): AuditEntry[] {
+  const entry = normalizeAuditEntry(incoming);
+  if (!entry) return normalizeAuditEntries(entries);
+  return [entry, ...entries.filter((existing) => existing.id !== entry.id)].slice(0, AUDIT_LOG_LIMIT);
+}
+
+export function filterAuditLog(entries: AuditEntry[], filters: { outcome?: string; source?: string } = {}): AuditEntry[] {
+  return entries.filter((entry) => {
+    if (filters.outcome && entry.outcome !== filters.outcome) return false;
+    if (filters.source && entry.source !== filters.source) return false;
+    return true;
+  });
+}
+
+export function inboxConfirmBlockReason(item: InboxItem, accounts: { id: string }[]): { reason: string; dataScope?: string } | null {
+  if (item.proposedAction === 'create_expense' || item.proposedAction === 'create_income') {
+    const amount = Math.abs(Number(item.payload.amount ?? 0));
+    if (!amount) return { reason: 'missing_amount', dataScope: 'finance' };
+    const accountId = String(item.payload.accountId || accounts[0]?.id || '');
+    if (!accountId || !accounts.some((account) => account.id === accountId)) return { reason: 'missing_account', dataScope: 'finance' };
+    return null;
+  }
+  if (item.proposedAction === 'create_health') {
+    const value = Number(item.payload.value);
+    const metric = String(item.payload.metric || '');
+    if (!(value > 0) || !AUDIT_HEALTH_METRICS.has(metric)) return { reason: 'invalid_health', dataScope: 'health' };
+    return null;
+  }
+  if (item.proposedAction === 'create_travel' || item.proposedAction === 'update_travel') {
+    if (!item.payload.number || !item.payload.from || !item.payload.to) return { reason: 'invalid_travel', dataScope: 'travel' };
+  }
+  return null;
+}
+
+function auditEntryFromInbox(item: InboxItem, input: { id?: string; timestamp: string; outcome: AuditOutcome; reason?: string; dataScope?: string }): AuditEntry | null {
+  return normalizeAuditEntry({
+    id: input.id,
+    timestamp: input.timestamp,
+    source: item.source,
+    action: item.proposedAction,
+    itemId: item.id,
+    outcome: input.outcome,
+    summary: item.preview,
+    reason: input.reason,
+    dataScope: input.dataScope,
+  });
+}
+
+export function applyInboxLifecycle(store: InboxAuditStore, event: InboxLifecycleEvent): InboxAuditStore {
+  if (event.type === 'enqueue') {
+    const incoming = event.item ? normalizeInboxItem(event.item) : null;
+    if (!incoming) return store;
+    const merged = store.inboxItems.find((item) => item.status === 'pending' && item.dedupeKey === incoming.dedupeKey);
+    const inboxItems = enqueueInboxItem(store.inboxItems, incoming);
+    if (merged) return { inboxItems, auditLog: store.auditLog };
+    const entry = auditEntryFromInbox(incoming, { id: event.id, timestamp: event.timestamp, outcome: 'pending' });
+    return { inboxItems, auditLog: entry ? appendAuditEntry(store.auditLog, entry) : store.auditLog };
+  }
+  if (event.type === 'confirm') {
+    const item = store.inboxItems.find((entry) => entry.id === event.itemId && entry.status === 'pending');
+    if (!item) return store;
+    const inboxItems = confirmInboxItem(store.inboxItems, event.itemId, event.resultEntityId);
+    const confirmed = inboxItems.find((entry) => entry.id === event.itemId) || item;
+    const entry = auditEntryFromInbox(confirmed, { id: event.id, timestamp: event.timestamp, outcome: 'confirmed' });
+    return { inboxItems, auditLog: entry ? appendAuditEntry(store.auditLog, entry) : store.auditLog };
+  }
+  if (event.type === 'ignore') {
+    const item = store.inboxItems.find((entry) => entry.id === event.itemId && entry.status === 'pending');
+    if (!item) return store;
+    const inboxItems = ignoreInboxItem(store.inboxItems, event.itemId);
+    const entry = auditEntryFromInbox(item, { id: event.id, timestamp: event.timestamp, outcome: 'ignored' });
+    return { inboxItems, auditLog: entry ? appendAuditEntry(store.auditLog, entry) : store.auditLog };
+  }
+  if (event.type === 'undo') {
+    const item = store.inboxItems.find((entry) => entry.id === event.itemId && entry.status === 'confirmed');
+    if (!item) return store;
+    const inboxItems = reopenInboxItem(store.inboxItems, event.itemId);
+    const entry = auditEntryFromInbox(item, { id: event.id, timestamp: event.timestamp, outcome: 'undone' });
+    return { inboxItems, auditLog: entry ? appendAuditEntry(store.auditLog, entry) : store.auditLog };
+  }
+  const item = store.inboxItems.find((entry) => entry.id === event.itemId);
+  if (!item) return store;
+  const entry = auditEntryFromInbox(item, {
+    id: event.id,
+    timestamp: event.timestamp,
+    outcome: 'failed',
+    reason: event.reason,
+    dataScope: event.dataScope,
+  });
+  return { inboxItems: store.inboxItems, auditLog: entry ? appendAuditEntry(store.auditLog, entry) : store.auditLog };
 }

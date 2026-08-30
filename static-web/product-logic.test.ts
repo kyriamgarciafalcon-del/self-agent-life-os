@@ -54,6 +54,15 @@ import {
   reopenInboxItem,
   sanitizeInboxPayload,
   updateInboxItemPayload,
+  AUDIT_LOG_LIMIT,
+  applyInboxLifecycle,
+  auditOutcomeLabel,
+  auditReasonLabel,
+  appendAuditEntry,
+  canUndoAuditEntry,
+  filterAuditLog,
+  inboxConfirmBlockReason,
+  migrateAuditLog,
 } from '../app/product-logic';
 
 describe('local date logic', () => {
@@ -701,5 +710,136 @@ describe('unified inbox dedupe', () => {
     expect(butler?.proposedAction).toBe('create_schedule');
     expect(pendingInboxCount(enqueueInboxItem([capture], butler))).toBe(2);
 
+  });
+});
+
+describe('v2 audit log sanitization and retention', () => {
+  it('normalizes typed append-only entries and never keeps password/apiKey/token/vault payloads', () => {
+    expect(migrateAuditLog(undefined)).toEqual([]);
+    expect(migrateAuditLog({ auditLog: [{ id: 'bad', source: 'sms', outcome: 'hacked', action: 'leak' }] })).toEqual([]);
+    const entries = appendAuditEntry([], {
+      id: 'aud-1',
+      timestamp: '2026-08-30T10:00:00',
+      source: 'payment',
+      action: 'create_expense',
+      itemId: 'pay-1',
+      outcome: 'pending',
+      summary: '午饭 · 36',
+      reason: 'queued',
+      password: 'secret123',
+      apiKey: 'sk-test',
+      token: 'abc',
+      vault: { pin: '1234' },
+      payload: { amount: 36, password: 'secret123', apiKey: 'sk-test' },
+    });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      id: 'aud-1',
+      timestamp: '2026-08-30T10:00:00',
+      source: 'payment',
+      action: 'create_expense',
+      itemId: 'pay-1',
+      outcome: 'pending',
+      summary: '午饭 · 36',
+    });
+    expect(JSON.stringify(entries)).not.toMatch(/password|apiKey|sk-test|token|vault|secret123|1234/i);
+  });
+
+  it('appends newest first and caps local retention', () => {
+    let log = migrateAuditLog([]);
+    for (let index = 0; index < AUDIT_LOG_LIMIT + 5; index += 1) {
+      log = appendAuditEntry(log, {
+        id: `aud-${index}`,
+        timestamp: `2026-08-30T10:00:${String(index).padStart(2, '0')}`,
+        source: 'manual',
+        action: 'create_schedule',
+        itemId: `item-${index}`,
+        outcome: 'pending',
+        summary: `条目 ${index}`,
+      });
+    }
+    expect(log).toHaveLength(AUDIT_LOG_LIMIT);
+    expect(log[0].id).toBe(`aud-${AUDIT_LOG_LIMIT + 4}`);
+    expect(log.at(-1)?.id).toBe('aud-5');
+  });
+});
+
+describe('v2 audit log inbox lifecycle', () => {
+  it('records enqueue, butler proposal, confirm, ignore and undo without double entries', () => {
+    const payment = inboxItemFromPayment({ id: 'pay-1', createdAt: '2026-08-30T10:00:00', amount: 36, merchant: '午饭', accountId: 'wechat' });
+    let store = { inboxItems: [] as ReturnType<typeof enqueueInboxItem>, auditLog: migrateAuditLog([]) };
+    store = applyInboxLifecycle(store, { type: 'enqueue', item: payment, timestamp: '2026-08-30T10:00:00', id: 'aud-e1' });
+    store = applyInboxLifecycle(store, { type: 'enqueue', item: { ...payment, id: 'pay-dup' }, timestamp: '2026-08-30T10:00:01', id: 'aud-e1b' });
+    expect(store.inboxItems).toHaveLength(1);
+    expect(store.auditLog.filter((entry) => entry.outcome === 'pending' && entry.itemId === 'pay-1')).toHaveLength(1);
+
+    const butler = inboxItemFromButlerAction({
+      id: 'ai-1',
+      createdAt: '2026-08-30T10:01:00',
+      action: { type: 'create_schedule', payload: { title: '吃药', date: '2026-08-31', time: '09:00' } },
+    });
+    store = applyInboxLifecycle(store, { type: 'enqueue', item: butler, timestamp: '2026-08-30T10:01:00', id: 'aud-b1' });
+    store = applyInboxLifecycle(store, { type: 'enqueue', item: butler, timestamp: '2026-08-30T10:01:01', id: 'aud-b1b' });
+    expect(store.auditLog.filter((entry) => entry.source === 'ai' && entry.outcome === 'pending')).toHaveLength(1);
+
+    store = applyInboxLifecycle(store, { type: 'confirm', itemId: 'pay-1', resultEntityId: 'txn-1', timestamp: '2026-08-30T10:02:00', id: 'aud-c1' });
+    store = applyInboxLifecycle(store, { type: 'confirm', itemId: 'pay-1', resultEntityId: 'txn-1', timestamp: '2026-08-30T10:02:01', id: 'aud-c1b' });
+    expect(store.inboxItems.find((item) => item.id === 'pay-1')).toMatchObject({ status: 'confirmed', resultEntityId: 'txn-1' });
+    expect(store.auditLog.filter((entry) => entry.itemId === 'pay-1' && entry.outcome === 'confirmed')).toHaveLength(1);
+
+    store = applyInboxLifecycle(store, { type: 'undo', itemId: 'pay-1', timestamp: '2026-08-30T10:03:00', id: 'aud-u1' });
+    expect(store.inboxItems.find((item) => item.id === 'pay-1')?.status).toBe('pending');
+    expect(store.auditLog[0]).toMatchObject({ itemId: 'pay-1', outcome: 'undone' });
+
+    store = applyInboxLifecycle(store, { type: 'ignore', itemId: 'ai-1', timestamp: '2026-08-30T10:04:00', id: 'aud-i1' });
+    store = applyInboxLifecycle(store, { type: 'ignore', itemId: 'ai-1', timestamp: '2026-08-30T10:04:01', id: 'aud-i1b' });
+    expect(store.inboxItems.find((item) => item.id === 'ai-1')?.status).toBe('ignored');
+    expect(store.auditLog.filter((entry) => entry.itemId === 'ai-1' && entry.outcome === 'ignored')).toHaveLength(1);
+  });
+
+  it('leaves an auditable failed entry for missing amount, missing account, and invalid health', () => {
+    const noAmount = inboxItemFromPayment({ id: 'pay-0', createdAt: '2026-08-30T10:00:00', amount: 0, merchant: '午饭', accountId: 'wechat' });
+    expect(inboxConfirmBlockReason(noAmount, [{ id: 'wechat' }])).toMatchObject({ reason: 'missing_amount', dataScope: 'finance' });
+    const noAccount = inboxItemFromPayment({ id: 'pay-acc', createdAt: '2026-08-30T10:00:00', amount: 12, merchant: '咖啡', accountId: '' });
+    expect(inboxConfirmBlockReason(noAccount, [])).toMatchObject({ reason: 'missing_account', dataScope: 'finance' });
+    const health = inboxItemFromNaturalCapture({
+      id: 'h1',
+      source: 'manual',
+      createdAt: '2026-08-30T10:00:00',
+      parsed: { kind: 'health', metric: 'steps', value: 8000 },
+    });
+    const invalidHealth = { ...health, payload: { ...health.payload, value: 0 } };
+    expect(inboxConfirmBlockReason(invalidHealth, [])).toMatchObject({ reason: 'invalid_health', dataScope: 'health' });
+
+    let store = applyInboxLifecycle({ inboxItems: [noAmount], auditLog: [] }, {
+      type: 'fail',
+      itemId: 'pay-0',
+      reason: 'missing_amount',
+      dataScope: 'finance',
+      timestamp: '2026-08-30T10:05:00',
+      id: 'aud-f1',
+    });
+    expect(store.inboxItems[0].status).toBe('pending');
+    expect(store.auditLog[0]).toMatchObject({ outcome: 'failed', reason: 'missing_amount', dataScope: 'finance', itemId: 'pay-0' });
+    expect(JSON.stringify(store.auditLog)).not.toMatch(/password|apiKey|token|vault/i);
+  });
+
+  it('filters by status and source with Chinese labels and does not invent undo from history', () => {
+    const entries = migrateAuditLog([
+      { id: '1', timestamp: 't1', source: 'payment', action: 'create_expense', itemId: 'a', outcome: 'confirmed', summary: '午饭' },
+      { id: '2', timestamp: 't2', source: 'ai', action: 'create_schedule', itemId: 'b', outcome: 'pending', summary: '吃药' },
+      { id: '3', timestamp: 't3', source: 'payment', action: 'create_expense', itemId: 'a', outcome: 'failed', summary: '午饭', reason: 'missing_amount' },
+    ]);
+    expect(filterAuditLog(entries, { outcome: 'failed' }).map((entry) => entry.id)).toEqual(['3']);
+    expect(filterAuditLog(entries, { source: 'ai' }).map((entry) => entry.id)).toEqual(['2']);
+    expect(auditOutcomeLabel('pending')).toBe('待确认');
+    expect(auditOutcomeLabel('confirmed')).toBe('已确认');
+    expect(auditOutcomeLabel('ignored')).toBe('已忽略');
+    expect(auditOutcomeLabel('undone')).toBe('已撤销');
+    expect(auditOutcomeLabel('failed')).toBe('失败');
+    expect(auditReasonLabel('missing_amount')).toBe('缺少金额');
+    expect(auditReasonLabel('missing_account')).toBe('缺少账户');
+    expect(auditReasonLabel('invalid_health')).toBe('健康数值无效');
+    expect(entries.every((entry) => canUndoAuditEntry(entry) === false)).toBe(true);
   });
 });

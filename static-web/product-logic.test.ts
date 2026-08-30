@@ -18,6 +18,13 @@ import {
   applyLedger,
   applyDailyFxRates,
   applyDailyPriceQuotes,
+  AI_CONFIG_STORAGE_KEY,
+  AI_EVENT_VERSION,
+  loadBrowserAiConfig,
+  migrateLegacyAiLocalStorage,
+  persistBrowserAiConfig,
+  publicAiConfig,
+  versionedAiEvent,
   canApplyLedger,
   defaultCashId,
   reconcileRecurringConfirmations,
@@ -505,5 +512,72 @@ describe('truthful product state', () => {
     expect(next.find((item) => item.id === 'cash')?.balance).toBe(120);
     expect(next.find((item) => item.id === 'owe')?.balance).toBe(0);
     expect(wealthTotals(next)[0].net).toBe(120);
+  });
+});
+
+function memoryStorage(initial: Record<string, string> = {}) {
+  const store = { ...initial };
+  return {
+    getItem(key: string) { return Object.prototype.hasOwnProperty.call(store, key) ? store[key] : null; },
+    setItem(key: string, value: string) { store[key] = value; },
+    removeItem(key: string) { delete store[key]; },
+    snapshot() { return { ...store }; },
+  };
+}
+
+describe('AI API key storage migration', () => {
+  it('strips apiKey from localStorage and returns the secret once for native or session handoff', () => {
+    const local = memoryStorage({
+      [AI_CONFIG_STORAGE_KEY]: JSON.stringify({ baseUrl: 'https://api.openai.com/v1/', model: 'gpt-4o-mini', apiKey: 'sk-test' }),
+    });
+    const migrated = migrateLegacyAiLocalStorage(local);
+    expect(migrated).toEqual({ baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', apiKey: 'sk-test' });
+    expect(local.getItem(AI_CONFIG_STORAGE_KEY)).toBeNull();
+  });
+
+  it('persists browser AI config in session storage without writing apiKey to localStorage', () => {
+    const session = memoryStorage();
+    const local = memoryStorage({
+      [AI_CONFIG_STORAGE_KEY]: JSON.stringify({ apiKey: 'sk-old', password: 'vault-secret' }),
+    });
+    const published = persistBrowserAiConfig(session, local, { baseUrl: 'https://api.openai.com/v1/', model: '', apiKey: 'sk-new' });
+    expect(published).toEqual({ baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', configured: true });
+    expect(JSON.parse(session.getItem(AI_CONFIG_STORAGE_KEY)!)).toEqual({
+      baseUrl: 'https://api.openai.com/v1',
+      model: 'gpt-4o-mini',
+      apiKey: 'sk-new',
+    });
+    expect(local.getItem(AI_CONFIG_STORAGE_KEY)).toBeNull();
+    expect(JSON.stringify(published)).not.toMatch(/apiKey|sk-new|password|vault/i);
+  });
+
+  it('reloads browser config from session storage and never from leftover localStorage secrets', () => {
+    const session = memoryStorage({
+      [AI_CONFIG_STORAGE_KEY]: JSON.stringify({ baseUrl: 'https://example.test/v1', model: 'demo', apiKey: 'sk-session' }),
+    });
+    const local = memoryStorage({
+      [AI_CONFIG_STORAGE_KEY]: JSON.stringify({ baseUrl: 'https://evil.test', apiKey: 'sk-local', password: 'hunter2' }),
+    });
+    expect(loadBrowserAiConfig(session, local)).toEqual({
+      baseUrl: 'https://example.test/v1',
+      model: 'demo',
+      apiKey: 'sk-session',
+      configured: true,
+    });
+    expect(local.getItem(AI_CONFIG_STORAGE_KEY)).toBeNull();
+  });
+
+  it('builds versioned AI events that never include the API key or vault fields', () => {
+    const reply = versionedAiEvent({ requestId: 'r1', ok: true, content: 'hi' });
+    const status = versionedAiEvent({ configured: true, baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', hasKey: true });
+    expect(reply.v).toBe(AI_EVENT_VERSION);
+    expect(status.v).toBe(1);
+    expect(publicAiConfig({ baseUrl: 'https://api.openai.com/v1', apiKey: 'sk-secret', password: 'x' })).toEqual({
+      baseUrl: 'https://api.openai.com/v1',
+      model: 'gpt-4o-mini',
+      configured: true,
+    });
+    expect(JSON.stringify(reply)).not.toMatch(/apiKey|password|vault/i);
+    expect(JSON.stringify(status)).not.toMatch(/apiKey|password|vault/i);
   });
 });

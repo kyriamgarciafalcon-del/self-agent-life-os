@@ -21,6 +21,9 @@ import android.webkit.WebViewClient
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
 import androidx.webkit.WebViewAssetLoader
+import app.selfagent.ai.AiChatClient
+import app.selfagent.ai.AiChatProtocol
+import app.selfagent.ai.EncryptedAiConfig
 import app.selfagent.capture.CaptureController
 import app.selfagent.health.HealthBus
 import app.selfagent.health.HealthImportActivity
@@ -244,6 +247,15 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun dispatchNativeEvent(name: String, payload: JSONObject) {
+        runOnUiThread {
+            webView.evaluateJavascript(
+                "window.dispatchEvent(new CustomEvent('$name',{detail:$payload}));",
+                null,
+            )
+        }
+    }
+
     private fun applyLedgerIntent(intent: Intent?) {
         val json = intent?.getStringExtra(EXTRA_TXN) ?: return
         val autoSave = intent.getBooleanExtra(EXTRA_AUTO_SAVE, false)
@@ -343,6 +355,26 @@ class MainActivity : Activity() {
         @JavascriptInterface
         fun revealPassword(id: String) {
             runOnUiThread { VaultReveal.start(this@MainActivity, id) }
+        }
+
+        @JavascriptInterface
+        fun saveAiConfig(json: String) {
+            dispatchNativeEvent(AiChatProtocol.CONFIG_EVENT, EncryptedAiConfig.save(this@MainActivity, json))
+        }
+
+        @JavascriptInterface
+        fun aiConfigStatus(): String = EncryptedAiConfig.publicJson(this@MainActivity).toString()
+
+        @JavascriptInterface
+        fun clearAiConfig() {
+            dispatchNativeEvent(AiChatProtocol.CONFIG_EVENT, EncryptedAiConfig.clear(this@MainActivity))
+        }
+
+        @JavascriptInterface
+        fun askAi(json: String) {
+            AiChatClient.ask(this@MainActivity, json) { event, payload ->
+                dispatchNativeEvent(event, payload)
+            }
         }
     }
 

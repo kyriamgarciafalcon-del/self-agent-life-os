@@ -1,7 +1,7 @@
 'use client';
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { accountRole, addDaysKey, applyDailyFxRates, applyDailyPriceQuotes, applyLedger, buildButlerSystemPrompt, buildHealthBriefing, canApplyLedger, cnyWealthTotal, defaultCashId, describeButlerDataScope, detectLegacyDemoData, healthRecordsFromSnapshots, isBackupPayload, isDebtRole, latestHealthByKind, localDateKey, migrateLegacyReimbursementAccounts, normalizeAccountBalance, normalizeMemory, parseButlerModelOutput, parseNaturalCapture, planAccountSettlement, reconcileRecurringConfirmations, releaseRecurringConfirmation, removeLedgerTransactionState, resolvePaymentAccountId, settleReimbursementState, summarizeHealth, upsertByExternalKey, wealthTotals, weekDates, type ButlerAction, type HealthMetric, type TravelKind } from './product-logic';
+import { accountRole, addDaysKey, applyDailyFxRates, applyDailyPriceQuotes, applyLedger, AI_CONFIG_EVENT, AI_CONFIG_STORAGE_KEY, AI_REPLY_EVENT, buildButlerSystemPrompt, buildHealthBriefing, canApplyLedger, cnyWealthTotal, defaultCashId, describeButlerDataScope, detectLegacyDemoData, healthRecordsFromSnapshots, isBackupPayload, isDebtRole, latestHealthByKind, loadBrowserAiConfig, localDateKey, migrateLegacyAiLocalStorage, migrateLegacyReimbursementAccounts, normalizeAccountBalance, normalizeMemory, parseButlerModelOutput, parseNaturalCapture, persistBrowserAiConfig, planAccountSettlement, reconcileRecurringConfirmations, releaseRecurringConfirmation, removeLedgerTransactionState, resolvePaymentAccountId, settleReimbursementState, summarizeHealth, upsertByExternalKey, wealthTotals, weekDates, type ButlerAction, type HealthMetric, type TravelKind } from './product-logic';
 
 type Tab = 'home' | 'schedule' | 'capture' | 'finance' | 'profile' | 'health' | 'travel' | 'data' | 'butler' | 'privacy' | 'memory' | 'vault';
 type ScheduleColor = 'blue' | 'green' | 'orange';
@@ -40,9 +40,8 @@ const HEALTH_METRIC_LABELS: Record<HealthMetric, string> = { steps: '步数', he
 
 const TODAY = localDateKey();
 const STORAGE_KEY = 'self-agent:local-data:v1';
-const AI_CONFIG_KEY = 'self-agent:ai-config:v1';
-type AiConfig = { baseUrl: string; model: string; apiKey: string };
-const emptyAi: AiConfig = { baseUrl: '', model: 'gpt-4o-mini', apiKey: '' };
+type AiConfig = { baseUrl: string; model: string; apiKey: string; configured: boolean };
+const emptyAi: AiConfig = { baseUrl: '', model: 'gpt-4o-mini', apiKey: '', configured: false };
 const MONTH = TODAY.slice(0, 7);
 const now = new Date();
 const TODAY_LABEL = new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' }).format(now);
@@ -149,6 +148,41 @@ function formatAssetAmount(currency: string, amount: number) {
 function formatCnyWealthSummary(accounts: { type: string; currency: string; balance: number }[], transactions: { kind: string; currency?: string; amount?: number; accountAmount?: number; reimbursable?: boolean; reimbursed?: boolean }[] = [], rates: ExchangeRate[] = []) {
   const total = cnyWealthTotal(accounts, transactions, rates);
   return total.unresolved.length ? `¥ ${money(total.convertedCny)}（待折算 ${total.unresolved.map((item) => `${item.currency} ${money(item.amount)}`).join(' · ')}）` : `¥ ${money(total.convertedCny)}`;
+}
+type NativeAiBridge = {
+  nativeReady?: () => boolean;
+  saveAiConfig?: (json: string) => void;
+  aiConfigStatus?: () => string;
+  clearAiConfig?: () => void;
+  askAi?: (json: string) => void;
+};
+
+function readNativeAiConfig(native?: NativeAiBridge | null): AiConfig {
+  try {
+    const status = JSON.parse(native?.aiConfigStatus?.() || '{}') as { baseUrl?: string; model?: string; configured?: boolean };
+    return { baseUrl: status.baseUrl || '', model: status.model || 'gpt-4o-mini', apiKey: '', configured: Boolean(status.configured) };
+  } catch {
+    return emptyAi;
+  }
+}
+
+function askNativeAi(native: NativeAiBridge | undefined, payload: { requestId: string; model: string; messages: { role: string; content: string }[] }): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      window.removeEventListener(AI_REPLY_EVENT, onReply);
+      reject(new Error('timeout'));
+    }, 45_000);
+    function onReply(event: Event) {
+      const detail = (event as CustomEvent<{ v?: number; requestId?: string; ok?: boolean; content?: string; error?: string }>).detail;
+      if (!detail || detail.requestId !== payload.requestId) return;
+      window.clearTimeout(timer);
+      window.removeEventListener(AI_REPLY_EVENT, onReply);
+      if (detail.ok && detail.content) resolve(detail.content);
+      else reject(new Error(detail?.error || 'offline'));
+    }
+    window.addEventListener(AI_REPLY_EVENT, onReply);
+    native?.askAi?.(JSON.stringify(payload));
+  });
 }
 function uid(prefix: string) { return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
 function localStamp(date = new Date()) {
@@ -275,7 +309,18 @@ export default function Home() {
     const timer = window.setTimeout(() => {
       try {
         const saved = window.localStorage.getItem(STORAGE_KEY); if (saved) setData(normalizeData(JSON.parse(saved) as Partial<AppData>));
-        const ai = window.localStorage.getItem(AI_CONFIG_KEY); if (ai) setAiConfig({ ...emptyAi, ...(JSON.parse(ai) as Partial<AiConfig>) });
+        const leftover = migrateLegacyAiLocalStorage(window.localStorage);
+        const native = (window as Window & { SelfAgentNative?: NativeAiBridge }).SelfAgentNative;
+        if (native?.nativeReady?.()) {
+          if (leftover?.apiKey) native.saveAiConfig?.(JSON.stringify(leftover));
+          window.sessionStorage.removeItem(AI_CONFIG_STORAGE_KEY);
+          setAiConfig(readNativeAiConfig(native));
+        } else {
+          const loaded = leftover
+            ? { ...persistBrowserAiConfig(window.sessionStorage, window.localStorage, leftover), apiKey: leftover.apiKey, configured: Boolean(leftover.baseUrl && leftover.apiKey) }
+            : loadBrowserAiConfig(window.sessionStorage, window.localStorage);
+          setAiConfig({ baseUrl: loaded.baseUrl, model: loaded.model, apiKey: loaded.apiKey, configured: loaded.configured });
+        }
       }
       catch { /* Corrupt local data should not prevent the app from opening. */ }
       finally { setHydrated(true); }
@@ -318,7 +363,7 @@ export default function Home() {
     return () => { delete w.selfAgentHandleBack; };
   });
   useEffect(() => {
-    const w = window as Window & { SelfAgentNative?: { nativeReady?: () => boolean; vaultMeta?: () => string; capabilityStatus?: () => string } };
+    const w = window as Window & { SelfAgentNative?: NativeAiBridge & { vaultMeta?: () => string; capabilityStatus?: () => string } };
     function refreshNative() {
       try {
         if (!w.SelfAgentNative?.nativeReady?.()) return;
@@ -331,6 +376,16 @@ export default function Home() {
           notifications: Boolean(status.notifications),
           notificationListener: Boolean(status.notificationListener),
           autofill: Boolean(status.autofill),
+        });
+        const sessionAi = loadBrowserAiConfig(window.sessionStorage, window.localStorage);
+        if (sessionAi.apiKey) {
+          w.SelfAgentNative.saveAiConfig?.(JSON.stringify({ baseUrl: sessionAi.baseUrl, model: sessionAi.model, apiKey: sessionAi.apiKey }));
+          window.sessionStorage.removeItem(AI_CONFIG_STORAGE_KEY);
+        }
+        setAiConfig((current) => {
+          const next = readNativeAiConfig(w.SelfAgentNative);
+          if (current.baseUrl === next.baseUrl && current.model === next.model && current.configured === next.configured && !current.apiKey) return current;
+          return next;
         });
       } catch { /* Native bridge is optional on web. */ }
     }
@@ -387,6 +442,19 @@ export default function Home() {
     }
     window.addEventListener('self-agent:capture-text', onCaptureText);
     return () => window.removeEventListener('self-agent:capture-text', onCaptureText);
+  }, []);
+  useEffect(() => {
+    function onAiConfig(event: Event) {
+      const detail = (event as CustomEvent<{ v?: number; baseUrl?: string; model?: string; configured?: boolean; hasKey?: boolean }>).detail || {};
+      setAiConfig({
+        baseUrl: detail.baseUrl || '',
+        model: detail.model || 'gpt-4o-mini',
+        apiKey: '',
+        configured: Boolean(detail.configured || detail.hasKey),
+      });
+    }
+    window.addEventListener(AI_CONFIG_EVENT, onAiConfig);
+    return () => window.removeEventListener(AI_CONFIG_EVENT, onAiConfig);
   }, []);
   useEffect(() => {
     function onPayment(event: Event) {
@@ -837,7 +905,7 @@ export default function Home() {
   }
   function clearLocalData() {
     if (!window.confirm('确定清空本机日程、账本、健康、行程和 AI 设置吗？密码库不会被清空。')) return;
-    setData(emptyData); setAiConfig(emptyAi); window.localStorage.removeItem(STORAGE_KEY); window.localStorage.removeItem(AI_CONFIG_KEY); notify('本机业务数据已清空');
+    setData(emptyData); setAiConfig(emptyAi); window.localStorage.removeItem(STORAGE_KEY); window.localStorage.removeItem(AI_CONFIG_STORAGE_KEY); window.sessionStorage.removeItem(AI_CONFIG_STORAGE_KEY); (window as Window & { SelfAgentNative?: NativeAiBridge }).SelfAgentNative?.clearAiConfig?.(); notify('本机业务数据已清空');
   }
   function pageTitle() { return tab === 'schedule' ? '日程与行动' : tab === 'capture' ? '快速记录' : tab === 'finance' ? selectedHoldingId ? '收益详情' : selectedAccountId ? '账户账单' : '我的财务' : tab === 'profile' ? '我的' : tab === 'health' ? '健康记录' : tab === 'travel' ? '我的出行' : tab === 'data' ? '数据中心' : tab === 'butler' ? '本机管家' : tab === 'privacy' ? '隐私与权限' : tab === 'memory' ? '记忆管理' : tab === 'vault' ? '密码库' : '今天'; }
 
@@ -861,7 +929,7 @@ export default function Home() {
 
     {tab === 'finance' && <FinancePanel data={data} currency={financeCurrency} selectedAccountId={selectedAccountId} selectedHoldingId={selectedHoldingId} onCurrency={setFinanceCurrency} onSelectAccount={(id) => { setSelectedAccountId(id); setSelectedHoldingId(null); }} onSelectHolding={setSelectedHoldingId} onBackAccount={() => setSelectedAccountId(null)} onBackHolding={() => setSelectedHoldingId(null)} onNewTransaction={() => { setEditingTransactionId(null); setSheet('transaction'); }} onEditTransaction={(id) => { setEditingTransactionId(id); setSheet('transaction'); }} onNewAccount={() => { setEditingAccountId(null); setSheet('account'); }} onEditAccount={(id) => { setEditingAccountId(id); setSheet('account'); }} onNewHolding={() => { setEditingHoldingId(null); setSheet('holding'); }} onEditHolding={(id) => { setEditingHoldingId(id); setSheet('holding'); }} onNewRecurring={() => { setEditingRecurringId(null); setSheet('recurring'); }} onEditRecurring={(id) => { setEditingRecurringId(id); setSheet('recurring'); }} onDeleteRecurring={(id) => deleteRecurringRule(id)} onDeleteTransaction={(id) => deleteTransaction(id)} onRunRecurring={runRecurringRule} onToggleRecurring={toggleRecurringRule} onSettleReimbursement={settleReimbursement} onSettleAccount={settleAccount} onNewRate={() => { setEditingRateCurrency(null); setSheet('exchange-rate'); }} onEditRate={(currency) => { setEditingRateCurrency(currency); setSheet('exchange-rate'); }} onDeleteRate={deleteExchangeRate} onRefreshQuotes={requestQuoteRefresh} />}
 
-    {tab === 'profile' && <div className="page profile-page"><section className="profile-heading"><div>SA</div><span>SELF AGENT</span><h2>数据留在你的设备上</h2><p>界面和记录都在手机里运行，不依赖服务器。敏感能力由系统权限授权。</p></section><section className="profile-menu"><button onClick={chooseGadgetbridgeExport}><span>链</span><div><strong>选择 ZIP 所在文件夹</strong><small>请选择 Download/health，自动跟踪新生成的 Gadgetbridge.zip</small></div><b>›</b></button><button onClick={() => navigate('memory')}><span>忆</span><div><strong>AI 记忆管理</strong><small>查看、暂停或删除管家记忆</small></div><b>›</b></button><button onClick={() => navigate('privacy')}><span>盾</span><div><strong>隐私与权限</strong><small>分别控制健康、财务和日程摘要</small></div><b>›</b></button><button onClick={() => navigate('vault')}><span>钥</span><div><strong>密码库</strong><small>不在网页保存密码明文</small></div><b>›</b></button><button onClick={() => navigate('data')}><span>数</span><div><strong>数据中心</strong><small>健康、财务与行动统一摘要</small></div><b>›</b></button></section><form className="ai-box" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const next = { baseUrl: String(form.get('baseUrl')).trim().replace(/\/$/, ''), model: String(form.get('model')).trim() || 'gpt-4o-mini', apiKey: String(form.get('apiKey')).trim() }; setAiConfig(next); window.localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(next)); notify('AI 接口已保存在本机，不会进入密码库或导出文件'); }}><strong>AI 接口</strong><p>兼容 OpenAI Chat Completions。密钥只存在本机，提问时不会发送密码。</p><label>接口地址<input name="baseUrl" placeholder="https://api.openai.com/v1" defaultValue={aiConfig.baseUrl} /></label><label>模型<input name="model" defaultValue={aiConfig.model} /></label><label>API Key<input name="apiKey" type="password" autoComplete="off" defaultValue={aiConfig.apiKey} /></label><button className="save" type="submit" style={{ marginTop: 12 }}>保存接口</button></form>{nativeOn && <div className="native-actions"><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openAccessibilitySettings?: () => void } }).SelfAgentNative?.openAccessibilitySettings?.()}>第1步：打开无障碍（自动记账）</button><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openNotificationAccess?: () => void } }).SelfAgentNative?.openNotificationAccess?.()}>第2步：打开通知使用权</button><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openAutofillSettings?: () => void } }).SelfAgentNative?.openAutofillSettings?.()}>第3步：设为自动填充服务</button></div>}<HowToNative /><section className="profile-actions"><button onClick={toggleTheme}>{data.theme === 'dark' ? '切换浅色模式' : '切换深色模式'}</button><button onClick={exportLocalData}>导出全部数据</button><label className="file-action">从备份恢复<input hidden type="file" accept="application/json,.json" onChange={importLocalData} /></label><button onClick={loadDemoData}>加载演示数据</button><button className="danger-text" onClick={clearLocalData}>清空本机数据</button></section><p className="privacy-note">Android 通知记账需系统授权；确认前不会改余额。密码只进入 Keystore，不会发给 AI。</p></div>}
+    {tab === 'profile' && <div className="page profile-page"><section className="profile-heading"><div>SA</div><span>SELF AGENT</span><h2>数据留在你的设备上</h2><p>界面和记录都在手机里运行，不依赖服务器。敏感能力由系统权限授权。</p></section><section className="profile-menu"><button onClick={chooseGadgetbridgeExport}><span>链</span><div><strong>选择 ZIP 所在文件夹</strong><small>请选择 Download/health，自动跟踪新生成的 Gadgetbridge.zip</small></div><b>›</b></button><button onClick={() => navigate('memory')}><span>忆</span><div><strong>AI 记忆管理</strong><small>查看、暂停或删除管家记忆</small></div><b>›</b></button><button onClick={() => navigate('privacy')}><span>盾</span><div><strong>隐私与权限</strong><small>分别控制健康、财务和日程摘要</small></div><b>›</b></button><button onClick={() => navigate('vault')}><span>钥</span><div><strong>密码库</strong><small>不在网页保存密码明文</small></div><b>›</b></button><button onClick={() => navigate('data')}><span>数</span><div><strong>数据中心</strong><small>健康、财务与行动统一摘要</small></div><b>›</b></button></section><form className="ai-box" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const next = { baseUrl: String(form.get('baseUrl')).trim().replace(/\/$/, ''), model: String(form.get('model')).trim() || 'gpt-4o-mini', apiKey: String(form.get('apiKey')).trim() }; const native = (window as Window & { SelfAgentNative?: NativeAiBridge }).SelfAgentNative; if (native?.nativeReady?.() && native.saveAiConfig) { native.saveAiConfig(JSON.stringify(next)); setAiConfig({ baseUrl: next.baseUrl, model: next.model, apiKey: '', configured: Boolean(next.baseUrl && (next.apiKey || aiConfig.configured)) }); notify(next.apiKey ? 'AI 密钥已加密保存到 Android Keystore' : 'AI 接口设置已更新，原密钥保持不变'); } else { const published = persistBrowserAiConfig(window.sessionStorage, window.localStorage, next); setAiConfig({ ...published, apiKey: next.apiKey, configured: Boolean(next.baseUrl && next.apiKey) }); notify('网页版密钥只保留到当前页面会话，关闭后自动清除'); } }}><strong>AI 接口</strong><p>兼容 OpenAI Chat Completions。密钥只存在本机，提问时不会发送密码。</p><label>接口地址<input name="baseUrl" placeholder="https://api.openai.com/v1" defaultValue={aiConfig.baseUrl} /></label><label>模型<input name="model" defaultValue={aiConfig.model} /></label><label>API Key<input name="apiKey" type="password" autoComplete="off" defaultValue={aiConfig.apiKey} /></label><button className="save" type="submit" style={{ marginTop: 12 }}>保存接口</button></form>{nativeOn && <div className="native-actions"><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openAccessibilitySettings?: () => void } }).SelfAgentNative?.openAccessibilitySettings?.()}>第1步：打开无障碍（自动记账）</button><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openNotificationAccess?: () => void } }).SelfAgentNative?.openNotificationAccess?.()}>第2步：打开通知使用权</button><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openAutofillSettings?: () => void } }).SelfAgentNative?.openAutofillSettings?.()}>第3步：设为自动填充服务</button></div>}<HowToNative /><section className="profile-actions"><button onClick={toggleTheme}>{data.theme === 'dark' ? '切换浅色模式' : '切换深色模式'}</button><button onClick={exportLocalData}>导出全部数据</button><label className="file-action">从备份恢复<input hidden type="file" accept="application/json,.json" onChange={importLocalData} /></label><button onClick={loadDemoData}>加载演示数据</button><button className="danger-text" onClick={clearLocalData}>清空本机数据</button></section><p className="privacy-note">Android 通知记账需系统授权；确认前不会改余额。密码只进入 Keystore，不会发给 AI。</p></div>}
 
     {tab === 'health' && <HealthPanel records={data.healthRecords} onAdd={() => setSheet('health')} onImport={importHealth} onSelectExport={chooseGadgetbridgeExport} onSaveBody={saveBodyMetrics} />}
     {tab === 'travel' && <TravelPanel items={data.travels} onSync={requestTravelSync} onAdd={() => setSheet('travel')} onDelete={(id) => { setData((current) => ({ ...current, travels: current.travels.filter((item) => item.id !== id) })); notify('行程已删除'); }} />}
@@ -999,7 +1067,7 @@ function formatHealthAnswer(briefing: { rangeLabel: string; evidence: string; mi
 }
 
 function ButlerPanel({ data, ai, onConfirmAction }: { data: AppData; ai: AiConfig; onConfirmAction: (action: ButlerAction) => void }) {
-  const connected = Boolean(ai.baseUrl && ai.apiKey);
+  const connected = Boolean(ai.baseUrl && ai.configured);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [linkState, setLinkState] = useState<'unconfigured' | 'ready' | 'busy' | 'offline'>(connected ? 'ready' : 'unconfigured');
@@ -1041,9 +1109,18 @@ function ButlerPanel({ data, ai, onConfirmAction }: { data: AppData; ai: AiConfi
     let actions: ButlerAction[] = [];
     if (connected) {
       try {
-        const response = await fetch(`${ai.baseUrl}/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ai.apiKey}` }, body: JSON.stringify({ model: ai.model || 'gpt-4o-mini', messages: [{ role: 'system', content: buildButlerSystemPrompt({ today: TODAY, month: MONTH, privacy: data.privacy, schedules: data.schedules, transactions: data.transactions, healthRecords: data.privacy.health ? data.healthRecords : [], memories: data.memories }) }, { role: 'user', content: value }] }) });
-        const payload = await response.json() as { choices?: { message?: { content?: string } }[] };
-        const parsed = parseButlerModelOutput(payload.choices?.[0]?.message?.content?.trim() || reply);
+        const native = (window as Window & { SelfAgentNative?: NativeAiBridge }).SelfAgentNative;
+        const request = { requestId: uid('ai'), model: ai.model || 'gpt-4o-mini', messages: [{ role: 'system', content: buildButlerSystemPrompt({ today: TODAY, month: MONTH, privacy: data.privacy, schedules: data.schedules, transactions: data.transactions, healthRecords: data.privacy.health ? data.healthRecords : [], memories: data.memories }) }, { role: 'user', content: value }] };
+        let content = '';
+        if (native?.nativeReady?.() && native.askAi) {
+          content = await askNativeAi(native, request);
+        } else {
+          const response = await fetch(`${ai.baseUrl}/chat/completions`, { method: 'POST', redirect: 'error', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ai.apiKey}` }, body: JSON.stringify({ model: request.model, messages: request.messages }) });
+          if (!response.ok) throw new Error(`http_${response.status}`);
+          const payload = await response.json() as { choices?: { message?: { content?: string } }[] };
+          content = payload.choices?.[0]?.message?.content?.trim() || '';
+        }
+        const parsed = parseButlerModelOutput(content || reply);
         reply = parsed.reply;
         actions = parsed.actions;
         if (/健康|心率|睡眠|压力|PAI|身高|体重|步数/.test(value) && !reply.includes('不是诊断')) reply = formatHealthAnswer(briefing, reply);

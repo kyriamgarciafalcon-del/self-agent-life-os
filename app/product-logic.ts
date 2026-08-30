@@ -771,3 +771,79 @@ export function releaseRecurringConfirmation<TR extends RecurringRuleState>(
     ? { ...rule, lastRunPeriod: undefined }
     : rule);
 }
+
+export const AI_CONFIG_STORAGE_KEY = 'self-agent:ai-config:v1';
+export const AI_EVENT_VERSION = 1;
+export const AI_CONFIG_EVENT = 'self-agent:ai-config';
+export const AI_REPLY_EVENT = 'self-agent:ai-reply';
+
+export type StorageLike = {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+};
+
+export type AiSecretConfig = { baseUrl: string; model: string; apiKey: string };
+export type AiPublicConfig = { baseUrl: string; model: string; configured: boolean };
+export type AiRuntimeConfig = AiPublicConfig & { apiKey: string };
+
+export function normalizeAiBaseUrl(raw: string): string {
+  return String(raw || '').trim().replace(/\/+$/, '');
+}
+
+export function publicAiConfig(raw: Partial<AiSecretConfig> & { configured?: boolean; password?: unknown; vaultItems?: unknown } | null | undefined): AiPublicConfig {
+  const baseUrl = normalizeAiBaseUrl(String(raw?.baseUrl || ''));
+  const model = String(raw?.model || '').trim() || 'gpt-4o-mini';
+  const apiKey = String(raw?.apiKey || '').trim();
+  return { baseUrl, model, configured: Boolean(raw?.configured) || Boolean(baseUrl && apiKey) };
+}
+
+export function versionedAiEvent<T extends Record<string, unknown>>(detail: T): { v: number } & T {
+  const rest = { ...detail } as Record<string, unknown>;
+  delete rest.apiKey;
+  delete rest.password;
+  delete rest.vaultItems;
+  return { v: AI_EVENT_VERSION, ...(rest as T) };
+}
+
+function parseAiObject(raw: string | null): Record<string, unknown> | null {
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as unknown;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    return value as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+export function migrateLegacyAiLocalStorage(local: StorageLike): AiSecretConfig | null {
+  const parsed = parseAiObject(local.getItem(AI_CONFIG_STORAGE_KEY));
+  local.removeItem(AI_CONFIG_STORAGE_KEY);
+  if (!parsed) return null;
+  const published = publicAiConfig(parsed as Partial<AiSecretConfig>);
+  const apiKey = String(parsed.apiKey || '').trim();
+  if (!published.baseUrl && !apiKey) return null;
+  return { baseUrl: published.baseUrl, model: published.model, apiKey };
+}
+
+export function persistBrowserAiConfig(session: StorageLike, local: StorageLike, config: Partial<AiSecretConfig>): AiPublicConfig {
+  local.removeItem(AI_CONFIG_STORAGE_KEY);
+  const published = publicAiConfig(config);
+  session.setItem(AI_CONFIG_STORAGE_KEY, JSON.stringify({
+    baseUrl: published.baseUrl,
+    model: published.model,
+    apiKey: String(config.apiKey || '').trim(),
+  }));
+  return published;
+}
+
+export function loadBrowserAiConfig(session: StorageLike, local: StorageLike): AiRuntimeConfig {
+  const leftover = migrateLegacyAiLocalStorage(local);
+  const fromSession = parseAiObject(session.getItem(AI_CONFIG_STORAGE_KEY));
+  if (!fromSession && leftover) persistBrowserAiConfig(session, local, leftover);
+  const source = (fromSession || leftover || {}) as Partial<AiSecretConfig>;
+  const published = publicAiConfig(source);
+  const apiKey = String(source.apiKey || leftover?.apiKey || '').trim();
+  return { ...published, apiKey, configured: Boolean(published.baseUrl && apiKey) };
+}

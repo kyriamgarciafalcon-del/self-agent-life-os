@@ -42,7 +42,8 @@ class GadgetbridgeImportActivity : Activity() {
             val kind = resolvedKind(context, prefs, android.net.Uri.parse(uri))
             val trigger = if (kind == KIND_ZIP) TRIGGER_ZIP_EXPORT else TRIGGER_EXPORT
             context.sendBroadcast(Intent(trigger).setPackage(GB_PACKAGE))
-            parseAsync(context)
+            // Gadgetbridge may replace the export in place. Wait for its success broadcast
+            // before reading, otherwise ZipInputStream can see a half-written archive.
             return true
         }
 
@@ -94,16 +95,23 @@ class GadgetbridgeImportActivity : Activity() {
         }
 
         private fun parse(context: Context, uri: android.net.Uri, kind: String) {
-            try {
-                val records = if (kind == KIND_ZIP) parseZip(context, uri) else parseSqliteUri(context, uri)
-                HealthBus.post(JSONObject().put("records", records).put("source", "gadgetbridge-direct"))
-                android.os.Handler(android.os.Looper.getMainLooper()).post {
-                    Toast.makeText(context, "Gadgetbridge 数据库或 ZIP（含 v6 睡眠）已导入", Toast.LENGTH_SHORT).show()
+            var lastError: Exception? = null
+            repeat(3) { attempt ->
+                try {
+                    val records = if (kind == KIND_ZIP) parseZip(context, uri) else parseSqliteUri(context, uri)
+                    HealthBus.post(JSONObject().put("records", records).put("source", "gadgetbridge-direct"))
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        Toast.makeText(context, "Gadgetbridge 数据库或 ZIP（含 v6 睡眠）已导入", Toast.LENGTH_SHORT).show()
+                    }
+                    return
+                } catch (error: Exception) {
+                    lastError = error
+                    if (attempt < 2) Thread.sleep(600)
                 }
-            } catch (_: Exception) {
-                android.os.Handler(android.os.Looper.getMainLooper()).post {
-                    Toast.makeText(context, "Gadgetbridge 导出文件读取失败，请重新选择数据库或 ZIP", Toast.LENGTH_LONG).show()
-                }
+            }
+            android.util.Log.e("GadgetbridgeImport", "Failed to read saved export after retries", lastError)
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                Toast.makeText(context, "ZIP 读取失败。请确认自动导出已完成，再点“同步”重试", Toast.LENGTH_LONG).show()
             }
         }
 

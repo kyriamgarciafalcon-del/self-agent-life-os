@@ -175,7 +175,8 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        GadgetbridgeImportActivity.importSaved(this)
+        // Returning from the picker must not overwrite the ZIP while it is being read.
+        GadgetbridgeImportActivity.parseSaved(this)
         if (::webView.isInitialized) flushPending()
     }
 

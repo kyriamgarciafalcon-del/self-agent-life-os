@@ -2,7 +2,7 @@
 import hashlib, struct, sys
 from pathlib import Path
 
-EXPECTED = "8e74c088ff9fe467164297c924ff7f2b087a390bd2ab1680a3b15e549b92ab03"
+EXPECTED = "64341f1104e0f421e08ae36c428f3f8f0cae84b98164bbaf59da7edb1386b69f"
 
 
 def u32(b, o):

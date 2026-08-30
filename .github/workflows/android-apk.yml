@@ -52,6 +52,26 @@ jobs:
         with:
           gradle-version: "8.9"
 
+      - name: Restore Android signing key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          install -d -m 700 android/keystore
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/keystore/self-agent-update.p12
+          chmod 600 android/keystore/self-agent-update.p12
+          {
+            printf 'storeFile=keystore/self-agent-update.p12\n'
+            printf 'storePassword=%s\n' "$ANDROID_KEYSTORE_PASSWORD"
+            printf 'keyAlias=%s\n' "$ANDROID_KEY_ALIAS"
+            printf 'keyPassword=%s\n' "$ANDROID_KEY_PASSWORD"
+            printf 'storeType=PKCS12\n'
+          } > android/keystore/keystore.properties
+          chmod 600 android/keystore/keystore.properties
+
       - name: Run Android unit tests
         working-directory: android
         run: gradle --no-daemon :app:testDebugUnitTest
@@ -72,3 +92,7 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Remove signing material
+        if: always()
+        run: rm -f android/keystore/self-agent-update.p12 android/keystore/keystore.properties

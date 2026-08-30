@@ -12,6 +12,8 @@ import android.os.Build
 import android.os.CancellationSignal
 import android.os.Handler
 import android.os.Looper
+import android.os.PersistableBundle
+import android.view.WindowManager
 import android.widget.Toast
 import java.util.concurrent.Executor
 
@@ -98,10 +100,28 @@ object VaultReveal {
             .setMessage(text)
             .setPositiveButton("复制密码") { _, _ ->
                 val clipboard = activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                clipboard.setPrimaryClip(ClipData.newPlainText("password", entry.password))
-                Toast.makeText(activity, "已复制，离开页面后请尽快清除剪贴板", Toast.LENGTH_SHORT).show()
+                val copied = entry.password
+                val clip = ClipData.newPlainText("password", copied)
+                clip.description.extras = PersistableBundle().apply {
+                    putBoolean("android.content.extra.IS_SENSITIVE", true)
+                }
+                clipboard.setPrimaryClip(clip)
+                Handler(Looper.getMainLooper()).postDelayed({
+                    val current = clipboard.primaryClip
+                        ?.takeIf { it.itemCount > 0 }
+                        ?.getItemAt(0)
+                        ?.coerceToText(activity)
+                        ?.toString()
+                    if (current == copied) {
+                        if (Build.VERSION.SDK_INT >= 28) clipboard.clearPrimaryClip()
+                        else clipboard.setPrimaryClip(ClipData.newPlainText("", ""))
+                    }
+                }, 45_000L)
+                Toast.makeText(activity, "密码已复制，45 秒后自动清除", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("关闭", null)
             .show()
+            .window
+            ?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
     }
 }

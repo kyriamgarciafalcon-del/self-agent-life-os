@@ -1,7 +1,7 @@
 'use client';
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { accountRole, addDaysKey, applyDailyFxRates, applyDailyPriceQuotes, applyLedger, AI_CONFIG_EVENT, AI_CONFIG_STORAGE_KEY, AI_REPLY_EVENT, buildButlerSystemPrompt, buildHealthBriefing, canApplyLedger, cnyWealthTotal, defaultCashId, describeButlerDataScope, detectLegacyDemoData, healthRecordsFromSnapshots, isBackupPayload, isDebtRole, latestHealthByKind, loadBrowserAiConfig, localDateKey, migrateLegacyAiLocalStorage, migrateLegacyReimbursementAccounts, normalizeAccountBalance, normalizeMemory, parseButlerModelOutput, parseNaturalCapture, persistBrowserAiConfig, planAccountSettlement, reconcileRecurringConfirmations, releaseRecurringConfirmation, removeLedgerTransactionState, resolvePaymentAccountId, settleReimbursementState, summarizeHealth, upsertByExternalKey, wealthTotals, weekDates, type ButlerAction, type HealthMetric, type TravelKind } from './product-logic';
+import { accountRole, addDaysKey, applyDailyFxRates, applyDailyPriceQuotes, applyLedger, AI_CONFIG_EVENT, AI_CONFIG_STORAGE_KEY, AI_REPLY_EVENT, buildButlerSystemPrompt, buildHealthBriefing, canApplyLedger, canUndoInboxConfirm, cnyWealthTotal, confirmInboxItem, defaultCashId, describeButlerDataScope, detectLegacyDemoData, enqueueInboxItem, healthRecordsFromSnapshots, ignoreInboxItem, inboxConfidenceLabel, inboxItemFromButlerAction, inboxItemFromNaturalCapture, inboxItemFromPayment, inboxItemFromTravelNotice, inboxSourceLabel, INBOX_ACTION_LABELS, isBackupPayload, isDebtRole, latestHealthByKind, loadBrowserAiConfig, localDateKey, migrateInboxStore, migrateLegacyAiLocalStorage, migrateLegacyReimbursementAccounts, normalizeAccountBalance, normalizeMemory, parseButlerModelOutput, parseNaturalCapture, pendingInboxCount, pendingInboxItems, persistBrowserAiConfig, planAccountSettlement, reconcileRecurringConfirmations, releaseRecurringConfirmation, removeLedgerTransactionState, reopenInboxItem, resolvePaymentAccountId, settleReimbursementState, summarizeHealth, updateInboxItemPayload, upsertByExternalKey, wealthTotals, weekDates, type ButlerAction, type HealthMetric, type InboxItem, type InboxSource, type TravelKind } from './product-logic';
 
 type Tab = 'home' | 'schedule' | 'capture' | 'finance' | 'profile' | 'health' | 'travel' | 'data' | 'butler' | 'privacy' | 'memory' | 'vault';
 type ScheduleColor = 'blue' | 'green' | 'orange';
@@ -30,7 +30,7 @@ type InvestmentKind = 'fund' | 'stock' | 'crypto' | 'meme';
 type PricePoint = { date: string; price: number };
 type InvestmentHolding = { id: string; accountId: string; kind: InvestmentKind; name: string; code: string; contract: string; network: string; quantity: number; averageCost: number; currentPrice: number; currency: Currency; updatedAt: string; quoteStatus: 'sample' | 'manual' | 'live'; history: PricePoint[] };
 type ExchangeRate = { currency: Exclude<Currency, 'CNY'>; cnyRate: number; asOf: string; source: 'manual' | 'daily'; updatedAt: string };
-type AppData = { schemaVersion: 2; demoMode: boolean; schedules: ScheduleItem[]; accounts: Account[]; transactions: Transaction[]; recurringRules: RecurringRule[]; healthRecords: HealthRecord[]; travels: TravelItem[]; investments: InvestmentHolding[]; exchangeRates: ExchangeRate[]; memories: MemoryItem[]; privacy: PrivacySettings; vaultItems: VaultItem[]; theme: 'light' | 'dark' };
+type AppData = { schemaVersion: 3; demoMode: boolean; schedules: ScheduleItem[]; accounts: Account[]; transactions: Transaction[]; recurringRules: RecurringRule[]; healthRecords: HealthRecord[]; travels: TravelItem[]; investments: InvestmentHolding[]; exchangeRates: ExchangeRate[]; memories: MemoryItem[]; privacy: PrivacySettings; vaultItems: VaultItem[]; inboxItems: InboxItem[]; lastConfirmedInboxId: string | null; theme: 'light' | 'dark' };
 type ExpenseDraft = { kind: 'expense'; amount: number; merchant: string; category: string; accountId: string; source: string; currency: Currency; reimbursable: boolean };
 type ScheduleDraft = { kind: 'schedule'; title: string; date: string; time: string };
 type TravelDraft = { kind: 'travel'; travelKind: TravelKind; number: string; from: string; to: string; date: string; departTime: string; arriveTime?: string };
@@ -60,7 +60,7 @@ function canHoldMoney(account: Account | undefined) {
 }
 
 const demoData: AppData = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   demoMode: true,
   schedules: [
     { id: 's1', date: TODAY, time: '09:30', title: '项目周会', detail: '线上会议 · 45 分钟', color: 'blue', done: true },
@@ -112,11 +112,13 @@ const demoData: AppData = {
     { id: 'v1', title: '招商银行', usernameHint: '账号已保存', note: '等待 Android Autofill 接管' },
     { id: 'v2', title: '个人邮箱', usernameHint: '账号已保存', note: '不在网页保存密码明文' },
   ],
+  inboxItems: [],
+  lastConfirmedInboxId: null,
   theme: 'light',
 };
 
 const emptyData: AppData = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   demoMode: false,
   schedules: [],
   accounts: [],
@@ -129,12 +131,14 @@ const emptyData: AppData = {
   memories: [],
   privacy: { health: false, finance: false, schedule: false },
   vaultItems: [],
+  inboxItems: [],
+  lastConfirmedInboxId: null,
   theme: 'light',
 };
 
 const navItems: { id: Tab; label: string; icon: string }[] = [
   { id: 'home', label: '首页', icon: '⌂' }, { id: 'schedule', label: '日程', icon: '□' },
-  { id: 'capture', label: '记录', icon: '＋' }, { id: 'finance', label: '财务', icon: '▣' },
+  { id: 'capture', label: '收件箱', icon: '＋' }, { id: 'finance', label: '财务', icon: '▣' },
   { id: 'profile', label: '我的', icon: '○' },
 ];
 
@@ -208,8 +212,9 @@ function normalizeData(raw: Partial<AppData>): AppData {
   }));
   const migrated = migrateLegacyReimbursementAccounts(rawAccounts, rawTransactions);
   const accounts = syncInvestmentBalances(migrated.accounts, investments);
+  const inbox = migrateInboxStore(raw);
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     demoMode: raw.demoMode ?? detectLegacyDemoData(raw),
     schedules: raw.schedules ?? [],
     accounts,
@@ -237,6 +242,8 @@ function normalizeData(raw: Partial<AppData>): AppData {
     }),
     privacy: { ...emptyData.privacy, ...(raw.privacy ?? {}) },
     vaultItems: raw.vaultItems ?? [],
+    inboxItems: inbox.inboxItems,
+    lastConfirmedInboxId: inbox.lastConfirmedInboxId,
     theme: raw.theme ?? 'light',
   };
 }
@@ -284,6 +291,8 @@ export default function Home() {
   const [toast, setToast] = useState('');
   const [captureText, setCaptureText] = useState('');
   const [draft, setDraft] = useState<CaptureDraft | null>(null);
+  const [editingInboxId, setEditingInboxId] = useState<string | null>(null);
+  const captureSourceRef = useRef<InboxSource>('manual');
 
   function navigate(next: Tab) {
     setTabState((current) => {
@@ -332,17 +341,20 @@ export default function Home() {
       const items = (event as CustomEvent<TravelItem[]>).detail;
       if (!Array.isArray(items) || !items.length) return;
       setData((current) => {
-        const next = [...current.travels];
+        let inboxItems = current.inboxItems;
         for (const item of items) {
           const key = `${item.kind}-${item.number}-${String(item.departAt).slice(0, 10)}`;
-          const index = next.findIndex((row) => `${row.kind}-${row.number}-${row.departAt.slice(0, 10)}` === key);
-          const merged = { ...item, id: item.id || uid('travel'), verified: true, source: item.source || 'notification' };
-          if (index >= 0) next[index] = { ...next[index], ...merged };
-          else next.push(merged);
+          const existing = current.travels.some((row) => `${row.kind}-${row.number}-${row.departAt.slice(0, 10)}` === key);
+          inboxItems = enqueueInboxItem(inboxItems, inboxItemFromTravelNotice({
+            id: item.id || uid('inbox'),
+            createdAt: localStamp(),
+            travel: item,
+            existing,
+          }));
         }
-        return { ...current, travels: next.sort((a, b) => a.departAt.localeCompare(b.departAt)) };
+        return { ...current, inboxItems };
       });
-      notify('已从通知导入火车/航班');
+      notify('行程已放入收件箱，确认后才会保存');
     }
     function onHealth(event: Event) {
       const detail = (event as CustomEvent<{ records?: Parameters<typeof healthRecordsFromSnapshots>[0]; source?: string }>).detail || {};
@@ -434,11 +446,23 @@ export default function Home() {
   }, []);
   useEffect(() => {
     function onCaptureText(event: Event) {
-      const text = String((event as CustomEvent<{ text?: string }>).detail?.text || '').trim();
+      const detail = (event as CustomEvent<{ text?: string; source?: string }>).detail || {};
+      const text = String(detail.text || '').trim();
       if (!text) { notify('没有识别到文字，请重试或手动输入'); return; }
+      const hinted = detail.source === 'voice' || detail.source === 'ocr' ? detail.source : captureSourceRef.current;
+      const source: InboxSource = hinted === 'voice' || hinted === 'ocr' ? hinted : 'manual';
       setCaptureText((current) => `${current}${current ? ' ' : ''}${text}`.slice(0, 400));
+      const parsed = parseNaturalCapture(text, TODAY);
+      const preferredId = parsed.kind === 'expense' ? (parsed.source === '支付宝' ? 'alipay' : parsed.source === '银行卡' ? 'bank' : 'wechat') : '';
+      setData((current) => {
+        const account = parsed.kind === 'expense'
+          ? current.accounts.find((item) => item.id === preferredId) ?? current.accounts.find((item) => item.name.includes((parsed as Extract<typeof parsed, { kind: 'expense' }>).source)) ?? current.accounts[0]
+          : undefined;
+        return { ...current, inboxItems: enqueueInboxItem(current.inboxItems, inboxItemFromNaturalCapture({ id: uid('inbox'), source, createdAt: localStamp(), parsed, accountId: account?.id })) };
+      });
+      captureSourceRef.current = 'manual';
       navigate('capture');
-      notify('已写入快速记录');
+      notify('已放入收件箱，确认后才会保存');
     }
     window.addEventListener('self-agent:capture-text', onCaptureText);
     return () => window.removeEventListener('self-agent:capture-text', onCaptureText);
@@ -458,37 +482,30 @@ export default function Home() {
   }, []);
   useEffect(() => {
     function onPayment(event: Event) {
-      const detail = (event as CustomEvent<Partial<ExpenseDraft> & { title?: string; dir?: string; source?: string; accountHint?: string }>).detail;
+      const detail = (event as CustomEvent<Partial<ExpenseDraft> & { title?: string; dir?: string; source?: string; accountHint?: string; id?: string }>).detail || {};
       const merchant = detail.merchant || detail.title || '支付成功';
       const accountId = resolvePaymentAccountId(data.accounts, detail.source, detail.accountHint) ?? '';
-      setDraft({ kind: 'expense', amount: Number(detail.amount ?? 0), merchant, category: detail.category || '其他', accountId, source: String(detail.source || 'Android 支付通知'), currency: detail.currency || 'CNY', reimbursable: false });
-      setCaptureText('检测到一笔支付，请确认后保存'); navigate('capture');
+      const fingerprint = String(detail.id || `${detail.source || 'payment'}-${detail.amount ?? 0}-${merchant}`);
+      setData((current) => ({
+        ...current,
+        inboxItems: enqueueInboxItem(current.inboxItems, inboxItemFromPayment({
+          id: uid('inbox'),
+          createdAt: localStamp(),
+          amount: Number(detail.amount ?? 0),
+          merchant,
+          category: detail.category,
+          source: String(detail.source || 'Android 支付通知'),
+          accountId,
+          dir: detail.dir,
+          fingerprint,
+        })),
+      }));
+      navigate('capture');
+      notify('支付通知已放入收件箱，确认后才会入账');
     }
     function onAutoTxn(event: Event) {
       const detail = (event as CustomEvent<{ id?: string; amount?: number | null; title?: string; category?: string; source?: string; accountHint?: string; dir?: string; autoSave?: boolean }>).detail || {};
-      if (detail.autoSave) {
-        const kind = detail.dir === 'in' ? 'income' : 'expense';
-        const amount = Math.abs(Number(detail.amount ?? 0));
-        const merchant = detail.title || '支付成功';
-        const accountId = resolvePaymentAccountId(data.accounts, detail.source, detail.accountHint);
-        if (!accountId || !Number.isFinite(amount) || amount <= 0) {
-          onPayment(new CustomEvent('x', { detail: { amount: Number.isFinite(amount) ? amount : 0, merchant, category: detail.category, source: detail.source, accountHint: detail.accountHint } }));
-          return;
-        }
-        const fingerprint = String(detail.id || `${detail.source}-${amount}-${merchant}`);
-        const transaction: Transaction = { id: fingerprint.startsWith('transaction-') ? fingerprint : `txn-${fingerprint}`, kind, amount, accountAmount: amount, currency: 'CNY', merchant, category: detail.category || (kind === 'income' ? '收入' : '其他'), accountId, source: String(detail.source || 'Android 自动记账'), reimbursable: false, createdAt: localStamp() };
-        if (!canApplyLedger(data.accounts, transaction)) {
-          onPayment(new CustomEvent('x', { detail: { amount, merchant, category: detail.category, source: detail.source, accountHint: detail.accountHint } }));
-          return;
-        }
-        setData((current) => {
-          if (current.transactions.some((item) => item.id === transaction.id || (item.merchant === merchant && item.amount === amount && Math.abs(Date.parse(item.createdAt) - Date.now()) < 180000))) return current;
-          return { ...current, transactions: [transaction, ...current.transactions], accounts: adjustAccounts(current.accounts, transaction, 1) };
-        });
-        notify('已从通知确认入账');
-        return;
-      }
-      onPayment(new CustomEvent('x', { detail: { amount: detail.amount ?? 0, merchant: detail.title, category: detail.category, source: detail.source, accountHint: detail.accountHint } }));
+      onPayment(new CustomEvent('x', { detail: { amount: detail.amount ?? 0, merchant: detail.title, category: detail.category, source: detail.source, accountHint: detail.accountHint, dir: detail.dir, id: detail.id } }));
     }
     window.addEventListener('self-agent:payment-detected', onPayment);
     window.addEventListener('self-agent:auto-txn', onAutoTxn);
@@ -513,6 +530,9 @@ export default function Home() {
   const totalBalanceLabel = useMemo(() => formatCnyWealthSummary(data.accounts, data.transactions, data.exchangeRates), [data.accounts, data.transactions, data.exchangeRates]);
   const hasBusinessData = data.schedules.length + data.accounts.length + data.transactions.length + data.healthRecords.length + data.travels.length > 0;
   const nextSchedule = useMemo(() => data.schedules.filter((item) => item.date === TODAY && !item.done).sort((left, right) => left.time.localeCompare(right.time))[0], [data.schedules]);
+  const inboxPending = useMemo(() => pendingInboxItems(data.inboxItems), [data.inboxItems]);
+  const inboxPendingCount = inboxPending.length;
+  const lastConfirmedInbox = data.inboxItems.find((item) => item.id === data.lastConfirmedInboxId);
   const editingAccount = editingAccountId ? data.accounts.find((item) => item.id === editingAccountId) : undefined;
   const editingTransaction = editingTransactionId ? data.transactions.find((item) => item.id === editingTransactionId) : undefined;
   const editingHolding = editingHoldingId ? data.investments.find((item) => item.id === editingHoldingId) : undefined;
@@ -557,6 +577,7 @@ export default function Home() {
     const claimId = reimbursable ? data.accounts.find((account) => accountRole(account.type) === 'receivable' && account.currency === input.currency)?.id : undefined;
     const transaction: Transaction = { id: uid('transaction'), kind: transactionKind, amount: Math.abs(input.amount), accountAmount: Math.abs(input.accountAmount ?? input.amount), currency: input.currency, merchant: input.merchant, category: transactionKind === 'income' ? '收入' : input.category, accountId: input.accountId, source: input.source, reimbursable, reimburseAccountId: claimId, reimbursed: false, createdAt: localStamp() };
     setData((current) => ({ ...current, transactions: [transaction, ...current.transactions], accounts: adjustAccounts(current.accounts, transaction, 1) }));
+    return transaction.id;
   }
   function addTransaction(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = new FormData(event.currentTarget);
@@ -717,43 +738,153 @@ export default function Home() {
     });
     notify(selected.kind === 'subscription' ? '订阅扣款已确认入账' : '信用卡还款已确认转账');
   }
-  function organizeCapture(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (captureText.trim()) setDraft(parseCapture(captureText.trim(), data.accounts)); }
+  function organizeCapture(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const text = captureText.trim();
+    if (!text) return;
+    const parsed = parseNaturalCapture(text, TODAY);
+    const draft = parseCapture(text, data.accounts);
+    setData((current) => ({
+      ...current,
+      inboxItems: enqueueInboxItem(current.inboxItems, inboxItemFromNaturalCapture({
+        id: uid('inbox'),
+        source: 'manual',
+        createdAt: localStamp(),
+        parsed,
+        accountId: draft.kind === 'expense' ? draft.accountId : undefined,
+      })),
+    }));
+    setCaptureText('');
+    setDraft(null);
+    notify('已放入收件箱，确认后才会保存');
+  }
   function startVoiceCapture() {
     const native = (window as Window & { SelfAgentNative?: { startVoiceCapture?: () => void } }).SelfAgentNative;
     if (!native?.startVoiceCapture) { notify('请在 Android App 中使用语音'); return; }
+    captureSourceRef.current = 'voice';
     notify('请开始说话');
     native.startVoiceCapture();
   }
   function pickCaptureImage() {
     const native = (window as Window & { SelfAgentNative?: { pickCaptureImage?: () => void } }).SelfAgentNative;
     if (!native?.pickCaptureImage) { notify('请在 Android App 中选择图片'); return; }
+    captureSourceRef.current = 'ocr';
     notify('正在识别图片文字');
     native.pickCaptureImage();
   }
-  function confirmDraft() {
-    if (!draft) return;
-    if (draft.kind === 'expense') {
-      if (!draft.amount) { notify('请先补充金额'); return; }
-      if (!draft.accountId || !data.accounts.some((account) => account.id === draft.accountId)) { notify('请先到财务页添加一个账户'); return; }
-      saveTransaction(draft); notify('已确认并记入账本');
-    } else if (draft.kind === 'travel') {
-      if (!draft.number || !draft.from || !draft.to) { notify('请补充车次/航班和起终点'); return; }
-      const item: TravelItem = { id: uid('travel'), kind: draft.travelKind, number: draft.number, from: draft.from, to: draft.to, departAt: `${draft.date}T${draft.departTime}`, arriveAt: `${draft.date}T${draft.arriveTime || draft.departTime}`, seat: '待分配', terminal: '待确认', status: 'upcoming', source: 'import', verified: false };
-      setData((current) => ({ ...current, travels: [...current.travels, item].sort((a, b) => a.departAt.localeCompare(b.departAt)) }));
-      notify('已确认并加入行程');
-    } else if (draft.kind === 'health') {
-      if (!(draft.value > 0)) { notify('请补充有效数值'); return; }
-      const record: HealthRecord = { id: uid('health'), kind: draft.metric, value: draft.value, note: `一句话记录 · ${HEALTH_METRIC_LABELS[draft.metric]}`, createdAt: localStamp() };
-      setData((current) => ({ ...current, healthRecords: [record, ...current.healthRecords] }));
-      notify('已确认并加入健康记录');
-    } else {
-      const item: ScheduleItem = { id: uid('schedule'), title: draft.title, date: draft.date, time: draft.time, detail: '一句话记录 · 提前 10 分钟提醒', color: 'orange', done: false };
-      const nextSchedules = [...data.schedules, item];
-      setData((current) => ({ ...current, schedules: nextSchedules }));
-      pushReminders(nextSchedules, data.recurringRules);
-      notify('已确认并加入日程');
+  function patchInboxPayload(id: string, payload: Record<string, unknown>) {
+    setData((current) => ({ ...current, inboxItems: updateInboxItemPayload(current.inboxItems, id, payload) }));
+  }
+  function ignoreInbox(id: string) {
+    setData((current) => ({ ...current, inboxItems: ignoreInboxItem(current.inboxItems, id) }));
+    if (editingInboxId === id) setEditingInboxId(null);
+    notify('已忽略，不会写入');
+  }
+  function mergeConfirmedTravel(current: AppData, payload: Record<string, unknown>): AppData {
+    const travelKind = payload.travelKind === 'flight' || payload.kind === 'flight' ? 'flight' : 'train';
+    const number = String(payload.number || '');
+    const date = String(payload.date || String(payload.departAt || '').slice(0, 10) || TODAY);
+    const departTime = String(payload.departTime || String(payload.departAt || '').slice(11, 16) || '08:00');
+    const arriveTime = String(payload.arriveTime || String(payload.arriveAt || '').slice(11, 16) || departTime);
+    const item: TravelItem = {
+      id: uid('travel'),
+      kind: travelKind,
+      number,
+      from: String(payload.from || '待确认'),
+      to: String(payload.to || '待确认'),
+      departAt: String(payload.departAt || `${date}T${departTime}`),
+      arriveAt: String(payload.arriveAt || `${date}T${arriveTime}`),
+      seat: String(payload.seat || '待分配'),
+      terminal: String(payload.terminal || '待确认'),
+      status: 'upcoming',
+      source: payload.noticeSource === 'manual' ? 'manual' : payload.noticeSource === 'notification' ? 'notification' : 'import',
+      verified: payload.noticeSource === 'notification',
+    };
+    const key = `${item.kind}-${item.number}-${item.departAt.slice(0, 10)}`;
+    const next = [...current.travels];
+    const index = next.findIndex((row) => `${row.kind}-${row.number}-${row.departAt.slice(0, 10)}` === key);
+    if (index >= 0) next[index] = { ...next[index], ...item, id: next[index].id };
+    else next.push(item);
+    return { ...current, travels: next.sort((left, right) => left.departAt.localeCompare(right.departAt)) };
+  }
+  function confirmInbox(id: string) {
+    const item = data.inboxItems.find((entry) => entry.id === id && entry.status === 'pending');
+    if (!item) return;
+    const payload = item.payload;
+    if (item.proposedAction === 'create_expense' || item.proposedAction === 'create_income') {
+      const amount = Math.abs(Number(payload.amount ?? 0));
+      const accountId = String(payload.accountId || defaultCashId(data.accounts, 'CNY') || data.accounts[0]?.id || '');
+      if (!amount) { notify('请先补充金额'); return; }
+      if (!accountId || !data.accounts.some((account) => account.id === accountId)) { notify('请先到财务页添加一个账户'); return; }
+      const account = data.accounts.find((entry) => entry.id === accountId);
+      const transactionKind = item.proposedAction === 'create_income' ? 'income' : 'expense';
+      const reimbursable = transactionKind === 'expense' && Boolean(payload.reimbursable);
+      const currency = account?.currency ?? 'CNY';
+      const claimId = reimbursable ? data.accounts.find((entry) => accountRole(entry.type) === 'receivable' && entry.currency === currency)?.id : undefined;
+      const transaction: Transaction = { id: uid('transaction'), kind: transactionKind, amount, accountAmount: amount, currency, merchant: String(payload.merchant || '待补充商家'), category: transactionKind === 'income' ? '收入' : String(payload.category || '其他'), accountId, source: String(payload.paySource || inboxSourceLabel(item.source)), reimbursable, reimburseAccountId: claimId, reimbursed: false, createdAt: localStamp() };
+      if (!canApplyLedger(data.accounts, transaction)) { notify('这笔账无法入账，请先检查账户'); return; }
+      setData((current) => ({ ...current, transactions: [transaction, ...current.transactions], accounts: adjustAccounts(current.accounts, transaction, 1), inboxItems: confirmInboxItem(current.inboxItems, id, transaction.id), lastConfirmedInboxId: id }));
+      notify('已确认并记入账本');
+      setEditingInboxId(null);
+      return;
     }
-    setDraft(null); setCaptureText('');
+    if (item.proposedAction === 'create_travel' || item.proposedAction === 'update_travel') {
+      if (!payload.number || !payload.from || !payload.to) { notify('请补充车次/航班和起终点'); return; }
+      setData((current) => ({ ...mergeConfirmedTravel(current, payload), inboxItems: confirmInboxItem(current.inboxItems, id, 'travel'), lastConfirmedInboxId: id }));
+      notify('已确认并加入行程');
+      setEditingInboxId(null);
+      return;
+    }
+    if (item.proposedAction === 'create_health') {
+      const value = Number(payload.value);
+      const metric = payload.metric as HealthMetric;
+      if (!(value > 0) || !HEALTH_METRIC_LABELS[metric]) { notify('请补充有效数值'); return; }
+      const record: HealthRecord = { id: uid('health'), kind: metric, value, note: `收件箱 · ${HEALTH_METRIC_LABELS[metric]}`, createdAt: localStamp() };
+      setData((current) => ({ ...current, healthRecords: [record, ...current.healthRecords], inboxItems: confirmInboxItem(current.inboxItems, id, record.id), lastConfirmedInboxId: id }));
+      notify('已确认并加入健康记录');
+      setEditingInboxId(null);
+      return;
+    }
+    if (item.proposedAction === 'create_schedule') {
+      const schedule: ScheduleItem = { id: uid('schedule'), title: String(payload.title || '新日程'), date: String(payload.date || TODAY), time: String(payload.time || '10:00'), detail: '收件箱 · 提前 10 分钟提醒', color: 'orange', done: false };
+      setData((current) => {
+        const nextSchedules = [...current.schedules, schedule];
+        return { ...current, schedules: nextSchedules, inboxItems: confirmInboxItem(current.inboxItems, id, schedule.id), lastConfirmedInboxId: id };
+      });
+      pushReminders([...data.schedules, schedule], data.recurringRules);
+      notify('已确认并加入日程');
+      setEditingInboxId(null);
+      return;
+    }
+    applyButlerAction({ type: item.proposedAction, payload } as ButlerAction);
+    setData((current) => ({ ...current, inboxItems: confirmInboxItem(current.inboxItems, id, String(payload.id || 'memory')), lastConfirmedInboxId: null }));
+    setEditingInboxId(null);
+  }
+  function undoLastInboxConfirm() {
+    const item = data.inboxItems.find((entry) => entry.id === data.lastConfirmedInboxId);
+    if (!canUndoInboxConfirm(item) || !item?.resultEntityId) { notify('最近一次确认不能撤销'); return; }
+    setData((current) => {
+      const removed = removeLedgerTransactionState(current.accounts, current.transactions, item.resultEntityId as string);
+      return {
+        ...current,
+        accounts: removed.accounts,
+        transactions: removed.transactions,
+        inboxItems: reopenInboxItem(current.inboxItems, item.id),
+        lastConfirmedInboxId: null,
+      };
+    });
+    notify('已撤销最近一次入账，条目回到待确认');
+  }
+  function queueButlerActions(actions: ButlerAction[]) {
+    if (!actions.length) return;
+    setData((current) => {
+      let inboxItems = current.inboxItems;
+      for (const action of actions) {
+        inboxItems = enqueueInboxItem(inboxItems, inboxItemFromButlerAction({ id: uid('inbox'), createdAt: localStamp(), action }));
+      }
+      return { ...current, inboxItems };
+    });
+    notify(`管家建议已放入收件箱（${actions.length} 条），确认后才会写入`);
   }
   function addHealthRecord(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = new FormData(event.currentTarget);
@@ -907,7 +1038,7 @@ export default function Home() {
     if (!window.confirm('确定清空本机日程、账本、健康、行程和 AI 设置吗？密码库不会被清空。')) return;
     setData(emptyData); setAiConfig(emptyAi); window.localStorage.removeItem(STORAGE_KEY); window.localStorage.removeItem(AI_CONFIG_STORAGE_KEY); window.sessionStorage.removeItem(AI_CONFIG_STORAGE_KEY); (window as Window & { SelfAgentNative?: NativeAiBridge }).SelfAgentNative?.clearAiConfig?.(); notify('本机业务数据已清空');
   }
-  function pageTitle() { return tab === 'schedule' ? '日程与行动' : tab === 'capture' ? '快速记录' : tab === 'finance' ? selectedHoldingId ? '收益详情' : selectedAccountId ? '账户账单' : '我的财务' : tab === 'profile' ? '我的' : tab === 'health' ? '健康记录' : tab === 'travel' ? '我的出行' : tab === 'data' ? '数据中心' : tab === 'butler' ? '本机管家' : tab === 'privacy' ? '隐私与权限' : tab === 'memory' ? '记忆管理' : tab === 'vault' ? '密码库' : '今天'; }
+  function pageTitle() { return tab === 'schedule' ? '日程与行动' : tab === 'capture' ? '收件箱' : tab === 'finance' ? selectedHoldingId ? '收益详情' : selectedAccountId ? '账户账单' : '我的财务' : tab === 'profile' ? '我的' : tab === 'health' ? '健康记录' : tab === 'travel' ? '我的出行' : tab === 'data' ? '数据中心' : tab === 'butler' ? '本机管家' : tab === 'privacy' ? '隐私与权限' : tab === 'memory' ? '记忆管理' : tab === 'vault' ? '密码库' : '今天'; }
 
   return <main className={`phone-app ${data.theme === 'dark' ? 'dark' : ''}`}>
     <header className="app-header"><button className="round" aria-label="返回" onClick={() => { if (!goBack()) notify('已经在首页'); }}>‹</button><div><span>SELF AGENT · 本机优先</span><h1>{pageTitle()}</h1></div><button className="round status-dot" aria-label="打开设置" onClick={() => navigate('profile')}><i />设</button></header>
@@ -915,6 +1046,7 @@ export default function Home() {
     {tab === 'home' && <div className="page home-page">
       {data.demoMode && <section className="demo-banner"><strong>当前为演示数据</strong><span>以下资产、日程和健康记录不代表你的真实信息。</span><button onClick={clearLocalData}>退出演示并清空</button></section>}
       <section className="hero-card"><span>{TODAY_LABEL}</span><h2>{GREETING}</h2><p>所有内容先整理、确认后再保存。</p></section>
+      {inboxPendingCount > 0 && <section className="inbox-home"><div className="section-title"><div><span>INBOX</span><h2>待确认 {inboxPendingCount} 条</h2></div><button type="button" onClick={() => navigate('capture')}>去处理</button></div>{inboxPending.slice(0, 3).map((item) => <button type="button" className="inbox-home-card" key={item.id} onClick={() => navigate('capture')}><strong>{item.preview}</strong><small>{inboxSourceLabel(item.source)} · 置信度 {inboxConfidenceLabel(item.confidence)} · {INBOX_ACTION_LABELS[item.proposedAction]}</small></button>)}</section>}
       {!hasBusinessData && <section className="onboarding-card"><span>从一件真实的事开始</span><h2>这里还没有你的数据</h2><p>不用一次授权全部功能。先添加一个日程或账户，其他能力需要时再开启。</p><div><button onClick={() => { setEditingScheduleId(null); setSheet('schedule'); }}>添加第一条日程</button><button onClick={() => { navigate('finance'); setEditingAccountId(null); setSheet('account'); }}>添加第一个账户</button></div></section>}
       {nativeOn && (!caps.accessibility || !caps.notificationListener || !caps.autofill) && <section className="capability-card"><strong>系统能力状态</strong><p>无障碍自动记账：{caps.accessibility ? '已开启' : '未开启'}。通知读取：{caps.notificationListener ? '已开启' : '未开启'}。自动填充：{caps.autofill ? '已设为 Self Agent' : '未选择'}。打开设置后回到这里会重新检测，不会把“已打开设置页”当成已启用。</p><button onClick={() => navigate('profile')}>去授权并复查</button></section>}
       <section className="summary-grid"><button onClick={() => navigate('schedule')}><span>下一项 · {nextSchedule?.time ?? '空闲'}</span><strong>{nextSchedule?.title ?? '今天没有更多日程'}</strong><small>{data.schedules.filter((item) => item.date === TODAY && item.done).length}/{data.schedules.filter((item) => item.date === TODAY).length} 已完成</small></button><button onClick={() => navigate('finance')}><span>今日支出</span><strong>¥ {money(todaySpend)}</strong><small>净资产 {totalBalanceLabel}</small></button></section>
@@ -925,7 +1057,7 @@ export default function Home() {
 
     {tab === 'schedule' && <div className="page schedule-page"><section className="calendar"><div className="week-title"><button aria-label="上一周" onClick={() => setSelectedDate(addDaysKey(selectedDate, -7))}>‹</button><strong>{weekTitle}</strong><button aria-label="下一周" onClick={() => setSelectedDate(addDaysKey(selectedDate, 7))}>›</button></div><div className="dates">{dateOptions.map((date) => <button key={date.value} onClick={() => setSelectedDate(date.value)} className={selectedDate === date.value ? 'active' : ''}><span>{date.weekday}</span><b>{date.day}</b>{date.value === TODAY && <i />}</button>)}</div></section><section className="day-section"><div className="day-heading"><div><span>{selectedDate === TODAY ? '今天' : `${Number(selectedDate.slice(-2))}日`} · 星期{dateOptions.find((date) => date.value === selectedDate)?.weekday}</span><h2>{selectedSchedules.length ? '这一天的安排' : '给这一天留点空白'}</h2></div><small>{selectedSchedules.filter((item) => item.done).length}/{selectedSchedules.length} 完成</small></div>{selectedSchedules.length ? <div className="timeline">{selectedSchedules.map((item, index) => <article className={item.done ? 'done' : ''} key={item.id}><time>{item.time}</time><div className="track"><i className={item.color} />{index < selectedSchedules.length - 1 && <span />}</div><SwipeScheduleRow item={item} onToggle={() => toggleSchedule(item.id)} onEdit={() => { setEditingScheduleId(item.id); setSheet('schedule'); }} onDelete={() => deleteSchedule(item.id)} /></article>)}</div> : <div className="empty"><span>○</span><h3>没有日程</h3><p>给这一天留点空白，或添加一件事。</p><button onClick={() => setSheet('schedule')}>添加日程</button></div>}</section></div>}
 
-    {tab === 'capture' && <div className="page capture-page"><section className="capture-intro"><span>INBOX</span><h2>先说下来，我来整理。</h2><p>可识别日程、账目、出行或健康；确认后才会保存。可用语音或图片文字。</p></section><form className="capture-box" onSubmit={organizeCapture}><textarea aria-label="一句话记录" maxLength={400} value={captureText} onChange={(event) => setCaptureText(event.target.value)} placeholder={'例如：明天 9 点提醒我交水电费\n午饭 36 元，微信支付\n明天 G11 北京南到上海虹桥 9:00\n今天走了 8000 步'} /><div className="capture-tools"><button type="button" onClick={startVoiceCapture}><span aria-hidden="true">🎤</span>语音</button><button type="button" onClick={pickCaptureImage}><span aria-hidden="true">🖼</span>图片</button></div><div><small>{captureText.length}/400</small><button type="submit">整理一下</button></div></form><div className="suggestion-row"><button onClick={() => setCaptureText('午饭 36 元，微信支付')}>午饭 36 元</button><button onClick={() => setCaptureText('明天 9 点提醒我交水电费')}>明天 9 点提醒</button><button onClick={() => setCaptureText('明天 G11 北京南到上海虹桥 9:00')}>G11 出行</button><button onClick={() => setCaptureText('今天走了 8000 步')}>8000 步</button></div>{draft && <section className="draft-card"><header><div><span>待确认 · {draft.kind === 'expense' ? '支出' : draft.kind === 'travel' ? '出行' : draft.kind === 'health' ? '健康' : '日程'}</span><h3>我整理成这样</h3></div><button aria-label="取消草稿" onClick={() => setDraft(null)}>×</button></header>{draft.kind === 'expense' ? <><div className="draft-fields"><label>金额<input inputMode="decimal" value={draft.amount || ''} onChange={(event) => setDraft({ ...draft, amount: Number(event.target.value) })} /></label><label>币种<select value={draft.currency} onChange={(event) => setDraft({ ...draft, currency: event.target.value as Currency })}>{currencies.map((currency) => <option key={currency}>{currency}</option>)}</select></label><label>商家 / 用途<input value={draft.merchant} onChange={(event) => setDraft({ ...draft, merchant: event.target.value })} /></label><label>分类<select value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })}><option>餐饮</option><option>交通</option><option>生活</option><option>医疗</option><option>其他</option></select></label><label>账户<select value={draft.accountId} onChange={(event) => setDraft({ ...draft, accountId: event.target.value })}>{data.accounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {account.currency}</option>)}</select></label></div><label className="check-option"><input type="checkbox" checked={draft.reimbursable} onChange={(event) => setDraft({ ...draft, reimbursable: event.target.checked })} />加入待报销（记入债务·应收）</label></> : draft.kind === 'travel' ? <div className="draft-fields"><label>类型<select value={draft.travelKind} onChange={(event) => setDraft({ ...draft, travelKind: event.target.value as TravelKind })}><option value="train">火车</option><option value="flight">航班</option></select></label><label>车次 / 航班<input value={draft.number} onChange={(event) => setDraft({ ...draft, number: event.target.value })} /></label><label>出发地<input value={draft.from} onChange={(event) => setDraft({ ...draft, from: event.target.value })} /></label><label>目的地<input value={draft.to} onChange={(event) => setDraft({ ...draft, to: event.target.value })} /></label><label>日期<input type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} /></label><label>出发时间<input type="time" value={draft.departTime} onChange={(event) => setDraft({ ...draft, departTime: event.target.value })} /></label><label>到达时间<input type="time" value={draft.arriveTime || ''} onChange={(event) => setDraft({ ...draft, arriveTime: event.target.value })} /></label></div> : draft.kind === 'health' ? <div className="draft-fields"><label>指标<select value={draft.metric} onChange={(event) => setDraft({ ...draft, metric: event.target.value as HealthMetric })}>{(Object.keys(HEALTH_METRIC_LABELS) as HealthMetric[]).map((metric) => <option key={metric} value={metric}>{HEALTH_METRIC_LABELS[metric]}</option>)}</select></label><label>数值<input inputMode="decimal" value={draft.value || ''} onChange={(event) => setDraft({ ...draft, value: Number(event.target.value) })} /></label></div> : <div className="draft-fields"><label>日程名称<input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} /></label><label>日期<input type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} /></label><label>时间<input type="time" value={draft.time} onChange={(event) => setDraft({ ...draft, time: event.target.value })} /></label></div>}<button className="confirm-button" onClick={confirmDraft}>确认保存</button></section>}</div>}
+    {tab === 'capture' && <div className="page capture-page"><section className="capture-intro"><span>INBOX</span><h2>先整理，再确认写入。</h2><p>支付通知、行程更新、语音/图片和管家建议都会进入收件箱。确认后才会保存。</p></section><form className="capture-box" onSubmit={organizeCapture}><textarea aria-label="一句话记录" maxLength={400} value={captureText} onChange={(event) => setCaptureText(event.target.value)} placeholder={'例如：明天 9 点提醒我交水电费\n午饭 36 元，微信支付\n明天 G11 北京南到上海虹桥 9:00\n今天走了 8000 步'} /><div className="capture-tools"><button type="button" onClick={startVoiceCapture}><span aria-hidden="true">🎤</span>语音</button><button type="button" onClick={pickCaptureImage}><span aria-hidden="true">🖼</span>图片</button></div><div><small>{captureText.length}/400</small><button type="submit">放入收件箱</button></div></form><div className="suggestion-row"><button onClick={() => setCaptureText('午饭 36 元，微信支付')}>午饭 36 元</button><button onClick={() => setCaptureText('明天 9 点提醒我交水电费')}>明天 9 点提醒</button><button onClick={() => setCaptureText('明天 G11 北京南到上海虹桥 9:00')}>G11 出行</button><button onClick={() => setCaptureText('今天走了 8000 步')}>8000 步</button></div>{canUndoInboxConfirm(lastConfirmedInbox) && <button type="button" className="inbox-undo" onClick={undoLastInboxConfirm}>撤销最近一次入账</button>}<section className="inbox-list">{inboxPendingCount ? inboxPending.map((item) => <article className="inbox-card" key={item.id}><header><div><span>{inboxSourceLabel(item.source)} · 置信度 {inboxConfidenceLabel(item.confidence)}</span><h3>{INBOX_ACTION_LABELS[item.proposedAction]}</h3></div><small>{item.status === 'pending' ? '待确认' : item.status}</small></header><p>{item.preview}</p>{editingInboxId === item.id && <InboxEditFields item={item} accounts={data.accounts} onPatch={(payload) => patchInboxPayload(item.id, payload)} />}<div className="inbox-ops"><button type="button" className="confirm-button" onClick={() => confirmInbox(item.id)}>确认</button>{item.proposedAction !== 'pause_memory' && item.proposedAction !== 'delete_memory' && <button type="button" onClick={() => setEditingInboxId(editingInboxId === item.id ? null : item.id)}>{editingInboxId === item.id ? '收起' : '修改'}</button>}<button type="button" className="ghost" onClick={() => ignoreInbox(item.id)}>忽略</button></div></article>) : <div className="list-empty">收件箱是空的。说一句话、拍一张图，或等支付/行程通知。</div>}</section></div>}
 
     {tab === 'finance' && <FinancePanel data={data} currency={financeCurrency} selectedAccountId={selectedAccountId} selectedHoldingId={selectedHoldingId} onCurrency={setFinanceCurrency} onSelectAccount={(id) => { setSelectedAccountId(id); setSelectedHoldingId(null); }} onSelectHolding={setSelectedHoldingId} onBackAccount={() => setSelectedAccountId(null)} onBackHolding={() => setSelectedHoldingId(null)} onNewTransaction={() => { setEditingTransactionId(null); setSheet('transaction'); }} onEditTransaction={(id) => { setEditingTransactionId(id); setSheet('transaction'); }} onNewAccount={() => { setEditingAccountId(null); setSheet('account'); }} onEditAccount={(id) => { setEditingAccountId(id); setSheet('account'); }} onNewHolding={() => { setEditingHoldingId(null); setSheet('holding'); }} onEditHolding={(id) => { setEditingHoldingId(id); setSheet('holding'); }} onNewRecurring={() => { setEditingRecurringId(null); setSheet('recurring'); }} onEditRecurring={(id) => { setEditingRecurringId(id); setSheet('recurring'); }} onDeleteRecurring={(id) => deleteRecurringRule(id)} onDeleteTransaction={(id) => deleteTransaction(id)} onRunRecurring={runRecurringRule} onToggleRecurring={toggleRecurringRule} onSettleReimbursement={settleReimbursement} onSettleAccount={settleAccount} onNewRate={() => { setEditingRateCurrency(null); setSheet('exchange-rate'); }} onEditRate={(currency) => { setEditingRateCurrency(currency); setSheet('exchange-rate'); }} onDeleteRate={deleteExchangeRate} onRefreshQuotes={requestQuoteRefresh} />}
 
@@ -934,13 +1066,13 @@ export default function Home() {
     {tab === 'health' && <HealthPanel records={data.healthRecords} onAdd={() => setSheet('health')} onImport={importHealth} onSelectExport={chooseGadgetbridgeExport} onSaveBody={saveBodyMetrics} />}
     {tab === 'travel' && <TravelPanel items={data.travels} onSync={requestTravelSync} onAdd={() => setSheet('travel')} onDelete={(id) => { setData((current) => ({ ...current, travels: current.travels.filter((item) => item.id !== id) })); notify('行程已删除'); }} />}
     {tab === 'data' && <DataPanel data={data} />}
-    {tab === 'butler' && <ButlerPanel data={data} ai={aiConfig} onConfirmAction={applyButlerAction} />}
+    {tab === 'butler' && <ButlerPanel data={data} ai={aiConfig} onQueueActions={queueButlerActions} />}
     {tab === 'privacy' && <PrivacyPanel settings={data.privacy} onToggle={togglePrivacy} />}
     {tab === 'memory' && <MemoryPanel items={data.memories} onToggle={toggleMemory} onDelete={deleteMemory} />}
     {tab === 'vault' && <VaultPanel items={nativeOn && vaultMeta.length ? vaultMeta : data.vaultItems} nativeOn={nativeOn} onReveal={(id) => (window as Window & { SelfAgentNative?: { revealPassword?: (id: string) => void } }).SelfAgentNative?.revealPassword?.(id)} />}
 
     {(tab === 'schedule' || tab === 'finance') && <button className="add-button" onClick={() => { if (tab === 'finance') setEditingTransactionId(null); if (tab === 'schedule') setEditingScheduleId(null); setSheet(tab === 'schedule' ? 'schedule' : 'transaction'); }} aria-label={tab === 'schedule' ? '新建日程' : '新建流水'}>＋</button>}
-    <nav className="bottom-nav" aria-label="主导航">{navItems.map((item) => <button key={item.id} className={tab === item.id ? 'active' : ''} onClick={() => navigate(item.id)}><span>{item.icon}</span>{item.label}</button>)}</nav>
+    <nav className="bottom-nav" aria-label="主导航">{navItems.map((item) => <button key={item.id} className={tab === item.id ? 'active' : ''} onClick={() => navigate(item.id)}><span className="nav-icon">{item.icon}{item.id === 'capture' && inboxPendingCount > 0 && <b className="nav-badge">{inboxPendingCount > 9 ? '9+' : inboxPendingCount}</b>}</span>{item.label}</button>)}</nav>
 
     {sheet === 'schedule' && <div className="overlay" role="dialog" aria-modal="true" onMouseDown={(event) => event.currentTarget === event.target && setSheet(null)}><form key={editingSchedule?.id ?? 'new-schedule'} onSubmit={addSchedule} className="sheet"><div className="handle" /><header><div><span>{editingSchedule ? 'EDIT SCHEDULE' : 'NEW SCHEDULE'}</span><h2>{editingSchedule ? '编辑日程' : '新建日程'}</h2></div><button type="button" onClick={() => { setSheet(null); setEditingScheduleId(null); }}>×</button></header><label>日程名称<input required autoFocus name="title" placeholder="例如：准备周末徒步装备" defaultValue={editingSchedule?.title} /></label><div className="row"><label>日期<input required name="date" type="date" defaultValue={editingSchedule?.date ?? selectedDate} /></label><label>时间<input required name="time" type="time" defaultValue={editingSchedule?.time ?? '10:00'} /></label></div><label>类型<input name="detail" placeholder="个人、工作或健康" defaultValue={editingSchedule?.detail?.split(' · ')[0] ?? '个人'} /></label><small className="form-tip">会提前 10 分钟弹一次，到点再弹一次。请允许通知。</small><button className="save" type="submit">{editingSchedule ? '保存修改' : '确认添加'}</button>{editingSchedule && <button className="danger-button" type="button" onClick={() => deleteSchedule(editingSchedule.id)}>删除这条日程</button>}</form></div>}
     {sheet === 'transaction' && <div className="overlay" role="dialog" aria-modal="true" onMouseDown={(event) => event.currentTarget === event.target && setSheet(null)}><form key={editingTransaction?.id ?? 'new-transaction'} onSubmit={addTransaction} className="sheet scroll-sheet"><div className="handle" /><header><div><span>{editingTransaction ? 'EDIT RECORD' : 'NEW RECORD'}</span><h2>{editingTransaction ? '编辑账目' : '确认一笔流水'}</h2></div><button type="button" onClick={() => setSheet(null)}>×</button></header><div className="row"><label>类型<select name="kind" defaultValue={editingTransaction?.kind ?? 'expense'}><option value="expense">支出</option><option value="income">收入</option><option value="transfer">账户转账</option></select></label><label>金额<input required name="amount" inputMode="decimal" type="number" min="0.01" step="0.01" placeholder="0.00" defaultValue={editingTransaction?.amount} /></label></div><div className="row"><label>币种<select name="currency" defaultValue={editingTransaction?.currency ?? financeCurrency}>{currencies.map((currency) => <option key={currency}>{currency}</option>)}</select></label><label>入账汇率<input required name="exchangeRate" type="number" min="0.000001" step="0.000001" defaultValue={editingTransaction ? editingTransaction.accountAmount / editingTransaction.amount : 1} /></label></div><label>商家 / 用途<input required name="merchant" placeholder="例如：午餐" defaultValue={editingTransaction?.merchant} /></label><div className="row"><label>支出账户（钱从哪出去）<select name="accountId" defaultValue={editingTransaction?.accountId}>{data.accounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {account.currency}</option>)}</select></label><label>报销记入（待收回）<select name="reimburseToAccountId" defaultValue={editingTransaction?.reimburseAccountId ?? data.accounts.find((account) => accountRole(account.type) === 'receivable')?.id}>{data.accounts.filter((account) => accountRole(account.type) === 'receivable').map((account) => <option key={account.id} value={account.id}>{account.name} · {account.currency}</option>)}</select></label><label>报销后打入账户<select name="reimburseDepositAccountId" defaultValue={editingTransaction?.targetAccountId ?? editingTransaction?.accountId}>{data.accounts.filter((account) => canHoldMoney(account)).map((account) => <option key={account.id} value={account.id}>{account.name} · {account.currency}</option>)}</select></label></div><label>转入账户（仅转账）<select name="targetAccountId" defaultValue={editingTransaction?.targetAccountId}>{data.accounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {account.currency}</option>)}</select></label><label>分类<select name="category" defaultValue={editingTransaction?.category}><option>餐饮</option><option>交通</option><option>生活</option><option>医疗</option><option>订阅</option><option>其他</option><option>账户转账</option></select></label><label className="check-option"><input name="reimbursable" type="checkbox" defaultChecked={editingTransaction?.reimbursable} />待报销（垫付时增加待收回）</label><small className="form-tip">勾选待报销：支出账户减少，待收回增加。报销后打入账户要等流水点「入账」才会到账。</small><button className="save" type="submit">{editingTransaction ? '保存修改' : '确认入账'}</button>{editingTransaction && <button className="danger-button" type="button" onClick={() => deleteTransaction(editingTransaction?.id)}>删除这笔账目</button>}</form></div>}
@@ -953,6 +1085,48 @@ export default function Home() {
     {sheet === 'holding' && <div className="overlay" role="dialog" aria-modal="true" onMouseDown={(event) => event.currentTarget === event.target && setSheet(null)}><form key={editingHolding?.id ?? 'new-holding'} onSubmit={addHolding} className="sheet scroll-sheet"><div className="handle" /><header><div><span>{editingHolding ? 'EDIT ASSET' : 'NEW ASSET'}</span><h2>{editingHolding ? '更新理财产品' : '添加理财产品'}</h2></div><button type="button" onClick={() => setSheet(null)}>×</button></header><div className="row"><label>产品类型<select name="kind" defaultValue={editingHolding?.kind ?? 'fund'}><option value="fund">基金 / ETF</option><option value="stock">股票</option><option value="crypto">虚拟货币</option><option value="meme">Meme 币</option></select></label><label>所属账户<select name="accountId" defaultValue={editingHolding?.accountId ?? selectedAccountId ?? undefined}>{data.accounts.filter((account) => account.type === '理财账户').map((account) => <option key={account.id} value={account.id}>{account.name} · {account.currency}</option>)}</select></label></div><label>产品名称<input required name="name" placeholder="例如：标普500 ETF" defaultValue={editingHolding?.name} /></label><label>基金 / 股票 / 币种代码<input name="code" placeholder="例如：510300.SH、AAPL、BTC" defaultValue={editingHolding?.code} /></label><div className="row"><label>网络<select name="network" defaultValue={editingHolding?.network}><option value="">非链上产品</option><option>Ethereum</option><option>Solana</option><option>BNB Chain</option><option>Base</option><option>Arbitrum</option><option>Polygon</option></select></label><label>合约地址<input name="contract" placeholder="Meme 币必填" defaultValue={editingHolding?.contract} /></label></div><div className="row"><label>持有数量<input required name="quantity" type="number" min="0" step="any" defaultValue={editingHolding?.quantity} /></label><label>平均成本<input required name="averageCost" type="number" min="0" step="any" defaultValue={editingHolding?.averageCost} /></label></div><label>当前价格 / 今日净值<input required name="currentPrice" type="number" min="0" step="any" defaultValue={editingHolding?.currentPrice} /></label><small className="form-tip">保存会形成今日收益点。连接行情服务后，App 可按代码或“网络 + 合约”每日自动更新。</small><button className="save" type="submit">{editingHolding ? '保存今日更新' : '添加产品'}</button>{editingHolding && <button className="danger-button" type="button" onClick={deleteHolding}>删除这个产品</button>}</form></div>}
     {toast && <div className="toast">✓ {toast}</div>}
   </main>;
+}
+
+function InboxEditFields({ item, accounts, onPatch }: { item: InboxItem; accounts: Account[]; onPatch: (payload: Record<string, unknown>) => void }) {
+  const payload = item.payload;
+  if (item.proposedAction === 'create_expense' || item.proposedAction === 'create_income') {
+    return <div className="draft-fields">
+      <label>金额<input inputMode="decimal" value={String(payload.amount ?? '')} onChange={(event) => onPatch({ amount: Number(event.target.value) })} /></label>
+      <label>商家 / 用途<input value={String(payload.merchant ?? '')} onChange={(event) => onPatch({ merchant: event.target.value })} /></label>
+      <label>分类<select value={String(payload.category || '其他')} onChange={(event) => onPatch({ category: event.target.value })}><option>餐饮</option><option>交通</option><option>生活</option><option>医疗</option><option>其他</option><option>收入</option></select></label>
+      <label>账户<select value={String(payload.accountId || '')} onChange={(event) => onPatch({ accountId: event.target.value })}>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {account.currency}</option>)}</select></label>
+    </div>;
+  }
+  if (item.proposedAction === 'create_schedule') {
+    return <div className="draft-fields">
+      <label>日程名称<input value={String(payload.title ?? '')} onChange={(event) => onPatch({ title: event.target.value })} /></label>
+      <label>日期<input type="date" value={String(payload.date ?? '')} onChange={(event) => onPatch({ date: event.target.value })} /></label>
+      <label>时间<input type="time" value={String(payload.time ?? '')} onChange={(event) => onPatch({ time: event.target.value })} /></label>
+    </div>;
+  }
+  if (item.proposedAction === 'create_travel' || item.proposedAction === 'update_travel') {
+    return <div className="draft-fields">
+      <label>类型<select value={String(payload.travelKind || 'train')} onChange={(event) => onPatch({ travelKind: event.target.value })}><option value="train">火车</option><option value="flight">航班</option></select></label>
+      <label>车次 / 航班<input value={String(payload.number ?? '')} onChange={(event) => onPatch({ number: event.target.value })} /></label>
+      <label>出发地<input value={String(payload.from ?? '')} onChange={(event) => onPatch({ from: event.target.value })} /></label>
+      <label>目的地<input value={String(payload.to ?? '')} onChange={(event) => onPatch({ to: event.target.value })} /></label>
+      <label>日期<input type="date" value={String(payload.date ?? '')} onChange={(event) => onPatch({ date: event.target.value })} /></label>
+      <label>出发时间<input type="time" value={String(payload.departTime ?? '')} onChange={(event) => onPatch({ departTime: event.target.value })} /></label>
+    </div>;
+  }
+  if (item.proposedAction === 'create_health') {
+    return <div className="draft-fields">
+      <label>指标<select value={String(payload.metric || 'steps')} onChange={(event) => onPatch({ metric: event.target.value })}>{(Object.keys(HEALTH_METRIC_LABELS) as HealthMetric[]).map((metric) => <option key={metric} value={metric}>{HEALTH_METRIC_LABELS[metric]}</option>)}</select></label>
+      <label>数值<input inputMode="decimal" value={String(payload.value ?? '')} onChange={(event) => onPatch({ value: Number(event.target.value) })} /></label>
+    </div>;
+  }
+  if (item.proposedAction === 'add_memory' || item.proposedAction === 'update_memory') {
+    return <div className="draft-fields">
+      <label>标题<input value={String(payload.title ?? '')} onChange={(event) => onPatch({ title: event.target.value })} /></label>
+      <label>备注<input value={String(payload.note ?? '')} onChange={(event) => onPatch({ note: event.target.value })} /></label>
+    </div>;
+  }
+  return <p className="form-tip">这条建议只能确认或忽略。</p>;
 }
 
 function SwipeScheduleRow({ item, onToggle, onEdit, onDelete }: { item: ScheduleItem; onToggle: () => void; onEdit: () => void; onDelete: () => void }) {
@@ -1033,7 +1207,7 @@ function TravelPanel({ items, onSync, onAdd, onDelete }: { items: TravelItem[]; 
   return <div className="page feature-page travel-page">
     <section className="travel-hero"><div><span>NEXT TRIP</span><h2>{next ? `${next.from} → ${next.to}` : '暂无后续行程'}</h2><p>{next ? `${next.number} · ${time(next.departAt)}` : '可以粘贴 12306/航司短信，或授权通知读取。'}</p></div><b>{next?.kind === 'flight' ? '航' : '铁'}</b></section>
     <section className="travel-actions"><button onClick={onSync}><span>↻</span><div><strong>读取通知里的行程</strong><small>12306、航旅纵横、短信通知</small></div></button><button onClick={onAdd}><span>＋</span><div><strong>手动添加</strong><small>补充车次、航班和座位</small></div></button></section>
-    <form className="howto" onSubmit={submitPaste}><h3>粘贴 12306 / 航班短信</h3><textarea value={paste} onChange={(event) => setPaste(event.target.value)} rows={3} placeholder="例如：您已购8月29日G123次北京南站-上海虹桥站" style={{ width: '100%', minHeight: 72, border: '1px solid var(--line)', borderRadius: 10, padding: 8 }} /><button className="save" type="submit" style={{ marginTop: 8 }}>识别并保存</button></form>
+    <form className="howto" onSubmit={submitPaste}><h3>粘贴 12306 / 航班短信</h3><textarea value={paste} onChange={(event) => setPaste(event.target.value)} rows={3} placeholder="例如：您已购8月29日G123次北京南站-上海虹桥站" style={{ width: '100%', minHeight: 72, border: '1px solid var(--line)', borderRadius: 10, padding: 8 }} /><button className="save" type="submit" style={{ marginTop: 8 }}>识别并放入收件箱</button></form>
     <section className="feature-section"><div className="feature-title"><div><span>ITINERARY</span><h2>火车与航班</h2></div><small>{sorted.length} 段</small></div><div className="trip-list">{sorted.length ? sorted.map((item) => <article key={item.id} className={item.status}><header><span>{item.kind === 'flight' ? '航班' : '火车'} · {item.number}</span><b>{item.source === 'notification' ? '通知识别' : item.source === 'manual' ? '手动添加' : '粘贴识别'}</b></header><div className="trip-route"><div><strong>{item.from}</strong><small>{time(item.departAt)}</small></div><i>→</i><div><strong>{item.to}</strong><small>{time(item.arriveAt)}</small></div></div><footer><span>{item.seat}</span><span>{item.terminal}</span><span>{item.source === 'manual' ? '手动' : item.source === 'notification' ? '通知' : '导入'}</span></footer><div className="trip-ops"><button type="button" onClick={() => onDelete(item.id)}>删除</button></div></article>) : <div className="list-empty">还没有行程。粘贴短信或打开通知使用权后等待识别。</div>}</div></section>
     <section className="howto"><h3>为什么没有直接登录 12306</h3><p>铁路 12306 没有对第三方开放「我的车票」官方接口。不能用破解或模拟登录去拉你的订单。公开余票查询也不是你的行程。</p><p>航班动态可用航旅纵横、飞常准等官方渠道；本 App 先识别你已经收到的出票通知。</p></section>
   </div>;
@@ -1066,7 +1240,7 @@ function formatHealthAnswer(briefing: { rangeLabel: string; evidence: string; mi
   return [extra, `数据范围：${briefing.rangeLabel}`, `证据：${briefing.evidence}`, `缺失指标：${missing}`, briefing.disclaimer].filter(Boolean).join('\n');
 }
 
-function ButlerPanel({ data, ai, onConfirmAction }: { data: AppData; ai: AiConfig; onConfirmAction: (action: ButlerAction) => void }) {
+function ButlerPanel({ data, ai, onQueueActions }: { data: AppData; ai: AiConfig; onQueueActions: (actions: ButlerAction[]) => void }) {
   const connected = Boolean(ai.baseUrl && ai.configured);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -1130,7 +1304,11 @@ function ButlerPanel({ data, ai, onConfirmAction }: { data: AppData; ai: AiConfi
         setLinkState('offline');
       }
     }
-    setPending(actions);
+    setPending([]);
+    if (actions.length) {
+      onQueueActions(actions);
+      reply = `${reply}\n\n已放入收件箱 ${actions.length} 条，确认后才会写入。`;
+    }
     setMessages((current) => [...current, { role: 'bot', text: reply }]);
     setBusy(false);
   }
@@ -1141,19 +1319,7 @@ function ButlerPanel({ data, ai, onConfirmAction }: { data: AppData; ai: AiConfi
     <section className="butler-briefing"><span>健康回答边界</span><p>数据范围：{briefing.rangeLabel}</p><p>缺失指标：{briefing.missing.length ? briefing.missing.join('、') : '无'}</p><p>{briefing.disclaimer}</p></section>
     <div className="butler-quick"><button type="button" onClick={() => send('帮我安排明天上午的日程')}>安排日程</button><button type="button" onClick={() => send('帮我记下今天的健康数据')}>记健康</button><button type="button" onClick={() => send('分析最近的健康记录')}>分析健康</button><button type="button" onClick={() => send('帮我查看并管理记忆')}>管理记忆</button></div>
     <div className="chat-messages">{messages.map((message, index) => <div key={index} className={message.role}>{message.text}</div>)}</div>
-    {pending.length > 0 && <div className="butler-pending">{pending.map((action, index) => {
-      const card = describeButlerAction(action, data.memories);
-      return <article key={`${action.type}-${index}`}>
-        <span>待确认草稿</span>
-        <h3>{card.title}</h3>
-        <p>{card.detail}</p>
-        <small>确认后才会写入本机，模型不能直接改数据。</small>
-        <div>
-          <button type="button" onClick={() => { onConfirmAction(action); setPending((current) => current.filter((_, itemIndex) => itemIndex !== index)); }}>确认</button>
-          <button type="button" className="ghost" onClick={() => { setPending((current) => current.filter((_, itemIndex) => itemIndex !== index)); }}>取消</button>
-        </div>
-      </article>;
-    })}</div>}
+    {pending.length > 0 && <div className="butler-pending"><article><span>已转入收件箱</span><h3>写操作需要在收件箱确认</h3><p>管家只生成草稿，不会直接改账本或日程。</p></article></div>}
     <form className="butler-composer" onSubmit={(event) => { event.preventDefault(); send(); }}><input value={input} onChange={(event) => setInput(event.target.value)} placeholder={busy ? '正在生成…' : '问问今天的状态…'} /><button disabled={busy}>发送</button></form>
   </div>;
 }

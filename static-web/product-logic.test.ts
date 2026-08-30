@@ -37,6 +37,23 @@ import {
   weekDates,
   summarizeHealth,
   healthRecordsFromSnapshots,
+  canUndoInboxConfirm,
+  confirmInboxItem,
+  enqueueInboxItem,
+  ignoreInboxItem,
+  inboxItemFromButlerAction,
+  inboxItemFromNaturalCapture,
+  inboxItemFromPayment,
+  inboxItemFromTravelNotice,
+  inboxSourceLabel,
+  inboxConfidenceLabel,
+  migrateInboxStore,
+  normalizeInboxItem,
+  normalizeInboxItems,
+  pendingInboxCount,
+  reopenInboxItem,
+  sanitizeInboxPayload,
+  updateInboxItemPayload,
 } from '../app/product-logic';
 
 describe('local date logic', () => {
@@ -515,6 +532,7 @@ describe('truthful product state', () => {
   });
 });
 
+
 function memoryStorage(initial: Record<string, string> = {}) {
   const store = { ...initial };
   return {
@@ -579,5 +597,109 @@ describe('AI API key storage migration', () => {
     });
     expect(JSON.stringify(reply)).not.toMatch(/apiKey|password|vault/i);
     expect(JSON.stringify(status)).not.toMatch(/apiKey|password|vault/i);
+    });
+  });
+
+describe('unified inbox normalization', () => {
+  it('migrates missing inbox collections and drops secret fields', () => {
+    expect(migrateInboxStore({ schedules: [], accounts: [], transactions: [] })).toEqual({ inboxItems: [], lastConfirmedInboxId: null });
+    expect(normalizeInboxItems(undefined)).toEqual([]);
+    const dirty = normalizeInboxItem({
+      id: 'in1',
+      source: 'payment',
+      proposedAction: 'create_expense',
+      confidence: 1.4,
+      createdAt: '2026-08-30T10:00:00',
+      payload: { amount: 36, merchant: '午饭', password: 'secret123', apiKey: 'sk-test', note: '密码不要外传' },
+    });
+    expect(dirty).toMatchObject({
+      id: 'in1',
+      source: 'payment',
+      status: 'pending',
+      confidence: 1,
+      payload: { amount: 36, merchant: '午饭' },
+    });
+    expect(JSON.stringify(dirty)).not.toMatch(/password|apiKey|sk-test|secret123|密码/);
+    expect(sanitizeInboxPayload({ token: 'abc', merchant: '午饭' })).toEqual({ merchant: '午饭' });
+    expect(normalizeInboxItem({ id: 'bad', source: 'sms', proposedAction: 'create_expense', payload: { amount: 1 } })).toBeNull();
+  });
+
+  it('labels every supported capture source in Chinese', () => {
+    expect(inboxSourceLabel('payment')).toBe('支付通知');
+    expect(inboxSourceLabel('travel')).toBe('行程更新');
+    expect(inboxSourceLabel('ocr')).toBe('图片识别');
+    expect(inboxSourceLabel('voice')).toBe('语音');
+    expect(inboxSourceLabel('manual')).toBe('手动输入');
+    expect(inboxSourceLabel('ai')).toBe('管家建议');
+    expect(inboxConfidenceLabel(0.82)).toBe('82%');
+  });
+});
+
+describe('unified inbox state transitions', () => {
+  it('moves pending items to confirmed or ignored and only reopens ledger confirms', () => {
+    const seed = inboxItemFromPayment({ id: 'pay-1', createdAt: '2026-08-30T10:00:00', amount: 36, merchant: '午饭', accountId: 'wechat' });
+    expect(seed.status).toBe('pending');
+    const ignored = ignoreInboxItem([seed], 'pay-1');
+    expect(ignored[0].status).toBe('ignored');
+    expect(confirmInboxItem(ignored, 'pay-1', 'txn-1')[0].status).toBe('ignored');
+    const confirmed = confirmInboxItem([seed], 'pay-1', 'txn-1');
+    expect(confirmed[0]).toMatchObject({ status: 'confirmed', resultEntityId: 'txn-1' });
+    expect(canUndoInboxConfirm(confirmed[0])).toBe(true);
+    expect(reopenInboxItem(confirmed, 'pay-1')[0]).toMatchObject({ status: 'pending', resultEntityId: undefined });
+    const travel = inboxItemFromTravelNotice({
+      id: 'tr-1',
+      createdAt: '2026-08-30T10:00:00',
+      travel: { kind: 'train', number: 'G11', from: '北京南', to: '上海虹桥', departAt: '2026-08-30T09:00' },
+    });
+    const confirmedTravel = confirmInboxItem([travel], 'tr-1', 'travel-1');
+    expect(canUndoInboxConfirm(confirmedTravel[0])).toBe(false);
+    expect(updateInboxItemPayload([seed], 'pay-1', { amount: 40, merchant: '晚餐' })[0].preview).toContain('晚餐');
+    expect(pendingInboxCount(confirmed)).toBe(0);
+  });
+});
+
+describe('unified inbox dedupe', () => {
+  it('merges pending payment and travel notices with the same fingerprint', () => {
+    const first = inboxItemFromPayment({ id: 'pay-a', createdAt: '2026-08-30T10:00:00', amount: 18.5, merchant: '地铁', accountId: 'alipay', fingerprint: 'pay:18.5:地铁' });
+    const second = inboxItemFromPayment({ id: 'pay-b', createdAt: '2026-08-30T10:01:00', amount: 18.5, merchant: '地铁', accountId: 'alipay', fingerprint: 'pay:18.5:地铁' });
+    const merged = enqueueInboxItem([first], second);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].id).toBe('pay-a');
+    expect(pendingInboxCount(merged)).toBe(1);
+    const tripA = inboxItemFromTravelNotice({
+      id: 'tr-a',
+      createdAt: '2026-08-30T10:00:00',
+      travel: { kind: 'train', number: 'G123', from: '北京南', to: '上海虹桥', departAt: '2026-08-31T09:00:00' },
+    });
+    const tripB = inboxItemFromTravelNotice({
+      id: 'tr-b',
+      createdAt: '2026-08-30T10:02:00',
+      travel: { kind: 'train', number: 'G123', from: '北京南', to: '上海虹桥', departAt: '2026-08-31T09:00:00' },
+    });
+    expect(enqueueInboxItem([tripA], tripB)).toHaveLength(1);
+    const confirmed = confirmInboxItem([first], 'pay-a', 'txn-a');
+    const again = enqueueInboxItem(confirmed, second);
+    expect(again).toHaveLength(2);
+    expect(pendingInboxCount(again)).toBe(1);
+  });
+
+  it('keeps parsed capture and butler drafts in the same pending queue', () => {
+    const capture = inboxItemFromNaturalCapture({
+      id: 'cap-1',
+      source: 'voice',
+      createdAt: '2026-08-30T10:00:00',
+      parsed: parseNaturalCapture('午饭 36 元，微信支付', '2026-08-30'),
+      accountId: 'wechat',
+    });
+    const butler = inboxItemFromButlerAction({
+      id: 'ai-1',
+      createdAt: '2026-08-30T10:01:00',
+      action: { type: 'create_schedule', payload: { title: '吃药', date: '2026-08-31', time: '09:00' } },
+    });
+    expect(capture.source).toBe('voice');
+    expect(capture.proposedAction).toBe('create_expense');
+    expect(butler?.proposedAction).toBe('create_schedule');
+    expect(pendingInboxCount(enqueueInboxItem([capture], butler))).toBe(2);
+
   });
 });

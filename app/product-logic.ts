@@ -411,7 +411,7 @@ export function isBackupPayload(value: unknown): value is Record<string, unknown
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const raw = value as Record<string, unknown>;
   if (!Array.isArray(raw.schedules) || !Array.isArray(raw.accounts) || !Array.isArray(raw.transactions)) return false;
-  const optionalArrays = ['recurringRules', 'healthRecords', 'travels', 'investments', 'memories', 'vaultItems'];
+  const optionalArrays = ['recurringRules', 'healthRecords', 'travels', 'investments', 'memories', 'vaultItems', 'inboxItems'];
   return optionalArrays.every((key) => raw[key] === undefined || Array.isArray(raw[key]));
 }
 
@@ -772,6 +772,7 @@ export function releaseRecurringConfirmation<TR extends RecurringRuleState>(
     : rule);
 }
 
+
 export const AI_CONFIG_STORAGE_KEY = 'self-agent:ai-config:v1';
 export const AI_EVENT_VERSION = 1;
 export const AI_CONFIG_EVENT = 'self-agent:ai-config';
@@ -846,4 +847,371 @@ export function loadBrowserAiConfig(session: StorageLike, local: StorageLike): A
   const published = publicAiConfig(source);
   const apiKey = String(source.apiKey || leftover?.apiKey || '').trim();
   return { ...published, apiKey, configured: Boolean(published.baseUrl && apiKey) };
+}
+
+export const INBOX_SOURCES = ['payment', 'travel', 'ocr', 'voice', 'manual', 'ai'] as const;
+export type InboxSource = typeof INBOX_SOURCES[number];
+export const INBOX_STATUSES = ['pending', 'confirmed', 'ignored'] as const;
+export type InboxStatus = typeof INBOX_STATUSES[number];
+export const INBOX_ACTIONS = [
+  'create_expense',
+  'create_income',
+  'create_schedule',
+  'create_travel',
+  'update_travel',
+  'create_health',
+  'add_memory',
+  'update_memory',
+  'pause_memory',
+  'delete_memory',
+] as const;
+export type InboxProposedAction = typeof INBOX_ACTIONS[number];
+
+export const INBOX_SOURCE_LABELS: Record<InboxSource, string> = {
+  payment: '支付通知',
+  travel: '行程更新',
+  ocr: '图片识别',
+  voice: '语音',
+  manual: '手动输入',
+  ai: '管家建议',
+};
+
+export const INBOX_ACTION_LABELS: Record<InboxProposedAction, string> = {
+  create_expense: '记一笔支出',
+  create_income: '记一笔收入',
+  create_schedule: '添加日程',
+  create_travel: '添加行程',
+  update_travel: '更新行程',
+  create_health: '记录健康',
+  add_memory: '新增记忆',
+  update_memory: '更新记忆',
+  pause_memory: '暂停记忆',
+  delete_memory: '删除记忆',
+};
+
+export type InboxItem = {
+  id: string;
+  source: InboxSource;
+  confidence: number;
+  proposedAction: InboxProposedAction;
+  payload: Record<string, unknown>;
+  preview: string;
+  createdAt: string;
+  status: InboxStatus;
+  dedupeKey: string;
+  resultEntityId?: string;
+};
+
+export type InboxStore = {
+  inboxItems: InboxItem[];
+  lastConfirmedInboxId: string | null;
+};
+
+const INBOX_SECRET = /password|passwd|secret|apikey|api_key|token|otp|seed|mnemonic|私钥|密码|验证码|助记词/i;
+const INBOX_SOURCE_SET = new Set<string>(INBOX_SOURCES);
+const INBOX_STATUS_SET = new Set<string>(INBOX_STATUSES);
+const INBOX_ACTION_SET = new Set<string>(INBOX_ACTIONS);
+
+export function inboxSourceLabel(source: InboxSource | string): string {
+  return INBOX_SOURCE_LABELS[source as InboxSource] || '未知来源';
+}
+
+export function inboxDefaultConfidence(source: InboxSource): number {
+  if (source === 'payment') return 0.82;
+  if (source === 'travel') return 0.88;
+  if (source === 'ocr') return 0.62;
+  if (source === 'voice') return 0.72;
+  if (source === 'manual') return 0.9;
+  return 0.58;
+}
+
+export function inboxConfidenceLabel(confidence: number): string {
+  const value = Number.isFinite(confidence) ? Math.max(0, Math.min(1, confidence)) : 0;
+  return `${Math.round(value * 100)}%`;
+}
+
+function inboxIsPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+export function sanitizeInboxPayload(raw: unknown): Record<string, unknown> {
+  if (!inboxIsPlainObject(raw)) return {};
+  const next: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (INBOX_SECRET.test(key)) continue;
+    if (typeof value === 'string' && INBOX_SECRET.test(value)) continue;
+    if (inboxIsPlainObject(value)) {
+      const nested = sanitizeInboxPayload(value);
+      if (Object.keys(nested).length) next[key] = nested;
+      continue;
+    }
+    if (Array.isArray(value) || value === undefined) continue;
+    next[key] = value;
+  }
+  return next;
+}
+
+function stableInboxValue(value: unknown): string {
+  if (inboxIsPlainObject(value)) {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableInboxValue(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+export function inboxDedupeKey(input: {
+  source: InboxSource;
+  proposedAction: InboxProposedAction;
+  payload: Record<string, unknown>;
+  fingerprint?: string;
+}): string {
+  if (input.fingerprint) return String(input.fingerprint);
+  const payload = input.payload;
+  if (input.source === 'payment' || input.proposedAction === 'create_expense' || input.proposedAction === 'create_income') {
+    const amount = payload.amount ?? payload.accountAmount ?? '';
+    const merchant = payload.merchant ?? payload.title ?? '';
+    return `payment:${amount}:${merchant}:${payload.accountId ?? payload.source ?? ''}`;
+  }
+  if (input.proposedAction === 'create_travel' || input.proposedAction === 'update_travel') {
+    const date = String(payload.date || payload.departAt || '').slice(0, 10);
+    return `travel:${payload.travelKind || payload.kind || ''}:${payload.number || ''}:${date}`;
+  }
+  return `${input.source}:${input.proposedAction}:${stableInboxValue(payload)}`;
+}
+
+export function inboxPreviewFor(action: InboxProposedAction, payload: Record<string, unknown>): string {
+  if (action === 'create_expense' || action === 'create_income') {
+    return `${payload.merchant || payload.title || '支付'} · ${payload.amount ?? '待补金额'}`;
+  }
+  if (action === 'create_schedule') return `${payload.date || ''} ${payload.time || ''} · ${payload.title || '新日程'}`.trim();
+  if (action === 'create_travel' || action === 'update_travel') {
+    return `${payload.travelKind === 'flight' || payload.kind === 'flight' ? '航班' : '火车'} ${payload.number || ''} ${payload.from || ''} → ${payload.to || ''}`.replace(/\s+/g, ' ').trim();
+  }
+  if (action === 'create_health') return `${payload.metric || '健康'} ${payload.value ?? ''}`.trim();
+  if (action === 'add_memory' || action === 'update_memory') return String(payload.title || payload.note || '记忆草稿');
+  return String(payload.title || payload.id || INBOX_ACTION_LABELS[action]);
+}
+
+export function normalizeInboxItem(raw: unknown, fallbackCreatedAt = ''): InboxItem | null {
+  if (!inboxIsPlainObject(raw)) return null;
+  const source = INBOX_SOURCE_SET.has(String(raw.source)) ? String(raw.source) as InboxSource : null;
+  const proposedAction = INBOX_ACTION_SET.has(String(raw.proposedAction)) ? String(raw.proposedAction) as InboxProposedAction : null;
+  if (!source || !proposedAction) return null;
+  const payload = sanitizeInboxPayload(raw.payload);
+  const createdAt = String(raw.createdAt || fallbackCreatedAt || '');
+  const id = String(raw.id || '').trim() || `inbox-${createdAt || 'legacy'}-${source}-${proposedAction}`;
+  const confidenceRaw = Number(raw.confidence);
+  const confidence = Number.isFinite(confidenceRaw) ? Math.max(0, Math.min(1, confidenceRaw)) : inboxDefaultConfidence(source);
+  const status = INBOX_STATUS_SET.has(String(raw.status)) ? String(raw.status) as InboxStatus : 'pending';
+  const preview = String(raw.preview || inboxPreviewFor(proposedAction, payload) || '').slice(0, 200);
+  const resultEntityId = typeof raw.resultEntityId === 'string' && raw.resultEntityId.trim() ? raw.resultEntityId.trim() : undefined;
+  return {
+    id,
+    source,
+    confidence,
+    proposedAction,
+    payload,
+    preview,
+    createdAt,
+    status,
+    dedupeKey: String(raw.dedupeKey || inboxDedupeKey({ source, proposedAction, payload, fingerprint: typeof raw.fingerprint === 'string' ? raw.fingerprint : undefined })),
+    resultEntityId,
+  };
+}
+
+export function normalizeInboxItems(raw: unknown): InboxItem[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const items: InboxItem[] = [];
+  for (const entry of raw) {
+    const item = normalizeInboxItem(entry);
+    if (!item || seen.has(item.id)) continue;
+    seen.add(item.id);
+    items.push(item);
+  }
+  return items;
+}
+
+export function migrateInboxStore(raw: unknown): InboxStore {
+  if (!inboxIsPlainObject(raw)) return { inboxItems: [], lastConfirmedInboxId: null };
+  const inboxItems = normalizeInboxItems(raw.inboxItems);
+  const last = typeof raw.lastConfirmedInboxId === 'string' && inboxItems.some((item) => item.id === raw.lastConfirmedInboxId)
+    ? raw.lastConfirmedInboxId
+    : null;
+  return { inboxItems, lastConfirmedInboxId: last };
+}
+
+export function pendingInboxItems(items: InboxItem[]): InboxItem[] {
+  return items.filter((item) => item.status === 'pending');
+}
+
+export function pendingInboxCount(items: InboxItem[]): number {
+  return pendingInboxItems(items).length;
+}
+
+export function enqueueInboxItem(items: InboxItem[], incoming: InboxItem | null): InboxItem[] {
+  const item = incoming ? normalizeInboxItem(incoming) : null;
+  if (!item) return items;
+  const pending = item.status === 'pending';
+  if (pending) {
+    const index = items.findIndex((existing) => existing.status === 'pending' && existing.dedupeKey === item.dedupeKey);
+    if (index >= 0) {
+      const existing = items[index];
+      const merged: InboxItem = {
+        ...existing,
+        source: item.source,
+        confidence: item.confidence,
+        proposedAction: item.proposedAction,
+        payload: item.payload,
+        preview: item.preview,
+        status: 'pending',
+        dedupeKey: existing.dedupeKey,
+      };
+      return [merged, ...items.filter((_, current) => current !== index)];
+    }
+  }
+  return [item, ...items.filter((existing) => existing.id !== item.id)];
+}
+
+export function ignoreInboxItem(items: InboxItem[], id: string): InboxItem[] {
+  return items.map((item) => item.id === id && item.status === 'pending' ? { ...item, status: 'ignored' } : item);
+}
+
+export function confirmInboxItem(items: InboxItem[], id: string, resultEntityId?: string): InboxItem[] {
+  return items.map((item) => item.id === id && item.status === 'pending'
+    ? { ...item, status: 'confirmed', resultEntityId: resultEntityId || item.resultEntityId }
+    : item);
+}
+
+export function updateInboxItemPayload(items: InboxItem[], id: string, payload: Record<string, unknown>): InboxItem[] {
+  return items.map((item) => {
+    if (item.id !== id || item.status !== 'pending') return item;
+    const nextPayload = sanitizeInboxPayload({ ...item.payload, ...payload });
+    return { ...item, payload: nextPayload, preview: inboxPreviewFor(item.proposedAction, nextPayload) };
+  });
+}
+
+export function reopenInboxItem(items: InboxItem[], id: string): InboxItem[] {
+  return items.map((item) => item.id === id && item.status === 'confirmed'
+    ? { ...item, status: 'pending', resultEntityId: undefined }
+    : item);
+}
+
+export function canUndoInboxConfirm(item: InboxItem | undefined | null): boolean {
+  return Boolean(item && item.status === 'confirmed' && (item.proposedAction === 'create_expense' || item.proposedAction === 'create_income') && item.resultEntityId);
+}
+
+export function inboxItemFromNaturalCapture(input: {
+  id: string;
+  source: InboxSource;
+  createdAt: string;
+  parsed: NaturalCapture;
+  accountId?: string;
+  fingerprint?: string;
+  confidence?: number;
+}): InboxItem {
+  const proposedAction: InboxProposedAction = input.parsed.kind === 'expense'
+    ? 'create_expense'
+    : input.parsed.kind === 'travel'
+      ? 'create_travel'
+      : input.parsed.kind === 'health'
+        ? 'create_health'
+        : 'create_schedule';
+  const payload = input.parsed.kind === 'expense'
+    ? { amount: input.parsed.amount, merchant: input.parsed.merchant, category: input.parsed.category, paySource: input.parsed.source, accountId: input.accountId || '', reimbursable: false }
+    : input.parsed.kind === 'travel'
+      ? { travelKind: input.parsed.travelKind, number: input.parsed.number, from: input.parsed.from, to: input.parsed.to, date: input.parsed.date, departTime: input.parsed.departTime, arriveTime: input.parsed.arriveTime || '' }
+      : input.parsed.kind === 'health'
+        ? { metric: input.parsed.metric, value: input.parsed.value }
+        : { title: input.parsed.title, date: input.parsed.date, time: input.parsed.time };
+  return normalizeInboxItem({
+    id: input.id,
+    source: input.source,
+    confidence: input.confidence ?? inboxDefaultConfidence(input.source),
+    proposedAction,
+    payload,
+    createdAt: input.createdAt,
+    status: 'pending',
+    fingerprint: input.fingerprint,
+  }) as InboxItem;
+}
+
+export function inboxItemFromButlerAction(input: { id: string; createdAt: string; action: ButlerAction; confidence?: number }): InboxItem | null {
+  return normalizeInboxItem({
+    id: input.id,
+    source: 'ai',
+    confidence: input.confidence ?? inboxDefaultConfidence('ai'),
+    proposedAction: input.action.type,
+    payload: input.action.payload,
+    createdAt: input.createdAt,
+    status: 'pending',
+  });
+}
+
+export function inboxItemFromPayment(input: {
+  id: string;
+  createdAt: string;
+  amount?: number;
+  merchant?: string;
+  title?: string;
+  category?: string;
+  source?: string;
+  accountId?: string;
+  dir?: string;
+  fingerprint?: string;
+}): InboxItem {
+  const amount = Number(input.amount ?? 0);
+  const merchant = String(input.merchant || input.title || '支付成功');
+  const proposedAction: InboxProposedAction = input.dir === 'in' ? 'create_income' : 'create_expense';
+  return normalizeInboxItem({
+    id: input.id,
+    source: 'payment',
+    confidence: inboxDefaultConfidence('payment'),
+    proposedAction,
+    payload: { amount, merchant, category: input.category || (proposedAction === 'create_income' ? '收入' : '其他'), accountId: input.accountId || '', paySource: input.source || 'Android 支付通知', reimbursable: false },
+    createdAt: input.createdAt,
+    status: 'pending',
+    fingerprint: input.fingerprint,
+  }) as InboxItem;
+}
+
+export function inboxItemFromTravelNotice(input: {
+  id: string;
+  createdAt: string;
+  travel: {
+    kind?: string;
+    number?: string;
+    from?: string;
+    to?: string;
+    departAt?: string;
+    arriveAt?: string;
+    seat?: string;
+    terminal?: string;
+    source?: string;
+  };
+  existing?: boolean;
+}): InboxItem {
+  const departAt = String(input.travel.departAt || '');
+  return normalizeInboxItem({
+    id: input.id,
+    source: 'travel',
+    confidence: inboxDefaultConfidence('travel'),
+    proposedAction: input.existing ? 'update_travel' : 'create_travel',
+    payload: {
+      travelKind: input.travel.kind === 'flight' ? 'flight' : 'train',
+      number: input.travel.number || '',
+      from: input.travel.from || '待确认',
+      to: input.travel.to || '待确认',
+      date: departAt.slice(0, 10),
+      departTime: departAt.slice(11, 16) || '08:00',
+      arriveTime: String(input.travel.arriveAt || '').slice(11, 16) || '',
+      departAt,
+      arriveAt: input.travel.arriveAt || '',
+      seat: input.travel.seat || '待分配',
+      terminal: input.travel.terminal || '待确认',
+      noticeSource: input.travel.source || 'notification',
+    },
+    createdAt: input.createdAt,
+    status: 'pending',
+  }) as InboxItem;
+
 }

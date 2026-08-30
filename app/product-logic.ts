@@ -1414,3 +1414,119 @@ export function applyInboxLifecycle(store: InboxAuditStore, event: InboxLifecycl
   });
   return { inboxItems: store.inboxItems, auditLog: entry ? appendAuditEntry(store.auditLog, entry) : store.auditLog };
 }
+
+export type PermissionOnboardingState = {
+  version: 2;
+  dismissed: boolean;
+  completedAt: string | null;
+  settingsOpened: boolean;
+};
+
+export function normalizePermissionOnboarding(raw: unknown): PermissionOnboardingState {
+  const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+  return {
+    version: 2,
+    dismissed: source.dismissed === true,
+    completedAt: typeof source.completedAt === 'string' ? source.completedAt : null,
+    settingsOpened: source.settingsOpened === true,
+  };
+}
+
+export type PermissionCardId = 'payment' | 'reminders' | 'health' | 'autofill';
+
+export type PermissionOnboardingCard = {
+  id: PermissionCardId;
+  title: string;
+  why: string;
+  reads: string;
+  cannotRead: string;
+};
+
+export type CapabilityStatusSnapshot = {
+  accessibility?: boolean | null;
+  notifications?: boolean | null;
+  notificationListener?: boolean | null;
+  autofill?: boolean | null;
+  exactAlarms?: boolean | null;
+  fullScreenIntent?: boolean | null;
+  healthConnect?: boolean | null;
+};
+
+export function shouldShowPermissionOnboarding(state: unknown, options?: { reopen?: boolean }): boolean {
+  if (options?.reopen) return true;
+  return !normalizePermissionOnboarding(state).dismissed;
+}
+
+export function permissionOnboardingCards(): PermissionOnboardingCard[] {
+  return [
+    {
+      id: 'payment',
+      title: '支付识别',
+      why: '识别微信、支付宝付款成功，生成待确认的入账草稿。',
+      reads: '无障碍里的支付成功页，以及通知使用权中的微信、支付宝、云闪付支付通知。',
+      cannotRead: '不读聊天、通讯录、验证码和密码页，也不会自动点击。',
+    },
+    {
+      id: 'reminders',
+      title: '日程提醒',
+      why: '到点弹出日程和每月账单提醒，即使应用在后台。',
+      reads: '本机已保存的日程标题、时间和账单名称。',
+      cannotRead: '不靠读取其他应用通知来提醒，也不改系统日历。',
+    },
+    {
+      id: 'health',
+      title: '健康同步',
+      why: '从你授权的健康导出或 Health Connect 导入身高、体重、心率、睡眠等摘要。',
+      reads: 'Gadgetbridge 导出文件或 Health Connect 近几日摘要。',
+      cannotRead: '不登录厂商账号，不上传健康数据，也不当作诊断。',
+    },
+    {
+      id: 'autofill',
+      title: '密码自动填充',
+      why: '在其他应用登录时，由系统保存和填充账号密码。',
+      reads: '系统自动填充框架提供的账号字段。',
+      cannotRead: '密码明文不进网页、备份和 AI；查看需指纹或锁屏。',
+    },
+  ];
+}
+
+function detectableEnabled(...flags: Array<boolean | null | undefined>): boolean {
+  const detected = flags.filter((flag): flag is boolean => flag === true || flag === false);
+  return detected.length > 0 && detected.every(Boolean);
+}
+
+export function permissionOnboardingProgress(
+  caps: CapabilityStatusSnapshot = {},
+  _onboarding?: Partial<PermissionOnboardingState> | { settingsOpened?: boolean },
+): Array<PermissionOnboardingCard & { enabled: boolean }> {
+  void _onboarding;
+  const cards = permissionOnboardingCards();
+  return cards.map((card) => {
+    if (card.id === 'payment') return { ...card, enabled: detectableEnabled(caps.notificationListener, caps.accessibility) };
+    if (card.id === 'reminders') return { ...card, enabled: detectableEnabled(caps.notifications, caps.exactAlarms, caps.fullScreenIntent) };
+    if (card.id === 'health') return { ...card, enabled: detectableEnabled(caps.healthConnect) };
+    return { ...card, enabled: detectableEnabled(caps.autofill) };
+  });
+}
+
+export function parseCapabilityStatus(raw: unknown): CapabilityStatusSnapshot {
+  const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+  const optional = (key: string): boolean | null => (source[key] === true ? true : source[key] === false ? false : null);
+  return {
+    accessibility: source.accessibility === true,
+    notifications: source.notifications === true,
+    notificationListener: source.notificationListener === true,
+    autofill: source.autofill === true,
+    exactAlarms: optional('exactAlarms'),
+    fullScreenIntent: optional('fullScreenIntent'),
+    healthConnect: optional('healthConnect'),
+  };
+}
+
+export function dismissPermissionOnboarding(state: unknown, completedAt: string): PermissionOnboardingState {
+  return { ...normalizePermissionOnboarding(state), dismissed: true, completedAt };
+}
+
+export function markPermissionSettingsOpened(state: unknown): PermissionOnboardingState {
+  return { ...normalizePermissionOnboarding(state), settingsOpened: true };
+}

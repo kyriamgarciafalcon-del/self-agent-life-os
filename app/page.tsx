@@ -1,7 +1,7 @@
 'use client';
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { accountRole, addDaysKey, applyDailyFxRates, applyDailyPriceQuotes, applyInboxLifecycle, applyLedger, AI_CONFIG_EVENT, AI_CONFIG_STORAGE_KEY, AI_REPLY_EVENT, AUDIT_OUTCOMES, auditOutcomeLabel, auditReasonLabel, buildButlerSystemPrompt, buildHealthBriefing, canApplyLedger, canUndoInboxConfirm, cnyWealthTotal, defaultCashId, describeButlerDataScope, detectLegacyDemoData, enqueueInboxItem, filterAuditLog, healthRecordsFromSnapshots, inboxConfidenceLabel, inboxConfirmBlockReason, inboxItemFromButlerAction, inboxItemFromNaturalCapture, inboxItemFromPayment, inboxItemFromTravelNotice, inboxSourceLabel, INBOX_ACTION_LABELS, INBOX_SOURCES, isBackupPayload, isDebtRole, latestHealthByKind, loadBrowserAiConfig, localDateKey, migrateAuditLog, migrateInboxStore, migrateLegacyAiLocalStorage, migrateLegacyReimbursementAccounts, normalizeAccountBalance, normalizeMemory, parseButlerModelOutput, parseNaturalCapture, pendingInboxCount, pendingInboxItems, persistBrowserAiConfig, planAccountSettlement, reconcileRecurringConfirmations, releaseRecurringConfirmation, removeLedgerTransactionState, resolvePaymentAccountId, settleReimbursementState, summarizeHealth, updateInboxItemPayload, upsertByExternalKey, wealthTotals, weekDates, type AuditEntry, type AuditOutcome, type ButlerAction, type HealthMetric, type InboxItem, type InboxLifecycleEvent, type InboxSource, type TravelKind } from './product-logic';
+import { accountRole, addDaysKey, applyDailyFxRates, applyDailyPriceQuotes, applyInboxLifecycle, applyLedger, AI_CONFIG_EVENT, AI_CONFIG_STORAGE_KEY, AI_REPLY_EVENT, AUDIT_OUTCOMES, auditOutcomeLabel, auditReasonLabel, buildButlerSystemPrompt, buildHealthBriefing, canApplyLedger, canUndoInboxConfirm, cnyWealthTotal, defaultCashId, describeButlerDataScope, detectLegacyDemoData, dismissPermissionOnboarding, enqueueInboxItem, filterAuditLog, healthRecordsFromSnapshots, inboxConfidenceLabel, inboxConfirmBlockReason, inboxItemFromButlerAction, inboxItemFromNaturalCapture, inboxItemFromPayment, inboxItemFromTravelNotice, inboxSourceLabel, INBOX_ACTION_LABELS, INBOX_SOURCES, isBackupPayload, isDebtRole, latestHealthByKind, loadBrowserAiConfig, localDateKey, markPermissionSettingsOpened, migrateAuditLog, migrateInboxStore, migrateLegacyAiLocalStorage, migrateLegacyReimbursementAccounts, normalizeAccountBalance, normalizeMemory, normalizePermissionOnboarding, parseButlerModelOutput, parseCapabilityStatus, parseNaturalCapture, pendingInboxCount, pendingInboxItems, persistBrowserAiConfig, permissionOnboardingProgress, planAccountSettlement, reconcileRecurringConfirmations, releaseRecurringConfirmation, removeLedgerTransactionState, resolvePaymentAccountId, settleReimbursementState, shouldShowPermissionOnboarding, summarizeHealth, updateInboxItemPayload, upsertByExternalKey, wealthTotals, weekDates, type AuditEntry, type AuditOutcome, type ButlerAction, type CapabilityStatusSnapshot, type HealthMetric, type InboxItem, type InboxLifecycleEvent, type InboxSource, type PermissionCardId, type PermissionOnboardingState, type TravelKind } from './product-logic';
 
 type Tab = 'home' | 'schedule' | 'capture' | 'finance' | 'profile' | 'health' | 'travel' | 'data' | 'butler' | 'privacy' | 'memory' | 'vault' | 'audit';
 type ScheduleColor = 'blue' | 'green' | 'orange';
@@ -30,7 +30,7 @@ type InvestmentKind = 'fund' | 'stock' | 'crypto' | 'meme';
 type PricePoint = { date: string; price: number };
 type InvestmentHolding = { id: string; accountId: string; kind: InvestmentKind; name: string; code: string; contract: string; network: string; quantity: number; averageCost: number; currentPrice: number; currency: Currency; updatedAt: string; quoteStatus: 'sample' | 'manual' | 'live'; history: PricePoint[] };
 type ExchangeRate = { currency: Exclude<Currency, 'CNY'>; cnyRate: number; asOf: string; source: 'manual' | 'daily'; updatedAt: string };
-type AppData = { schemaVersion: 3; demoMode: boolean; schedules: ScheduleItem[]; accounts: Account[]; transactions: Transaction[]; recurringRules: RecurringRule[]; healthRecords: HealthRecord[]; travels: TravelItem[]; investments: InvestmentHolding[]; exchangeRates: ExchangeRate[]; memories: MemoryItem[]; privacy: PrivacySettings; vaultItems: VaultItem[]; inboxItems: InboxItem[]; lastConfirmedInboxId: string | null; auditLog: AuditEntry[]; theme: 'light' | 'dark' };
+type AppData = { schemaVersion: 3; demoMode: boolean; schedules: ScheduleItem[]; accounts: Account[]; transactions: Transaction[]; recurringRules: RecurringRule[]; healthRecords: HealthRecord[]; travels: TravelItem[]; investments: InvestmentHolding[]; exchangeRates: ExchangeRate[]; memories: MemoryItem[]; privacy: PrivacySettings; vaultItems: VaultItem[]; inboxItems: InboxItem[]; lastConfirmedInboxId: string | null; auditLog: AuditEntry[]; theme: 'light' | 'dark'; permissionOnboarding: PermissionOnboardingState };
 type ExpenseDraft = { kind: 'expense'; amount: number; merchant: string; category: string; accountId: string; source: string; currency: Currency; reimbursable: boolean };
 type ScheduleDraft = { kind: 'schedule'; title: string; date: string; time: string };
 type TravelDraft = { kind: 'travel'; travelKind: TravelKind; number: string; from: string; to: string; date: string; departTime: string; arriveTime?: string };
@@ -116,6 +116,7 @@ const demoData: AppData = {
   lastConfirmedInboxId: null,
   auditLog: [],
   theme: 'light',
+  permissionOnboarding: { version: 2, dismissed: true, completedAt: TODAY, settingsOpened: false },
 };
 
 const emptyData: AppData = {
@@ -136,6 +137,7 @@ const emptyData: AppData = {
   lastConfirmedInboxId: null,
   auditLog: [],
   theme: 'light',
+  permissionOnboarding: { version: 2, dismissed: false, completedAt: null, settingsOpened: false },
 };
 
 const navItems: { id: Tab; label: string; icon: string }[] = [
@@ -249,6 +251,7 @@ function normalizeData(raw: Partial<AppData>): AppData {
     lastConfirmedInboxId: inbox.lastConfirmedInboxId,
     auditLog,
     theme: raw.theme ?? 'light',
+    permissionOnboarding: normalizePermissionOnboarding(raw.permissionOnboarding),
   };
 }
 function withInboxEvent(current: AppData, event: InboxLifecycleEvent): AppData {
@@ -283,7 +286,8 @@ export default function Home() {
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
   const [aiConfig, setAiConfig] = useState<AiConfig>(emptyAi);
   const [nativeOn, setNativeOn] = useState(false);
-  const [caps, setCaps] = useState({ accessibility: false, notifications: false, notificationListener: false, autofill: false });
+  const [caps, setCaps] = useState<CapabilityStatusSnapshot>({ accessibility: false, notifications: false, notificationListener: false, autofill: false });
+  const [permissionOnboardingOpen, setPermissionOnboardingOpen] = useState(false);
   const [vaultMeta, setVaultMeta] = useState<{ title: string; usernameHint: string }[]>([]);
   const [selectedDate, setSelectedDate] = useState(TODAY);
   const [sheet, setSheet] = useState<'schedule' | 'transaction' | 'account' | 'recurring' | 'exchange-rate' | 'health' | 'travel' | 'holding' | 'settle-account' | null>(null);
@@ -345,6 +349,9 @@ export default function Home() {
     return () => window.clearTimeout(timer);
   }, []);
   useEffect(() => {
+    if (hydrated && shouldShowPermissionOnboarding(data.permissionOnboarding)) setPermissionOnboardingOpen(true);
+  }, [hydrated, data.permissionOnboarding]);
+  useEffect(() => {
     function onTravel(event: Event) {
       const items = (event as CustomEvent<TravelItem[]>).detail;
       if (!Array.isArray(items) || !items.length) return;
@@ -395,13 +402,7 @@ export default function Home() {
         setNativeOn(true);
         const meta = JSON.parse(w.SelfAgentNative.vaultMeta?.() || '[]') as { title: string; usernameHint: string }[];
         if (Array.isArray(meta)) setVaultMeta(meta);
-        const status = JSON.parse(w.SelfAgentNative.capabilityStatus?.() || '{}') as Partial<typeof caps>;
-        setCaps({
-          accessibility: Boolean(status.accessibility),
-          notifications: Boolean(status.notifications),
-          notificationListener: Boolean(status.notificationListener),
-          autofill: Boolean(status.autofill),
-        });
+        setCaps(parseCapabilityStatus(JSON.parse(w.SelfAgentNative.capabilityStatus?.() || '{}')));
         const sessionAi = loadBrowserAiConfig(window.sessionStorage, window.localStorage);
         if (sessionAi.apiKey) {
           w.SelfAgentNative.saveAiConfig?.(JSON.stringify({ baseUrl: sessionAi.baseUrl, model: sessionAi.model, apiKey: sessionAi.apiKey }));
@@ -1071,9 +1072,23 @@ export default function Home() {
     if (!window.confirm('确定清空本机日程、账本、健康、行程和 AI 设置吗？密码库不会被清空。')) return;
     setData(emptyData); setAiConfig(emptyAi); window.localStorage.removeItem(STORAGE_KEY); window.localStorage.removeItem(AI_CONFIG_STORAGE_KEY); window.sessionStorage.removeItem(AI_CONFIG_STORAGE_KEY); (window as Window & { SelfAgentNative?: NativeAiBridge }).SelfAgentNative?.clearAiConfig?.(); notify('本机业务数据已清空');
   }
+  function openPermissionSettings(id: PermissionCardId, secondary = false) {
+    const native = (window as Window & { SelfAgentNative?: { openNotificationAccess?: () => void; openAccessibilitySettings?: () => void; openAutofillSettings?: () => void; importHealthConnect?: () => void; openReminderSettings?: () => void } }).SelfAgentNative;
+    setData((current) => ({ ...current, permissionOnboarding: markPermissionSettingsOpened(current.permissionOnboarding) }));
+    if (!native) { notify('请在 Android App 中开启系统权限'); return; }
+    if (id === 'payment') (secondary ? native.openAccessibilitySettings : native.openNotificationAccess)?.();
+    if (id === 'reminders') native.openReminderSettings?.();
+    if (id === 'health') native.importHealthConnect?.();
+    if (id === 'autofill') native.openAutofillSettings?.();
+  }
+  function finishPermissionOnboarding() {
+    setData((current) => ({ ...current, permissionOnboarding: dismissPermissionOnboarding(current.permissionOnboarding, localStamp()) }));
+    setPermissionOnboardingOpen(false);
+  }
   function pageTitle() { return tab === 'schedule' ? '日程与行动' : tab === 'capture' ? '收件箱' : tab === 'finance' ? selectedHoldingId ? '收益详情' : selectedAccountId ? '账户账单' : '我的财务' : tab === 'profile' ? '我的' : tab === 'health' ? '健康记录' : tab === 'travel' ? '我的出行' : tab === 'data' ? '数据中心' : tab === 'butler' ? '本机管家' : tab === 'privacy' ? '隐私与权限' : tab === 'memory' ? '记忆管理' : tab === 'vault' ? '密码库' : tab === 'audit' ? '操作历史' : '今天'; }
 
   return <main className={`phone-app ${data.theme === 'dark' ? 'dark' : ''}`}>
+    {permissionOnboardingOpen && <PermissionOnboardingPanel caps={caps} nativeOn={nativeOn} onOpen={openPermissionSettings} onLater={finishPermissionOnboarding} />}
     <header className="app-header"><button className="round" aria-label="返回" onClick={() => { if (!goBack()) notify('已经在首页'); }}>‹</button><div><span>SELF AGENT · 本机优先</span><h1>{pageTitle()}</h1></div><button className="round status-dot" aria-label="打开设置" onClick={() => navigate('profile')}><i />设</button></header>
 
     {tab === 'home' && <div className="page home-page">
@@ -1094,7 +1109,7 @@ export default function Home() {
 
     {tab === 'finance' && <FinancePanel data={data} currency={financeCurrency} selectedAccountId={selectedAccountId} selectedHoldingId={selectedHoldingId} onCurrency={setFinanceCurrency} onSelectAccount={(id) => { setSelectedAccountId(id); setSelectedHoldingId(null); }} onSelectHolding={setSelectedHoldingId} onBackAccount={() => setSelectedAccountId(null)} onBackHolding={() => setSelectedHoldingId(null)} onNewTransaction={() => { setEditingTransactionId(null); setSheet('transaction'); }} onEditTransaction={(id) => { setEditingTransactionId(id); setSheet('transaction'); }} onNewAccount={() => { setEditingAccountId(null); setSheet('account'); }} onEditAccount={(id) => { setEditingAccountId(id); setSheet('account'); }} onNewHolding={() => { setEditingHoldingId(null); setSheet('holding'); }} onEditHolding={(id) => { setEditingHoldingId(id); setSheet('holding'); }} onNewRecurring={() => { setEditingRecurringId(null); setSheet('recurring'); }} onEditRecurring={(id) => { setEditingRecurringId(id); setSheet('recurring'); }} onDeleteRecurring={(id) => deleteRecurringRule(id)} onDeleteTransaction={(id) => deleteTransaction(id)} onRunRecurring={runRecurringRule} onToggleRecurring={toggleRecurringRule} onSettleReimbursement={settleReimbursement} onSettleAccount={settleAccount} onNewRate={() => { setEditingRateCurrency(null); setSheet('exchange-rate'); }} onEditRate={(currency) => { setEditingRateCurrency(currency); setSheet('exchange-rate'); }} onDeleteRate={deleteExchangeRate} onRefreshQuotes={requestQuoteRefresh} />}
 
-    {tab === 'profile' && <div className="page profile-page"><section className="profile-heading"><div>SA</div><span>SELF AGENT</span><h2>数据留在你的设备上</h2><p>界面和记录都在手机里运行，不依赖服务器。敏感能力由系统权限授权。</p></section><section className="profile-menu"><button onClick={() => navigate('audit')}><span>史</span><div><strong>操作历史</strong><small>收件箱确认、忽略、撤销与失败记录</small></div><b>›</b></button><button onClick={chooseGadgetbridgeExport}><span>链</span><div><strong>选择 ZIP 所在文件夹</strong><small>请选择 Download/health，自动跟踪新生成的 Gadgetbridge.zip</small></div><b>›</b></button><button onClick={() => navigate('memory')}><span>忆</span><div><strong>AI 记忆管理</strong><small>查看、暂停或删除管家记忆</small></div><b>›</b></button><button onClick={() => navigate('privacy')}><span>盾</span><div><strong>隐私与权限</strong><small>分别控制健康、财务和日程摘要</small></div><b>›</b></button><button onClick={() => navigate('vault')}><span>钥</span><div><strong>密码库</strong><small>不在网页保存密码明文</small></div><b>›</b></button><button onClick={() => navigate('data')}><span>数</span><div><strong>数据中心</strong><small>健康、财务与行动统一摘要</small></div><b>›</b></button></section><form className="ai-box" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const next = { baseUrl: String(form.get('baseUrl')).trim().replace(/\/$/, ''), model: String(form.get('model')).trim() || 'gpt-4o-mini', apiKey: String(form.get('apiKey')).trim() }; const native = (window as Window & { SelfAgentNative?: NativeAiBridge }).SelfAgentNative; if (native?.nativeReady?.() && native.saveAiConfig) { native.saveAiConfig(JSON.stringify(next)); setAiConfig({ baseUrl: next.baseUrl, model: next.model, apiKey: '', configured: Boolean(next.baseUrl && (next.apiKey || aiConfig.configured)) }); notify(next.apiKey ? 'AI 密钥已加密保存到 Android Keystore' : 'AI 接口设置已更新，原密钥保持不变'); } else { const published = persistBrowserAiConfig(window.sessionStorage, window.localStorage, next); setAiConfig({ ...published, apiKey: next.apiKey, configured: Boolean(next.baseUrl && next.apiKey) }); notify('网页版密钥只保留到当前页面会话，关闭后自动清除'); } }}><strong>AI 接口</strong><p>兼容 OpenAI Chat Completions。密钥只存在本机，提问时不会发送密码。</p><label>接口地址<input name="baseUrl" placeholder="https://api.openai.com/v1" defaultValue={aiConfig.baseUrl} /></label><label>模型<input name="model" defaultValue={aiConfig.model} /></label><label>API Key<input name="apiKey" type="password" autoComplete="off" defaultValue={aiConfig.apiKey} /></label><button className="save" type="submit" style={{ marginTop: 12 }}>保存接口</button></form>{nativeOn && <div className="native-actions"><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openAccessibilitySettings?: () => void } }).SelfAgentNative?.openAccessibilitySettings?.()}>第1步：打开无障碍（自动记账）</button><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openNotificationAccess?: () => void } }).SelfAgentNative?.openNotificationAccess?.()}>第2步：打开通知使用权</button><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openAutofillSettings?: () => void } }).SelfAgentNative?.openAutofillSettings?.()}>第3步：设为自动填充服务</button></div>}<HowToNative /><section className="profile-actions"><button onClick={toggleTheme}>{data.theme === 'dark' ? '切换浅色模式' : '切换深色模式'}</button><button onClick={exportLocalData}>导出全部数据</button><label className="file-action">从备份恢复<input hidden type="file" accept="application/json,.json" onChange={importLocalData} /></label><button onClick={loadDemoData}>加载演示数据</button><button className="danger-text" onClick={clearLocalData}>清空本机数据</button></section><p className="privacy-note">Android 通知记账需系统授权；确认前不会改余额。密码只进入 Keystore，不会发给 AI。</p></div>}
+    {tab === 'profile' && <div className="page profile-page"><section className="profile-heading"><div>SA</div><span>SELF AGENT</span><h2>数据留在你的设备上</h2><p>界面和记录都在手机里运行，不依赖服务器。敏感能力由系统权限授权。</p></section><section className="profile-menu"><button onClick={() => setPermissionOnboardingOpen(true)}><span>权</span><div><strong>系统权限引导</strong><small>查看真实授权状态与用途说明</small></div><b>›</b></button><button onClick={() => navigate('audit')}><span>史</span><div><strong>操作历史</strong><small>收件箱确认、忽略、撤销与失败记录</small></div><b>›</b></button><button onClick={chooseGadgetbridgeExport}><span>链</span><div><strong>选择 ZIP 所在文件夹</strong><small>请选择 Download/health，自动跟踪新生成的 Gadgetbridge.zip</small></div><b>›</b></button><button onClick={() => navigate('memory')}><span>忆</span><div><strong>AI 记忆管理</strong><small>查看、暂停或删除管家记忆</small></div><b>›</b></button><button onClick={() => navigate('privacy')}><span>盾</span><div><strong>隐私与权限</strong><small>分别控制健康、财务和日程摘要</small></div><b>›</b></button><button onClick={() => navigate('vault')}><span>钥</span><div><strong>密码库</strong><small>不在网页保存密码明文</small></div><b>›</b></button><button onClick={() => navigate('data')}><span>数</span><div><strong>数据中心</strong><small>健康、财务与行动统一摘要</small></div><b>›</b></button></section><form className="ai-box" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const next = { baseUrl: String(form.get('baseUrl')).trim().replace(/\/$/, ''), model: String(form.get('model')).trim() || 'gpt-4o-mini', apiKey: String(form.get('apiKey')).trim() }; const native = (window as Window & { SelfAgentNative?: NativeAiBridge }).SelfAgentNative; if (native?.nativeReady?.() && native.saveAiConfig) { native.saveAiConfig(JSON.stringify(next)); setAiConfig({ baseUrl: next.baseUrl, model: next.model, apiKey: '', configured: Boolean(next.baseUrl && (next.apiKey || aiConfig.configured)) }); notify(next.apiKey ? 'AI 密钥已加密保存到 Android Keystore' : 'AI 接口设置已更新，原密钥保持不变'); } else { const published = persistBrowserAiConfig(window.sessionStorage, window.localStorage, next); setAiConfig({ ...published, apiKey: next.apiKey, configured: Boolean(next.baseUrl && next.apiKey) }); notify('网页版密钥只保留到当前页面会话，关闭后自动清除'); } }}><strong>AI 接口</strong><p>兼容 OpenAI Chat Completions。密钥只存在本机，提问时不会发送密码。</p><label>接口地址<input name="baseUrl" placeholder="https://api.openai.com/v1" defaultValue={aiConfig.baseUrl} /></label><label>模型<input name="model" defaultValue={aiConfig.model} /></label><label>API Key<input name="apiKey" type="password" autoComplete="off" defaultValue={aiConfig.apiKey} /></label><button className="save" type="submit" style={{ marginTop: 12 }}>保存接口</button></form>{nativeOn && <div className="native-actions"><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openAccessibilitySettings?: () => void } }).SelfAgentNative?.openAccessibilitySettings?.()}>第1步：打开无障碍（自动记账）</button><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openNotificationAccess?: () => void } }).SelfAgentNative?.openNotificationAccess?.()}>第2步：打开通知使用权</button><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openAutofillSettings?: () => void } }).SelfAgentNative?.openAutofillSettings?.()}>第3步：设为自动填充服务</button></div>}<HowToNative /><section className="profile-actions"><button onClick={toggleTheme}>{data.theme === 'dark' ? '切换浅色模式' : '切换深色模式'}</button><button onClick={exportLocalData}>导出全部数据</button><label className="file-action">从备份恢复<input hidden type="file" accept="application/json,.json" onChange={importLocalData} /></label><button onClick={loadDemoData}>加载演示数据</button><button className="danger-text" onClick={clearLocalData}>清空本机数据</button></section><p className="privacy-note">Android 通知记账需系统授权；确认前不会改余额。密码只进入 Keystore，不会发给 AI。</p></div>}
 
     {tab === 'health' && <HealthPanel records={data.healthRecords} onAdd={() => setSheet('health')} onImport={importHealth} onSelectExport={chooseGadgetbridgeExport} onSaveBody={saveBodyMetrics} />}
     {tab === 'travel' && <TravelPanel items={data.travels} onSync={requestTravelSync} onAdd={() => setSheet('travel')} onDelete={(id) => { setData((current) => ({ ...current, travels: current.travels.filter((item) => item.id !== id) })); notify('行程已删除'); }} />}
@@ -1119,6 +1134,16 @@ export default function Home() {
     {sheet === 'holding' && <div className="overlay" role="dialog" aria-modal="true" onMouseDown={(event) => event.currentTarget === event.target && setSheet(null)}><form key={editingHolding?.id ?? 'new-holding'} onSubmit={addHolding} className="sheet scroll-sheet"><div className="handle" /><header><div><span>{editingHolding ? 'EDIT ASSET' : 'NEW ASSET'}</span><h2>{editingHolding ? '更新理财产品' : '添加理财产品'}</h2></div><button type="button" onClick={() => setSheet(null)}>×</button></header><div className="row"><label>产品类型<select name="kind" defaultValue={editingHolding?.kind ?? 'fund'}><option value="fund">基金 / ETF</option><option value="stock">股票</option><option value="crypto">虚拟货币</option><option value="meme">Meme 币</option></select></label><label>所属账户<select name="accountId" defaultValue={editingHolding?.accountId ?? selectedAccountId ?? undefined}>{data.accounts.filter((account) => account.type === '理财账户').map((account) => <option key={account.id} value={account.id}>{account.name} · {account.currency}</option>)}</select></label></div><label>产品名称<input required name="name" placeholder="例如：标普500 ETF" defaultValue={editingHolding?.name} /></label><label>基金 / 股票 / 币种代码<input name="code" placeholder="例如：510300.SH、AAPL、BTC" defaultValue={editingHolding?.code} /></label><div className="row"><label>网络<select name="network" defaultValue={editingHolding?.network}><option value="">非链上产品</option><option>Ethereum</option><option>Solana</option><option>BNB Chain</option><option>Base</option><option>Arbitrum</option><option>Polygon</option></select></label><label>合约地址<input name="contract" placeholder="Meme 币必填" defaultValue={editingHolding?.contract} /></label></div><div className="row"><label>持有数量<input required name="quantity" type="number" min="0" step="any" defaultValue={editingHolding?.quantity} /></label><label>平均成本<input required name="averageCost" type="number" min="0" step="any" defaultValue={editingHolding?.averageCost} /></label></div><label>当前价格 / 今日净值<input required name="currentPrice" type="number" min="0" step="any" defaultValue={editingHolding?.currentPrice} /></label><small className="form-tip">保存会形成今日收益点。连接行情服务后，App 可按代码或“网络 + 合约”每日自动更新。</small><button className="save" type="submit">{editingHolding ? '保存今日更新' : '添加产品'}</button>{editingHolding && <button className="danger-button" type="button" onClick={deleteHolding}>删除这个产品</button>}</form></div>}
     {toast && <div className="toast">✓ {toast}</div>}
   </main>;
+}
+
+function PermissionOnboardingPanel({ caps, nativeOn, onOpen, onLater }: { caps: CapabilityStatusSnapshot; nativeOn: boolean; onOpen: (id: PermissionCardId, secondary?: boolean) => void; onLater: () => void }) {
+  const cards = permissionOnboardingProgress(caps);
+  const enabled = cards.filter((card) => card.enabled).length;
+  return <div className="permission-onboarding" role="dialog" aria-modal="true" aria-label="系统权限引导"><div className="permission-onboarding-shell">
+    <header><span>START SELF AGENT</span><h2>让 Self Agent 开始工作</h2><p>无需一次全部开启。每项由 Android 系统授权，打开设置页不等于授权成功，回来后会自动复查。</p><b>{nativeOn ? `已检测 ${enabled}/${cards.length}` : '网页版仅展示说明，请在 Android App 授权'}</b></header>
+    <div className="permission-onboarding-list">{cards.map((card) => <article key={card.id} className={card.enabled ? 'enabled' : ''}><div className="permission-state">{card.enabled ? '✓ 已开启' : '○ 未检测到'}</div><h3>{card.title}</h3><p><strong>为什么需要：</strong>{card.why}</p><p><strong>可以读取：</strong>{card.reads}</p><p><strong>不会读取：</strong>{card.cannotRead}</p><div><button type="button" onClick={() => onOpen(card.id)}>{card.id === 'health' ? '选择健康授权' : '打开系统设置'}</button>{card.id === 'payment' && <button type="button" className="ghost" onClick={() => onOpen(card.id, true)}>打开无障碍</button>}</div></article>)}</div>
+    <footer><button type="button" className="later" onClick={onLater}>稍后设置</button><button type="button" className="done" onClick={onLater}>完成并进入</button></footer>
+  </div></div>;
 }
 
 function InboxEditFields({ item, accounts, onPatch }: { item: InboxItem; accounts: Account[]; onPatch: (payload: Record<string, unknown>) => void }) {

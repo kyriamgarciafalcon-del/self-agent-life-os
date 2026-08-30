@@ -50,6 +50,10 @@ import {
   migrateInboxStore,
   normalizeInboxItem,
   normalizeInboxItems,
+  normalizePermissionOnboarding,
+  permissionOnboardingCards,
+  permissionOnboardingProgress,
+  shouldShowPermissionOnboarding,
   pendingInboxCount,
   reopenInboxItem,
   sanitizeInboxPayload,
@@ -841,5 +845,67 @@ describe('v2 audit log inbox lifecycle', () => {
     expect(auditReasonLabel('missing_account')).toBe('缺少账户');
     expect(auditReasonLabel('invalid_health')).toBe('健康数值无效');
     expect(entries.every((entry) => canUndoAuditEntry(entry) === false)).toBe(true);
+  });
+});
+
+describe('v2 permission onboarding persistence', () => {
+  it('always returns a complete non-secret local storage row', () => {
+    expect(normalizePermissionOnboarding(undefined)).toEqual({
+      version: 2,
+      dismissed: false,
+      completedAt: null,
+      settingsOpened: false,
+    });
+    expect(normalizePermissionOnboarding({ dismissed: true, settingsOpened: true, completedAt: '2026-08-30T10:00:00', apiKey: 'secret', password: 'nope' })).toEqual({
+      version: 2,
+      dismissed: true,
+      completedAt: '2026-08-30T10:00:00',
+      settingsOpened: true,
+    });
+    expect(normalizePermissionOnboarding({ version: 1, dismissed: 'yes', completedAt: 12 })).toEqual({
+      version: 2,
+      dismissed: false,
+      completedAt: null,
+      settingsOpened: false,
+    });
+  });
+
+  it('shows dedicated onboarding on first launch and after 我的 reopen, not after 稍后设置', () => {
+    const fresh = normalizePermissionOnboarding(undefined);
+    expect(shouldShowPermissionOnboarding(fresh)).toBe(true);
+    const later = normalizePermissionOnboarding({ dismissed: true });
+    expect(shouldShowPermissionOnboarding(later)).toBe(false);
+    expect(shouldShowPermissionOnboarding(later, { reopen: true })).toBe(true);
+  });
+
+  it('lists four honest cards and never treats opening settings as enabled', () => {
+    const cards = permissionOnboardingCards();
+    expect(cards.map((card) => card.title)).toEqual(['支付识别', '日程提醒', '健康同步', '密码自动填充']);
+    for (const card of cards) {
+      expect(card.why.length).toBeGreaterThan(8);
+      expect(card.reads.length).toBeGreaterThan(8);
+      expect(card.cannotRead.length).toBeGreaterThan(8);
+    }
+    const opened = permissionOnboardingProgress(
+      { accessibility: false, notifications: false, notificationListener: false, autofill: false },
+      { settingsOpened: true },
+    );
+    expect(opened.every((card) => card.enabled === false)).toBe(true);
+    const live = permissionOnboardingProgress({
+      accessibility: true,
+      notificationListener: true,
+      notifications: true,
+      exactAlarms: true,
+      fullScreenIntent: true,
+      autofill: true,
+    });
+    expect(live.find((card) => card.id === 'payment')?.enabled).toBe(true);
+    expect(live.find((card) => card.id === 'reminders')?.enabled).toBe(true);
+    expect(live.find((card) => card.id === 'autofill')?.enabled).toBe(true);
+    expect(live.find((card) => card.id === 'health')?.enabled).toBe(false);
+    const partialReminders = permissionOnboardingProgress({ notifications: true });
+    expect(partialReminders.find((card) => card.id === 'reminders')?.enabled).toBe(true);
+    const unknownExact = permissionOnboardingProgress({ notifications: true, exactAlarms: null, fullScreenIntent: null });
+    expect(unknownExact.find((card) => card.id === 'reminders')?.enabled).toBe(true);
   });
 });

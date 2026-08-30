@@ -91,7 +91,7 @@ class HealthImportActivity : ComponentActivity() {
                 runCatching {
                     client.readRecords(ReadRecordsRequest(SleepSessionRecord::class, range)).records.forEach {
                         val row = day(dateOf(it.startTime))
-                        row.put("sleepHours", row.optDouble("sleepHours") + Duration.between(it.startTime, it.endTime).toMinutes() / 60.0)
+                        row.put("sleepHours", row.optDouble("sleepHours", 0.0) + Duration.between(it.startTime, it.endTime).toMinutes() / 60.0)
                     }
                 }
                 runCatching {
@@ -105,7 +105,7 @@ class HealthImportActivity : ComponentActivity() {
                         record.samples.forEach { sample ->
                             val row = day(dateOf(sample.time))
                             val count = row.optInt("heartCount") + 1
-                            val sum = row.optDouble("heartSum") + sample.beatsPerMinute
+                            val sum = row.optDouble("heartSum", 0.0) + sample.beatsPerMinute
                             row.put("heartCount", count)
                             row.put("heartSum", sum)
                             row.put("heartRate", kotlin.math.round(sum / count).toLong())

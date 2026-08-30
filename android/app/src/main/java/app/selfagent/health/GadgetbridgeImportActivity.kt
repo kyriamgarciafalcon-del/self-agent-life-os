@@ -310,7 +310,7 @@ class GadgetbridgeImportActivity : Activity() {
             val instant = if (rawMs < 10_000_000_000L) Instant.ofEpochSecond(rawMs) else Instant.ofEpochMilli(rawMs)
             val date = instant.atZone(ZoneId.systemDefault()).toLocalDate().toString()
             val row = days.getOrPut(date) { JSONObject().put("date", date).put("source", "gadgetbridge-direct") }
-            if (kind == "steps") row.put(kind, row.optDouble(kind) + value) else if (!row.has(kind) || instant.toEpochMilli() > row.optLong("_${kind}At")) { row.put(kind, value); row.put("_${kind}At", instant.toEpochMilli()) }
+            if (kind == "steps") row.put(kind, row.optDouble(kind, 0.0) + value) else if (!row.has(kind) || instant.toEpochMilli() > row.optLong("_${kind}At")) { row.put(kind, value); row.put("_${kind}At", instant.toEpochMilli()) }
         }
 
         private fun copyCapped(input: InputStream, file: File, maxBytes: Int) {

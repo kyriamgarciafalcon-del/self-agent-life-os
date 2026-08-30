@@ -295,7 +295,9 @@ class MainActivity : Activity() {
 
         @JavascriptInterface
         fun chooseGadgetbridgeExport() {
-            startActivity(Intent(this@MainActivity, GadgetbridgeImportActivity::class.java))
+            startActivity(Intent(this@MainActivity, GadgetbridgeImportActivity::class.java).apply {
+                putExtra(GadgetbridgeImportActivity.EXTRA_PICK_DIRECTORY, true)
+            })
         }
 
         @JavascriptInterface

@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.database.sqlite.SQLiteDatabase
 import android.os.Bundle
+import android.provider.DocumentsContract
 import android.widget.Toast
 import org.json.JSONArray
 import org.json.JSONObject
@@ -19,10 +20,13 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.zip.ZipInputStream
 
 class GadgetbridgeImportActivity : Activity() {
+    private var pickingDirectory = false
+
     companion object {
         private const val PICK_FILE = 781
         private const val PREFS = "gadgetbridge_import"
         private const val URI = "database_uri"
+        private const val TREE_URI = "zip_tree_uri"
         private const val KIND = "file_kind"
         private const val KIND_DB = "db"
         private const val KIND_ZIP = "zip"
@@ -31,6 +35,7 @@ class GadgetbridgeImportActivity : Activity() {
         private const val TRIGGER_ZIP_EXPORT = "nodomain.freeyourgadget.gadgetbridge.command.TRIGGER_ZIP_EXPORT"
         const val ACTION_DATABASE_EXPORT_SUCCESS = "nodomain.freeyourgadget.gadgetbridge.action.DATABASE_EXPORT_SUCCESS"
         const val ACTION_ZIP_EXPORT_SUCCESS = "nodomain.freeyourgadget.gadgetbridge.action.ZIP_EXPORT_SUCCESS"
+        const val EXTRA_PICK_DIRECTORY = "pick_zip_directory"
         private const val MAX_DB_BYTES = 64 * 1024 * 1024
         private const val MAX_SLEEP_BIN_BYTES = 2 * 1024 * 1024
         private val parsing = AtomicBoolean(false)
@@ -38,6 +43,10 @@ class GadgetbridgeImportActivity : Activity() {
 
         fun importSaved(context: Context): Boolean {
             val prefs = context.getSharedPreferences(PREFS, MODE_PRIVATE)
+            if (prefs.getString(TREE_URI, null) != null) {
+                context.sendBroadcast(Intent(TRIGGER_ZIP_EXPORT).setPackage(GB_PACKAGE))
+                return true
+            }
             val uri = prefs.getString(URI, null) ?: return false
             val kind = resolvedKind(context, prefs, android.net.Uri.parse(uri))
             val trigger = if (kind == KIND_ZIP) TRIGGER_ZIP_EXPORT else TRIGGER_EXPORT
@@ -48,13 +57,14 @@ class GadgetbridgeImportActivity : Activity() {
         }
 
         fun parseSaved(context: Context): Boolean {
-            if (context.getSharedPreferences(PREFS, MODE_PRIVATE).getString(URI, null) == null) return false
+            val prefs = context.getSharedPreferences(PREFS, MODE_PRIVATE)
+            if (prefs.getString(TREE_URI, null) == null && prefs.getString(URI, null) == null) return false
             parseAsync(context)
             return true
         }
 
         fun hasSaved(context: Context): Boolean =
-            context.getSharedPreferences(PREFS, MODE_PRIVATE).getString(URI, null) != null
+            context.getSharedPreferences(PREFS, MODE_PRIVATE).let { it.getString(TREE_URI, null) != null || it.getString(URI, null) != null }
 
         private fun parseAsync(context: Context) {
             pendingParse.set(true)
@@ -64,15 +74,65 @@ class GadgetbridgeImportActivity : Activity() {
                     do {
                         pendingParse.set(false)
                         val prefs = context.getSharedPreferences(PREFS, MODE_PRIVATE)
-                        val raw = prefs.getString(URI, null) ?: break
-                        val uri = android.net.Uri.parse(raw)
-                        parse(context, uri, resolvedKind(context, prefs, uri))
+                        val source = resolveSavedSource(context, prefs)
+                        if (source == null) {
+                            postError(context, "所选文件夹中未找到 Gadgetbridge.zip，请先完成完整 ZIP 自动导出")
+                            break
+                        }
+                        parse(context, source.first, source.second)
                     } while (pendingParse.get())
                 } finally {
                     parsing.set(false)
                     if (pendingParse.get()) parseAsync(context)
                 }
             }.start()
+        }
+
+        private fun resolveSavedSource(context: Context, prefs: android.content.SharedPreferences): Pair<android.net.Uri, String>? {
+            val treeRaw = prefs.getString(TREE_URI, null)
+            if (treeRaw != null) {
+                val tree = android.net.Uri.parse(treeRaw)
+                repeat(4) { attempt ->
+                    findZipInTree(context, tree)?.let { return it to KIND_ZIP }
+                    if (attempt < 3) Thread.sleep(500)
+                }
+                return null
+            }
+            val raw = prefs.getString(URI, null) ?: return null
+            val uri = android.net.Uri.parse(raw)
+            return uri to resolvedKind(context, prefs, uri)
+        }
+
+        private fun findZipInTree(context: Context, tree: android.net.Uri): android.net.Uri? {
+            return try {
+                val parentId = DocumentsContract.getTreeDocumentId(tree)
+                val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentId)
+                context.contentResolver.query(
+                    children,
+                    arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+                    null,
+                    null,
+                    null,
+                )?.use { cursor ->
+                    val idColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                    val nameColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                    while (cursor.moveToNext()) {
+                        if (cursor.getString(nameColumn).equals("Gadgetbridge.zip", ignoreCase = true)) {
+                            return DocumentsContract.buildDocumentUriUsingTree(tree, cursor.getString(idColumn))
+                        }
+                    }
+                    null
+                }
+            } catch (error: Exception) {
+                android.util.Log.e("GadgetbridgeImport", "Failed to resolve ZIP in selected tree", error)
+                null
+            }
+        }
+
+        private fun postError(context: Context, message: String) {
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            }
         }
 
         private fun resolvedKind(context: Context, prefs: android.content.SharedPreferences, uri: android.net.Uri): String {
@@ -110,9 +170,8 @@ class GadgetbridgeImportActivity : Activity() {
                 }
             }
             android.util.Log.e("GadgetbridgeImport", "Failed to read saved export after retries", lastError)
-            android.os.Handler(android.os.Looper.getMainLooper()).post {
-                Toast.makeText(context, "ZIP 读取失败。请确认自动导出已完成，再点“同步”重试", Toast.LENGTH_LONG).show()
-            }
+            val stage = lastError?.javaClass?.simpleName ?: "UnknownError"
+            postError(context, "ZIP 读取失败（$stage）。请重新选择 ZIP 所在文件夹")
         }
 
         private fun parseSqliteUri(context: Context, uri: android.net.Uri): JSONArray {
@@ -285,19 +344,40 @@ class GadgetbridgeImportActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-            type = "*/*"
-            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream", "application/vnd.sqlite3", "*/*"))
-            addCategory(Intent.CATEGORY_OPENABLE)
-        }, PICK_FILE)
+        pickingDirectory = intent.getBooleanExtra(EXTRA_PICK_DIRECTORY, false)
+        val picker = if (pickingDirectory) {
+            Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+            }
+        } else {
+            Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                type = "*/*"
+                putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream", "application/vnd.sqlite3", "*/*"))
+                addCategory(Intent.CATEGORY_OPENABLE)
+            }
+        }
+        startActivityForResult(picker, PICK_FILE)
     }
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode != PICK_FILE || resultCode != RESULT_OK || data?.data == null) { finish(); return }
         val uri = data.data!!
-        contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        val kind = detectKind(this, uri)
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(URI, uri.toString()).putString(KIND, kind).apply()
+        val granted = data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        contentResolver.takePersistableUriPermission(uri, granted)
+        if (pickingDirectory) {
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putString(TREE_URI, uri.toString())
+                .putString(KIND, KIND_ZIP)
+                .remove(URI)
+                .apply()
+        } else {
+            val kind = detectKind(this, uri)
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putString(URI, uri.toString())
+                .putString(KIND, kind)
+                .remove(TREE_URI)
+                .apply()
+        }
         parseAsync(this); finish()
     }
 }

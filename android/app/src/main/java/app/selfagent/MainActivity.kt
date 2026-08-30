@@ -293,6 +293,11 @@ class MainActivity : Activity() {
         }
 
         @JavascriptInterface
+        fun chooseGadgetbridgeExport() {
+            startActivity(Intent(this@MainActivity, GadgetbridgeImportActivity::class.java))
+        }
+
+        @JavascriptInterface
         fun openHealthConnectHelp() {
             startActivity(Intent(Settings.ACTION_SETTINGS))
         }

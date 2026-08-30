@@ -79,6 +79,7 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="nodomain.freeyourgadget.gadgetbridge.action.DATABASE_EXPORT_SUCCESS" />
+                <action android:name="nodomain.freeyourgadget.gadgetbridge.action.ZIP_EXPORT_SUCCESS" />
             </intent-filter>
         </receiver>
         <activity-alias

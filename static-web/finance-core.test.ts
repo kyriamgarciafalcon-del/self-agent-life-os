@@ -15,6 +15,7 @@ import {
   migrateInvestmentCash,
   migrateSubscriptionAccounts,
   migrateToPostingLedger,
+  monthlyFinanceSummary,
   monthlyIncomeTotal,
   normalizeFinanceRecords,
   postBalanceAdjustment,
@@ -266,6 +267,39 @@ describe('explicit amounts and currencies', () => {
     ]);
     expect(posted.accounts.find((item) => item.id === 'usd')?.balance).toBe(10);
     expect(posted.accounts.find((item) => item.id === 'claim')?.balance).toBe(72);
+  });
+});
+
+describe('monthly finance summary', () => {
+  it('counts earned income and spending without inflating totals from reimbursements or transfers', () => {
+    const transactions = [
+      { id: 'salary', kind: 'income', currency: 'CNY', amount: 9000, accountAmount: 9000 },
+      { id: 'gift', kind: 'income', currency: 'CNY', amount: 200 },
+      { id: 'meal', kind: 'expense', currency: 'CNY', amount: 80, accountAmount: 80 },
+      { id: 'hotel', kind: 'expense', currency: 'CNY', amount: 500, accountAmount: 500, reimbursable: true },
+      { id: 'partial-reimbursement', kind: 'settlement', currency: 'CNY', amount: 200, accountAmount: 200, reimbursementForId: 'hotel' },
+      { id: 'legacy-reimbursement', kind: 'income', category: '报销入账', currency: 'CNY', amount: 300, reimbursementForId: 'hotel' },
+      { id: 'move-cash', kind: 'transfer', currency: 'CNY', amount: 1000, accountAmount: 1000 },
+      { id: 'card-payment', kind: 'transfer', category: '信用卡还款', currency: 'CNY', amount: 600, accountAmount: 600 },
+      { id: 'opening-fix', kind: 'adjustment', currency: 'CNY', amount: 999 },
+      { id: 'usd-income', kind: 'income', currency: 'USD', amount: 100, accountAmount: 100 },
+      { id: 'usd-expense', kind: 'expense', currency: 'USD', amount: 10, accountAmount: 10 },
+    ];
+
+    expect(monthlyFinanceSummary(transactions, 'CNY')).toEqual({ income: 9200, expense: 580, balance: 8620 });
+    expect(monthlyFinanceSummary(transactions, 'USD')).toEqual({ income: 100, expense: 10, balance: 90 });
+  });
+
+  it('keeps malformed legacy amounts from poisoning the whole monthly summary', () => {
+    const transactions = [
+      { kind: 'income', currency: 'CNY', accountAmount: Number.NaN, amount: 40 },
+      { kind: 'expense', currency: 'CNY', accountAmount: Number.POSITIVE_INFINITY, amount: 15 },
+      { kind: 'expense', currency: 'CNY', accountAmount: Number.NaN, amount: Number.NaN },
+      { kind: 'income', amount: -10 },
+      { kind: 'income', currency: 'CNY', amount: 999, reimbursementForId: 'pad' },
+    ];
+
+    expect(monthlyFinanceSummary(transactions, 'CNY')).toEqual({ income: 50, expense: 15, balance: 35 });
   });
 });
 
@@ -601,6 +635,8 @@ describe('finance UI structure', () => {
     expect(page).toContain('postBalanceAdjustment');
     expect(page).toContain('investmentAccountSnapshot');
     expect(page).toContain('financeTransactionFields');
+    expect(page).toContain('monthlyFinanceSummary');
+    expect(page).not.toContain("const monthExpense = monthItems.filter((item) => item.kind === 'expense')");
     expect(page).toContain('inboxConfirmBlockReason');
     expect(page).toContain('data.investments');
     expect(page).toContain('现金');

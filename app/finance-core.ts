@@ -303,8 +303,28 @@ export function isMonthlyIncome(transaction: { kind?: string; category?: string;
   return true;
 }
 
-export function monthlyIncomeTotal(transactions: Array<{ kind?: string; category?: string; reimbursementForId?: string; currency?: string; amount?: number; accountAmount?: number }>, currency: string): number {
-  return transactions.filter((item) => isMonthlyIncome(item) && (item.currency || 'CNY') === currency).reduce((sum, item) => sum + Math.abs(Number(item.accountAmount ?? item.amount ?? 0)), 0);
+export type MonthlyFinanceTransaction = {
+  kind?: string;
+  category?: string;
+  reimbursementForId?: string;
+  currency?: string;
+  amount?: number;
+  accountAmount?: number;
+};
+
+export function monthlyFinanceSummary(transactions: MonthlyFinanceTransaction[], currency: string): { income: number; expense: number; balance: number } {
+  const selected = transactions.filter((item) => (item.currency || 'CNY') === currency);
+  const total = (items: MonthlyFinanceTransaction[]) => items.reduce(
+    (sum, item) => sum + moneyAmount(item.accountAmount, item.amount),
+    0,
+  );
+  const income = total(selected.filter(isMonthlyIncome));
+  const expense = total(selected.filter((item) => item.kind === 'expense'));
+  return { income, expense, balance: income - expense };
+}
+
+export function monthlyIncomeTotal(transactions: MonthlyFinanceTransaction[], currency: string): number {
+  return monthlyFinanceSummary(transactions, currency).income;
 }
 
 export function reimbursementClaimAmount(original: { amount?: number; accountAmount?: number; targetAmount?: number; currency?: string; targetCurrency?: string }): { amount: number; currency: string } {

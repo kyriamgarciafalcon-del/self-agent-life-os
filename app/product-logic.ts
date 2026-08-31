@@ -1969,6 +1969,7 @@ export {
   migrateInvestmentCash,
   migrateSubscriptionAccounts,
   migrateToPostingLedger,
+  monthlyFinanceSummary,
   monthlyIncomeTotal,
   normalizeFinanceRecords,
   postBalanceAdjustment,

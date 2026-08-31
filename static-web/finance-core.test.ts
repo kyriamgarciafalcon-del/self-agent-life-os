@@ -198,6 +198,41 @@ describe('expense and repayment ruleset', () => {
   });
 });
 
+describe('ledger source-event idempotency', () => {
+  it('posts a non-empty idempotencyKey only once even when transaction ids differ', () => {
+    const accounts = [{ id: 'cash', type: '资金账户', currency: 'CNY', balance: 200, openingBalance: 200 }];
+    const expense = { kind: 'expense' as const, accountId: 'cash', amount: 18.5, accountAmount: 18.5, currency: 'CNY', merchant: '地铁' };
+    type ExpenseDraft = typeof expense & { id: string; idempotencyKey?: string };
+    const first = postFinanceTransaction(accounts, [] as ExpenseDraft[], { ...expense, id: 'tx1', idempotencyKey: 'event-1' });
+    const duplicate = postFinanceTransaction(first.accounts, first.transactions as ExpenseDraft[], { ...expense, id: 'tx2', idempotencyKey: 'event-1' });
+    expect(duplicate.transactions).toHaveLength(1);
+    expect(duplicate.transactions[0]?.id).toBe('tx1');
+    expect(duplicate.accounts.find((item) => item.id === 'cash')?.balance).toBe(first.accounts.find((item) => item.id === 'cash')?.balance);
+
+    const secondEvent = postFinanceTransaction(duplicate.accounts, duplicate.transactions as ExpenseDraft[], { ...expense, id: 'tx3', idempotencyKey: 'event-2' });
+    expect(secondEvent.transactions).toHaveLength(2);
+    expect(secondEvent.transactions.map((item) => item.idempotencyKey).sort()).toEqual(['event-1', 'event-2']);
+    expect(secondEvent.accounts.find((item) => item.id === 'cash')?.balance).toBe(163);
+  });
+
+  it('keeps idempotencyKey after JSON serialize/normalize/reload and still blocks duplicates', () => {
+    const accounts = [{ id: 'cash', type: '资金账户', currency: 'CNY', balance: 200, openingBalance: 200 }];
+    const expense = { kind: 'expense' as const, accountId: 'cash', amount: 18.5, accountAmount: 18.5, currency: 'CNY', merchant: '地铁' };
+    type ExpenseDraft = typeof expense & { id: string; idempotencyKey?: string };
+    const first = postFinanceTransaction(accounts, [] as ExpenseDraft[], { ...expense, id: 'tx1', idempotencyKey: 'event-1' });
+    const snapshot = JSON.parse(JSON.stringify({ accounts: first.accounts, transactions: first.transactions }));
+    const reloaded = normalizeFinanceRecords(snapshot.accounts, snapshot.transactions);
+    expect(reloaded.transactions).toHaveLength(1);
+    expect(reloaded.transactions[0]?.id).toBe('tx1');
+    expect(reloaded.transactions[0]?.idempotencyKey).toBe('event-1');
+
+    const duplicate = postFinanceTransaction(reloaded.accounts, reloaded.transactions as ExpenseDraft[], { ...expense, id: 'tx2', idempotencyKey: 'event-1' });
+    expect(duplicate.transactions).toHaveLength(1);
+    expect(duplicate.transactions[0]?.id).toBe('tx1');
+    expect(duplicate.accounts.find((item) => item.id === 'cash')?.balance).toBe(reloaded.accounts.find((item) => item.id === 'cash')?.balance);
+  });
+});
+
 describe('explicit amounts and currencies', () => {
   it('forces rate 1 and matching amounts for same-currency transfers', () => {
     expect(resolveTransferAmounts({ sourceCurrency: 'CNY', targetCurrency: 'CNY', amount: 80, rate: 7.2 })).toEqual({

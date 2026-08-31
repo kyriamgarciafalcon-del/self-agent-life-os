@@ -938,6 +938,7 @@ export type InboxItem = {
   createdAt: string;
   status: InboxStatus;
   dedupeKey: string;
+  sourceEventId?: string;
   resultEntityId?: string;
 };
 
@@ -997,24 +998,43 @@ function stableInboxValue(value: unknown): string {
   return JSON.stringify(value);
 }
 
+function explicitInboxSourceEventId(raw: { fingerprint?: unknown; sourceEventId?: unknown } | string | undefined): string | undefined {
+  if (typeof raw === 'string') {
+    const value = raw.trim();
+    return value ? value : undefined;
+  }
+  if (!raw) return undefined;
+  const sourceEventId = typeof raw.sourceEventId === 'string' ? raw.sourceEventId.trim() : '';
+  if (sourceEventId) return sourceEventId;
+  const fingerprint = typeof raw.fingerprint === 'string' ? raw.fingerprint.trim() : '';
+  return fingerprint || undefined;
+}
+
 export function inboxDedupeKey(input: {
+  id?: string;
   source: InboxSource;
   proposedAction: InboxProposedAction;
   payload: Record<string, unknown>;
   fingerprint?: string;
+  sourceEventId?: string;
 }): string {
-  if (input.fingerprint) return String(input.fingerprint);
+  const stable = explicitInboxSourceEventId(input);
+  if (stable) return stable;
   const payload = input.payload;
   if (input.source === 'payment' || input.proposedAction === 'create_expense' || input.proposedAction === 'create_income') {
-    const amount = payload.amount ?? payload.accountAmount ?? '';
-    const merchant = payload.merchant ?? payload.title ?? '';
-    return `payment:${amount}:${merchant}:${payload.accountId ?? payload.source ?? ''}`;
+    return `inbox:${input.id || ''}`;
   }
   if (input.proposedAction === 'create_travel' || input.proposedAction === 'update_travel') {
     const date = String(payload.date || payload.departAt || '').slice(0, 10);
     return `travel:${payload.travelKind || payload.kind || ''}:${payload.number || ''}:${date}`;
   }
   return `${input.source}:${input.proposedAction}:${stableInboxValue(payload)}`;
+}
+
+export function ledgerIdempotencyKeyForInboxItem(item: InboxItem): string {
+  const stable = String(item.sourceEventId || '').trim();
+  if (stable) return stable;
+  return `inbox:${item.id}`;
 }
 
 export function inboxPreviewFor(action: InboxProposedAction, payload: Record<string, unknown>): string {
@@ -1043,6 +1063,7 @@ export function normalizeInboxItem(raw: unknown, fallbackCreatedAt = ''): InboxI
   const status = INBOX_STATUS_SET.has(String(raw.status)) ? String(raw.status) as InboxStatus : 'pending';
   const preview = String(raw.preview || inboxPreviewFor(proposedAction, payload) || '').slice(0, 200);
   const resultEntityId = typeof raw.resultEntityId === 'string' && raw.resultEntityId.trim() ? raw.resultEntityId.trim() : undefined;
+  const sourceEventId = explicitInboxSourceEventId(raw);
   return {
     id,
     source,
@@ -1052,7 +1073,8 @@ export function normalizeInboxItem(raw: unknown, fallbackCreatedAt = ''): InboxI
     preview,
     createdAt,
     status,
-    dedupeKey: String(raw.dedupeKey || inboxDedupeKey({ source, proposedAction, payload, fingerprint: typeof raw.fingerprint === 'string' ? raw.fingerprint : undefined })),
+    sourceEventId,
+    dedupeKey: inboxDedupeKey({ id, source, proposedAction, payload, sourceEventId }),
     resultEntityId,
   };
 }
@@ -1877,6 +1899,7 @@ export {
   refreshHoldingsValuation,
   reimbursementOutstandingAmount,
   removePostedTransaction,
+  resolveInboxFinanceConfirmation,
   resolveTransferAmounts,
   runFinanceInvariantSequence,
   settlePostedReimbursement,

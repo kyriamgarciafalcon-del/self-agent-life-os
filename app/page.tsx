@@ -1,7 +1,7 @@
 'use client';
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { accountRole, addDaysKey, applyDailyFxRates, applyDailyPriceQuotes, applyInboxLifecycle, AI_CONFIG_EVENT, AI_CONFIG_STORAGE_KEY, AI_REPLY_EVENT, AUDIT_OUTCOMES, auditOutcomeLabel, auditReasonLabel, buildButlerSystemPrompt, buildHealthBriefing, buildAiSendPreview, canUndoInboxConfirm, cnyWealthTotal, confirmByokHost, consumeCallBudget, createCallBudget, defaultCashId, describeButlerDataScope, detectLegacyDemoData, dialogShouldDismiss, dismissPermissionOnboarding, filterAuditLog, healthRecordsFromSnapshots, inboxConfidenceLabel, inboxConfirmBlockReason, inboxItemFromAiTool, inboxItemFromButlerAction, inboxItemFromNaturalCapture, inboxItemFromPayment, inboxItemFromTravelNotice, inboxSourceLabel, INBOX_ACTION_LABELS, isBackupPayload, isDebtRole, latestHealthByKind, loadBrowserAiConfig, localDateKey, markPermissionSettingsOpened, migrateAuditLog, migrateInboxStore, migrateLegacyAiLocalStorage, migratePrivacySettings, normalizeAccountBalance, normalizeMemory, normalizePermissionOnboarding, parseAiProviderResponse, parseButlerModelOutput, parseCapabilityStatus, parseNaturalCapture, pendingInboxItems, persistBrowserAiConfig, permissionOnboardingProgress, planAccountSettlement, prepareOutboundAiPayload, reconcileRecurringConfirmations, releaseRecurringConfirmation, resolvePaymentAccountId, shouldShowPermissionOnboarding, summarizeHealth, TOAST_ARIA_LIVE, updateInboxItemPayload, upsertByExternalKey, validateByokTarget, wealthTotals, weekDates, ACCOUNT_TYPES, buildReimbursementSettlement, canDeleteAccount, FINANCE_TABS, financeTransactionFields, investmentAccountSnapshot, monthlyIncomeTotal, normalizeFinanceRecords, postBalanceAdjustment, postFinanceTransaction, refreshHoldingsValuation, reimbursementOutstandingAmount, removePostedTransaction, settlePostedReimbursement, resolveTransferAmounts, type AuditEntry, type ButlerAction, type CapabilityStatusSnapshot, type HealthMetric, type InboxItem, type InboxLifecycleEvent, type InboxSource, type PermissionCardId, type PermissionOnboardingState, type TravelKind } from './product-logic';
+import { accountRole, addDaysKey, applyDailyFxRates, applyDailyPriceQuotes, applyInboxLifecycle, AI_CONFIG_EVENT, AI_CONFIG_STORAGE_KEY, AI_REPLY_EVENT, AUDIT_OUTCOMES, auditOutcomeLabel, auditReasonLabel, buildButlerSystemPrompt, buildHealthBriefing, buildAiSendPreview, canUndoInboxConfirm, cnyWealthTotal, confirmByokHost, consumeCallBudget, createCallBudget, defaultCashId, describeButlerDataScope, detectLegacyDemoData, dialogShouldDismiss, dismissPermissionOnboarding, filterAuditLog, healthRecordsFromSnapshots, inboxConfidenceLabel, inboxConfirmBlockReason, inboxItemFromAiTool, inboxItemFromButlerAction, inboxItemFromNaturalCapture, inboxItemFromPayment, inboxItemFromTravelNotice, inboxSourceLabel, ledgerIdempotencyKeyForInboxItem, INBOX_ACTION_LABELS, isBackupPayload, isDebtRole, latestHealthByKind, loadBrowserAiConfig, localDateKey, markPermissionSettingsOpened, migrateAuditLog, migrateInboxStore, migrateLegacyAiLocalStorage, migratePrivacySettings, normalizeAccountBalance, normalizeMemory, normalizePermissionOnboarding, parseAiProviderResponse, parseButlerModelOutput, parseCapabilityStatus, parseNaturalCapture, pendingInboxItems, persistBrowserAiConfig, permissionOnboardingProgress, planAccountSettlement, prepareOutboundAiPayload, reconcileRecurringConfirmations, releaseRecurringConfirmation, resolveInboxFinanceConfirmation, resolvePaymentAccountId, shouldShowPermissionOnboarding, summarizeHealth, TOAST_ARIA_LIVE, updateInboxItemPayload, upsertByExternalKey, validateByokTarget, wealthTotals, weekDates, ACCOUNT_TYPES, buildReimbursementSettlement, canDeleteAccount, FINANCE_TABS, financeTransactionFields, investmentAccountSnapshot, monthlyIncomeTotal, normalizeFinanceRecords, postBalanceAdjustment, postFinanceTransaction, refreshHoldingsValuation, reimbursementOutstandingAmount, removePostedTransaction, settlePostedReimbursement, resolveTransferAmounts, type AuditEntry, type ButlerAction, type CapabilityStatusSnapshot, type HealthMetric, type InboxItem, type InboxLifecycleEvent, type InboxSource, type PermissionCardId, type PermissionOnboardingState, type TravelKind } from './product-logic';
 
 type Tab = 'home' | 'schedule' | 'capture' | 'finance' | 'profile' | 'health' | 'travel' | 'data' | 'butler' | 'privacy' | 'memory' | 'vault' | 'audit';
 type ScheduleColor = 'blue' | 'green' | 'orange';
@@ -20,7 +20,7 @@ type ScheduleItem = {
 
 type Account = { id: string; name: string; type: string; balance: number; currency: Currency; tone: 'forest' | 'clay' | 'ink'; openingBalance?: number };
 type LedgerPosting = { accountId: string; amount: number; currency: string };
-type Transaction = { id: string; kind: TransactionKind; amount: number; accountAmount: number; currency: Currency; merchant: string; category: string; accountId: string; targetAccountId?: string; targetAmount?: number; targetCurrency?: Currency; exchangeRate?: number; source: string; reimbursable: boolean; reimburseAccountId?: string; reimbursed?: boolean; reimbursementForId?: string; reimbursementTransactionId?: string; recurringRuleId?: string; createdAt: string; postings?: LedgerPosting[] };
+type Transaction = { id: string; kind: TransactionKind; amount: number; accountAmount: number; currency: Currency; merchant: string; category: string; accountId: string; targetAccountId?: string; targetAmount?: number; targetCurrency?: Currency; exchangeRate?: number; source: string; reimbursable: boolean; reimburseAccountId?: string; reimbursed?: boolean; reimbursementForId?: string; reimbursementTransactionId?: string; recurringRuleId?: string; createdAt: string; postings?: LedgerPosting[]; idempotencyKey?: string };
 type RecurringRule = { id: string; name: string; kind: 'subscription' | 'credit-card'; amount: number; currency: Currency; accountId: string; targetAccountId?: string; dueDay: number; enabled: boolean; lastRunPeriod?: string };
 type HealthRecord = { id: string; kind: 'sleep' | 'meal' | 'exercise' | 'steps' | 'height' | 'weight' | 'heartRate' | 'stress' | 'pai'; value: number; note: string; createdAt: string; externalKey?: string };
 type MemoryItem = { id: string; kind: '目标' | '偏好' | '观察'; title: string; note: string; active: boolean; sendAllowed: boolean; source: string; purpose: string; updatedAt: string };
@@ -232,6 +232,7 @@ function toTransactions(transactions: Array<Partial<Transaction> & { id: string;
     recurringRuleId: item.recurringRuleId,
     createdAt: item.createdAt ?? localStamp(),
     postings: item.postings,
+    idempotencyKey: item.idempotencyKey,
   }));
 }
 function normalizeData(raw: Partial<AppData>): AppData {
@@ -575,7 +576,7 @@ export default function Home() {
       const detail = (event as CustomEvent<Partial<ExpenseDraft> & { title?: string; dir?: string; source?: string; accountHint?: string; id?: string }>).detail || {};
       const merchant = detail.merchant || detail.title || '支付成功';
       const accountId = resolvePaymentAccountId(data.accounts, detail.source, detail.accountHint) ?? '';
-      const fingerprint = String(detail.id || `${detail.source || 'payment'}-${detail.amount ?? 0}-${merchant}`);
+      const fingerprint = typeof detail.id === 'string' && detail.id.trim() ? detail.id.trim() : undefined;
       setData((current) => withInboxEvent(current, {
         type: 'enqueue',
         item: inboxItemFromPayment({
@@ -1002,11 +1003,12 @@ export default function Home() {
       if (!isCurrency(currencyValue)) { recordInboxFail(id, 'missing_currency', 'finance'); notify('请选择账户币种'); return; }
       const currency = currencyValue;
       const claimId = reimbursable ? data.accounts.find((entry) => accountRole(entry.type) === 'receivable' && entry.currency === currency)?.id : undefined;
-      const transaction: Transaction = { id: uid('transaction'), kind: transactionKind, amount, accountAmount: amount, currency, merchant: String(payload.merchant || '待补充商家'), category: transactionKind === 'income' ? '收入' : String(payload.category || '其他'), accountId, source: String(payload.paySource || inboxSourceLabel(item.source)), reimbursable, reimburseAccountId: claimId, reimbursed: false, createdAt: localStamp() };
-      const posted = postFinanceTransaction(data.accounts, data.transactions, transaction);
-      if (!posted.transactions.some((item) => item.id === transaction.id)) { recordInboxFail(id, 'ledger_rejected', 'finance'); notify('这笔账无法入账，请先检查账户'); return; }
+      const transaction: Transaction = { id: uid('transaction'), kind: transactionKind, amount, accountAmount: amount, currency, merchant: String(payload.merchant || '待补充商家'), category: transactionKind === 'income' ? '收入' : String(payload.category || '其他'), accountId, source: String(payload.paySource || inboxSourceLabel(item.source)), reimbursable, reimburseAccountId: claimId, reimbursed: false, createdAt: localStamp(), idempotencyKey: ledgerIdempotencyKeyForInboxItem(item) };
+      const resolution = resolveInboxFinanceConfirmation(data.accounts, data.transactions, transaction);
+      if (resolution.outcome === 'rejected') { recordInboxFail(id, 'ledger_rejected', 'finance'); notify('这笔账无法入账，请先检查账户'); return; }
       setData((current) => {
-        const next = withInboxEvent(current, { type: 'confirm', itemId: id, resultEntityId: transaction.id, timestamp: localStamp(), id: uid('audit') });
+        const next = withInboxEvent(current, { type: 'confirm', itemId: id, resultEntityId: resolution.transactionId, timestamp: localStamp(), id: uid('audit') });
+        if (resolution.outcome === 'reused') return { ...next, lastConfirmedInboxId: id };
         const applied = postFinanceTransaction(next.accounts, next.transactions, { ...transaction, source: String(payload.paySource || inboxSourceLabel(item.source)) });
         return { ...next, transactions: toTransactions(applied.transactions as Array<Partial<Transaction> & { id: string; kind: TransactionKind; accountId: string }>), accounts: toAccounts(applied.accounts as Account[]), lastConfirmedInboxId: id };
       });

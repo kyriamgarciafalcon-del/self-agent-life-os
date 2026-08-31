@@ -47,6 +47,7 @@ import {
   inboxItemFromTravelNotice,
   inboxSourceLabel,
   inboxConfidenceLabel,
+  ledgerIdempotencyKeyForInboxItem,
   migrateInboxStore,
   normalizeInboxItem,
   normalizeInboxItems,
@@ -55,7 +56,9 @@ import {
   permissionOnboardingProgress,
   shouldShowPermissionOnboarding,
   pendingInboxCount,
+  postFinanceTransaction,
   reopenInboxItem,
+  resolveInboxFinanceConfirmation,
   sanitizeInboxPayload,
   updateInboxItemPayload,
   AUDIT_LOG_LIMIT,
@@ -638,6 +641,32 @@ describe('unified inbox normalization', () => {
     expect(normalizeInboxItem({ id: 'bad', source: 'sms', proposedAction: 'create_expense', payload: { amount: 1 } })).toBeNull();
   });
 
+  it('preserves a persisted sourceEventId and uses inbox:id when no stable key exists', () => {
+    const persisted = normalizeInboxItem({
+      id: 'pay-old',
+      source: 'payment',
+      proposedAction: 'create_expense',
+      createdAt: '2026-08-30T10:00:00',
+      payload: { amount: 18.5, merchant: '地铁', accountId: 'wechat' },
+      sourceEventId: 'evt-stable',
+      dedupeKey: 'payment:18.5:地铁:wechat',
+    });
+    expect(persisted).toMatchObject({ id: 'pay-old', sourceEventId: 'evt-stable', dedupeKey: 'evt-stable' });
+    expect(ledgerIdempotencyKeyForInboxItem(persisted!)).toBe('evt-stable');
+
+    const noStable = normalizeInboxItem({
+      id: 'pay-new',
+      source: 'payment',
+      proposedAction: 'create_expense',
+      createdAt: '2026-08-30T10:01:00',
+      payload: { amount: 18.5, merchant: '地铁', accountId: 'wechat' },
+      dedupeKey: 'payment:18.5:地铁:wechat',
+    });
+    expect(noStable?.sourceEventId).toBeUndefined();
+    expect(noStable?.dedupeKey).toBe('inbox:pay-new');
+    expect(ledgerIdempotencyKeyForInboxItem(noStable!)).toBe('inbox:pay-new');
+  });
+
   it('labels every supported capture source in Chinese', () => {
     expect(inboxSourceLabel('payment')).toBe('支付通知');
     expect(inboxSourceLabel('travel')).toBe('行程更新');
@@ -673,12 +702,27 @@ describe('unified inbox state transitions', () => {
 });
 
 describe('unified inbox dedupe', () => {
+  it('keeps two same-amount payments without an explicit fingerprint as separate pending items', () => {
+    const first = inboxItemFromPayment({ id: 'pay-a', createdAt: '2026-08-30T10:00:00', amount: 18.5, merchant: '地铁', accountId: 'alipay' });
+    const second = inboxItemFromPayment({ id: 'pay-b', createdAt: '2026-08-30T10:01:00', amount: 18.5, merchant: '地铁', accountId: 'alipay' });
+    const queued = enqueueInboxItem([first], second);
+    expect(queued).toHaveLength(2);
+    expect(queued.map((item) => item.id).sort()).toEqual(['pay-a', 'pay-b']);
+    expect(pendingInboxCount(queued)).toBe(2);
+    expect(first.sourceEventId).toBeUndefined();
+    expect(second.sourceEventId).toBeUndefined();
+    expect(ledgerIdempotencyKeyForInboxItem(first)).toBe('inbox:pay-a');
+    expect(ledgerIdempotencyKeyForInboxItem(second)).toBe('inbox:pay-b');
+  });
+
   it('merges pending payment and travel notices with the same fingerprint', () => {
     const first = inboxItemFromPayment({ id: 'pay-a', createdAt: '2026-08-30T10:00:00', amount: 18.5, merchant: '地铁', accountId: 'alipay', fingerprint: 'pay:18.5:地铁' });
     const second = inboxItemFromPayment({ id: 'pay-b', createdAt: '2026-08-30T10:01:00', amount: 18.5, merchant: '地铁', accountId: 'alipay', fingerprint: 'pay:18.5:地铁' });
     const merged = enqueueInboxItem([first], second);
     expect(merged).toHaveLength(1);
     expect(merged[0].id).toBe('pay-a');
+    expect(merged[0].sourceEventId).toBe('pay:18.5:地铁');
+    expect(ledgerIdempotencyKeyForInboxItem(first)).toBe('pay:18.5:地铁');
     expect(pendingInboxCount(merged)).toBe(1);
     const tripA = inboxItemFromTravelNotice({
       id: 'tr-a',
@@ -695,6 +739,64 @@ describe('unified inbox dedupe', () => {
     const again = enqueueInboxItem(confirmed, second);
     expect(again).toHaveLength(2);
     expect(pendingInboxCount(again)).toBe(1);
+  });
+
+  it('reuses an existing posted transaction when confirming a second inbox item with the same sourceEventId', () => {
+    const accounts = [{ id: 'cash', type: '资金账户', currency: 'CNY', balance: 200, openingBalance: 200 }];
+    const first = inboxItemFromPayment({ id: 'pay-a', createdAt: '2026-08-30T10:00:00', amount: 18.5, merchant: '地铁', accountId: 'cash', fingerprint: 'evt-metro-1' });
+    const second = inboxItemFromPayment({ id: 'pay-b', createdAt: '2026-08-30T10:01:00', amount: 18.5, merchant: '地铁', accountId: 'cash', fingerprint: 'evt-metro-1' });
+    expect(ledgerIdempotencyKeyForInboxItem(first)).toBe('evt-metro-1');
+    expect(ledgerIdempotencyKeyForInboxItem(second)).toBe('evt-metro-1');
+
+    const posted = postFinanceTransaction(accounts, [], {
+      id: 'tx-existing',
+      kind: 'expense' as const,
+      accountId: 'cash',
+      amount: 18.5,
+      accountAmount: 18.5,
+      currency: 'CNY',
+      merchant: '地铁',
+      idempotencyKey: ledgerIdempotencyKeyForInboxItem(first),
+    });
+    const inbox = enqueueInboxItem(confirmInboxItem([first], 'pay-a', 'tx-existing'), second);
+    const pending = inbox.find((item) => item.id === 'pay-b');
+    expect(pending?.status).toBe('pending');
+
+    const duplicateDraft = {
+      id: 'tx-new',
+      kind: 'expense' as const,
+      accountId: 'cash',
+      amount: 18.5,
+      accountAmount: 18.5,
+      currency: 'CNY',
+      merchant: '地铁',
+      idempotencyKey: ledgerIdempotencyKeyForInboxItem(pending!),
+    };
+    const resolution = resolveInboxFinanceConfirmation(posted.accounts, posted.transactions as Array<typeof duplicateDraft>, duplicateDraft);
+    expect(resolution.outcome).toBe('reused');
+    expect(resolution.transactionId).toBe('tx-existing');
+    expect(resolution.transactions).toHaveLength(1);
+    expect(resolution.transactions[0]?.id).toBe('tx-existing');
+    expect(resolution.accounts.find((item) => item.id === 'cash')?.balance).toBe(181.5);
+
+    const store = resolution.outcome === 'rejected'
+      ? applyInboxLifecycle({ inboxItems: inbox, auditLog: [] }, {
+        type: 'fail',
+        itemId: 'pay-b',
+        reason: 'ledger_rejected',
+        dataScope: 'finance',
+        timestamp: '2026-08-30T10:02:00',
+        id: 'aud-fail',
+      })
+      : applyInboxLifecycle({ inboxItems: inbox, auditLog: [] }, {
+        type: 'confirm',
+        itemId: 'pay-b',
+        resultEntityId: resolution.transactionId,
+        timestamp: '2026-08-30T10:02:00',
+        id: 'aud-confirm',
+      });
+    expect(store.inboxItems.find((item) => item.id === 'pay-b')).toMatchObject({ status: 'confirmed', resultEntityId: 'tx-existing' });
+    expect(store.auditLog.some((entry) => entry.reason === 'ledger_rejected' || entry.outcome === 'failed')).toBe(false);
   });
 
   it('keeps parsed capture and butler drafts in the same pending queue', () => {
@@ -774,7 +876,7 @@ describe('v2 audit log inbox lifecycle', () => {
     const payment = inboxItemFromPayment({ id: 'pay-1', createdAt: '2026-08-30T10:00:00', amount: 36, merchant: '午饭', accountId: 'wechat' });
     let store = { inboxItems: [] as ReturnType<typeof enqueueInboxItem>, auditLog: migrateAuditLog([]) };
     store = applyInboxLifecycle(store, { type: 'enqueue', item: payment, timestamp: '2026-08-30T10:00:00', id: 'aud-e1' });
-    store = applyInboxLifecycle(store, { type: 'enqueue', item: { ...payment, id: 'pay-dup' }, timestamp: '2026-08-30T10:00:01', id: 'aud-e1b' });
+    store = applyInboxLifecycle(store, { type: 'enqueue', item: payment, timestamp: '2026-08-30T10:00:01', id: 'aud-e1b' });
     expect(store.inboxItems).toHaveLength(1);
     expect(store.auditLog.filter((entry) => entry.outcome === 'pending' && entry.itemId === 'pay-1')).toHaveLength(1);
 

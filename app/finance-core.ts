@@ -18,6 +18,7 @@ export type PostedTransaction = LinkedLedgerTxn & {
   category?: string;
   source?: string;
   createdAt?: string;
+  idempotencyKey?: string;
   kind: LinkedLedgerTxn['kind'] | 'adjustment' | 'settlement';
 };
 
@@ -39,6 +40,7 @@ export type TransactionDraft = {
   merchant?: string;
   category?: string;
   postings?: LedgerPosting[];
+  idempotencyKey?: string;
 };
 
 function moneyAmount(...values: Array<number | undefined>): number {
@@ -161,17 +163,56 @@ export function migrateToPostingLedger<TA extends LedgerAccount, TT extends Tran
   return { accounts: nextAccounts, transactions: postedTransactions };
 }
 
+export function findPostedTransactionByIdempotencyKey<T extends { id?: string; idempotencyKey?: string }>(
+  transactions: T[],
+  idempotencyKey: string | undefined,
+): T | undefined {
+  const key = typeof idempotencyKey === 'string' ? idempotencyKey.trim() : '';
+  if (!key) return undefined;
+  return transactions.find((item) => typeof item.idempotencyKey === 'string' && item.idempotencyKey.trim() === key);
+}
+
+export function resolveInboxFinanceConfirmation<TA extends LedgerAccount, TT extends TransactionDraft>(
+  accounts: TA[],
+  transactions: TT[],
+  draft: TT & { id: string },
+): {
+  outcome: 'posted' | 'reused' | 'rejected';
+  transactionId?: string;
+  accounts: Array<TA & { openingBalance: number }>;
+  transactions: Array<TT & { postings: LedgerPosting[] }>;
+} {
+  const existing = findPostedTransactionByIdempotencyKey(transactions, draft.idempotencyKey);
+  if (existing?.id) {
+    const current = migrateToPostingLedger(accounts, transactions);
+    return { outcome: 'reused', transactionId: existing.id, accounts: current.accounts, transactions: current.transactions };
+  }
+  const posted = postFinanceTransaction(accounts, transactions, draft);
+  if (posted.transactions.some((item) => item.id === draft.id)) {
+    return { outcome: 'posted', transactionId: draft.id, accounts: posted.accounts, transactions: posted.transactions };
+  }
+  const reused = findPostedTransactionByIdempotencyKey(posted.transactions, draft.idempotencyKey);
+  if (reused?.id) {
+    return { outcome: 'reused', transactionId: reused.id, accounts: posted.accounts, transactions: posted.transactions };
+  }
+  return { outcome: 'rejected', accounts: posted.accounts, transactions: posted.transactions };
+}
+
 export function postFinanceTransaction<TA extends LedgerAccount, TT extends TransactionDraft>(
   accounts: TA[],
   transactions: TT[],
   draft: TT,
 ): { accounts: Array<TA & { openingBalance: number }>; transactions: Array<TT & { postings: LedgerPosting[] }> } {
   const current = migrateToPostingLedger(accounts, transactions);
+  const idempotencyKey = typeof draft.idempotencyKey === 'string' ? draft.idempotencyKey.trim() : '';
+  if (idempotencyKey && current.transactions.some((item) => typeof item.idempotencyKey === 'string' && item.idempotencyKey.trim() === idempotencyKey)) {
+    return current;
+  }
   const postings = composeTransactionPostings(current.accounts, draft);
   if (!canApplyPostings(current.accounts, postings)) {
     return current;
   }
-  const transaction = { ...draft, postings, accountAmount: moneyAmount(draft.accountAmount, draft.amount), kind: draft.kind } as TT & { postings: LedgerPosting[] };
+  const transaction = { ...draft, postings, accountAmount: moneyAmount(draft.accountAmount, draft.amount), kind: draft.kind, ...(idempotencyKey ? { idempotencyKey } : {}) } as TT & { postings: LedgerPosting[] };
   const nextTransactions = [transaction, ...current.transactions];
   return {
     accounts: applyPostings(current.accounts, postings, 1).map((account) => ({

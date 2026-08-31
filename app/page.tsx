@@ -30,7 +30,7 @@ type TravelItem = { id: string; kind: 'train' | 'flight'; number: string; from: 
 type InvestmentKind = 'fund' | 'stock' | 'crypto' | 'meme';
 type PricePoint = { date: string; price: number };
 type InvestmentHolding = { id: string; accountId: string; kind: InvestmentKind; name: string; code: string; contract: string; network: string; quantity: number; averageCost: number; currentPrice: number; currency: Currency; updatedAt: string; quoteStatus: 'sample' | 'manual' | 'live'; history: PricePoint[] };
-type ExchangeRate = { currency: Exclude<Currency, 'CNY'>; cnyRate: number; asOf: string; source: 'manual' | 'daily'; updatedAt: string };
+type ExchangeRate = { currency: string; cnyRate: number; asOf: string; source: 'manual' | 'daily'; updatedAt: string };
 type AppData = { schemaVersion: 3; demoMode: boolean; schedules: ScheduleItem[]; accounts: Account[]; transactions: Transaction[]; recurringRules: RecurringRule[]; healthRecords: HealthRecord[]; travels: TravelItem[]; investments: InvestmentHolding[]; exchangeRates: ExchangeRate[]; memories: MemoryItem[]; privacy: PrivacySettings; vaultItems: VaultItem[]; inboxItems: InboxItem[]; lastConfirmedInboxId: string | null; auditLog: AuditEntry[]; theme: 'light' | 'dark'; permissionOnboarding: PermissionOnboardingState };
 type ExpenseDraft = { kind: 'expense'; amount: number; merchant: string; category: string; accountId: string; source: string; currency: Currency; reimbursable: boolean };
 type ScheduleDraft = { kind: 'schedule'; title: string; date: string; time: string };
@@ -49,6 +49,12 @@ const TODAY_LABEL = new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'nume
 const GREETING = now.getHours() < 5 ? '夜深了，先照顾好休息。' : now.getHours() < 11 ? '早上好，今天慢慢来。' : now.getHours() < 14 ? '中午好，给自己留点余地。' : now.getHours() < 18 ? '下午好，一次做好一件事。' : '晚上好，收好今天再休息。';
 const accountTypes = [...ACCOUNT_TYPES];
 const currencies: Currency[] = ['CNY', 'USD', 'HKD', 'EUR', 'JPY'];
+function isCurrency(value: string): value is Currency {
+  return (currencies as readonly string[]).includes(value);
+}
+function isFxCurrency(value: string): value is Exclude<Currency, 'CNY'> {
+  return value !== 'CNY' && isCurrency(value);
+}
 function roleLabel(type: string) {
   const role = accountRole(type);
   if (role === 'receivable') return '债务 · 应收';
@@ -340,7 +346,7 @@ export default function Home() {
   const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
   const [editingHoldingId, setEditingHoldingId] = useState<string | null>(null);
   const [editingRecurringId, setEditingRecurringId] = useState<string | null>(null);
-  const [editingRateCurrency, setEditingRateCurrency] = useState<Exclude<Currency, 'CNY'> | null>(null);
+  const [editingRateCurrency, setEditingRateCurrency] = useState<string | null>(null);
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [selectedHoldingId, setSelectedHoldingId] = useState<string | null>(null);
   const [settlingAccountId, setSettlingAccountId] = useState<string | null>(null);
@@ -757,15 +763,15 @@ export default function Home() {
   }
   function addExchangeRate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = new FormData(event.currentTarget);
-    const currency = String(form.get('currency')) as Exclude<Currency, 'CNY'>;
+    const currency = String(form.get('currency'));
     const cnyRate = Number(form.get('cnyRate'));
     const asOf = String(form.get('asOf'));
-    if (!currencies.includes(currency) || currency === 'CNY' || !Number.isFinite(cnyRate) || cnyRate <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(asOf)) { notify('请填写有效的非人民币汇率和适用日期'); return; }
+    if (!isFxCurrency(currency) || !Number.isFinite(cnyRate) || cnyRate <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(asOf)) { notify('请填写有效的非人民币汇率和适用日期'); return; }
     const rate: ExchangeRate = { currency, cnyRate, asOf, source: 'manual', updatedAt: localStamp() };
     setData((current) => ({ ...current, exchangeRates: [...current.exchangeRates.filter((item) => item.currency !== currency), rate] }));
     setEditingRateCurrency(null); setSheet(null); notify(`${currency} 汇率已手动保存`);
   }
-  function deleteExchangeRate(currency: Exclude<Currency, 'CNY'>) {
+  function deleteExchangeRate(currency: string) {
     setData((current) => ({ ...current, exchangeRates: current.exchangeRates.filter((item) => item.currency !== currency) }));
     notify(`${currency} 汇率已删除，该币种将不计入人民币总额`);
   }
@@ -797,20 +803,32 @@ export default function Home() {
     const amount = Number(form.get('amount'));
     const counterpartId = String(form.get('counterpartId'));
     const counterpart = data.accounts.find((account) => account.id === counterpartId);
-    if (!canHoldMoney(counterpart)) { notify('请指定资金账户作为报销到账账户'); return; }
+    if (!counterpart || !canHoldMoney(counterpart)) { notify('请指定资金账户作为报销到账账户'); return; }
     if (!(amount > 0)) { notify('请输入大于 0 的金额'); return; }
     const outstanding = reimbursementOutstandingAmount(previous, data.transactions);
     if (counterpart.currency !== outstanding.currency) { notify(`报销到账账户必须使用 ${outstanding.currency}`); return; }
     if (amount - outstanding.amount > 0.0001) { notify(`本笔剩余应收为 ${outstanding.currency} ${money(outstanding.amount)}`); return; }
     const settlement = buildReimbursementSettlement(previous, { id: uid('transaction'), counterpartId, amount, currency: counterpart.currency });
+    const credit: Transaction = {
+      id: settlement.id,
+      kind: 'settlement',
+      amount,
+      accountAmount: amount,
+      currency: counterpart.currency,
+      merchant: `报销入账 · ${previous.merchant}`,
+      category: '报销入账',
+      accountId: settlement.accountId,
+      targetAccountId: settlement.targetAccountId,
+      targetAmount: amount,
+      targetCurrency: counterpart.currency,
+      source: '报销确认',
+      reimbursable: false,
+      reimbursementForId: previous.id,
+      createdAt: localStamp(),
+      postings: settlement.postings,
+    };
     setData((current) => {
-      const posted = settlePostedReimbursement(current.accounts, current.transactions, previous.id, {
-        ...settlement,
-        merchant: `报销入账 · ${previous.merchant}`,
-        category: '报销入账',
-        source: '报销确认',
-        createdAt: localStamp(),
-      });
+      const posted = settlePostedReimbursement(current.accounts, current.transactions, previous.id, credit);
       return { ...current, accounts: toAccounts(posted.accounts as Account[]), transactions: toTransactions(posted.transactions as Array<Partial<Transaction> & { id: string; kind: TransactionKind; accountId: string }>) };
     });
     setSettlingTransactionId(null);
@@ -980,7 +998,9 @@ export default function Home() {
       const account = data.accounts.find((entry) => entry.id === accountId);
       const transactionKind = item.proposedAction === 'create_income' ? 'income' : 'expense';
       const reimbursable = transactionKind === 'expense' && payload.reimbursable === true;
-      const currency = String(payload.currency || account?.currency || '');
+      const currencyValue = String(payload.currency || account?.currency || '');
+      if (!isCurrency(currencyValue)) { recordInboxFail(id, 'missing_currency', 'finance'); notify('请选择账户币种'); return; }
+      const currency = currencyValue;
       const claimId = reimbursable ? data.accounts.find((entry) => accountRole(entry.type) === 'receivable' && entry.currency === currency)?.id : undefined;
       const transaction: Transaction = { id: uid('transaction'), kind: transactionKind, amount, accountAmount: amount, currency, merchant: String(payload.merchant || '待补充商家'), category: transactionKind === 'income' ? '收入' : String(payload.category || '其他'), accountId, source: String(payload.paySource || inboxSourceLabel(item.source)), reimbursable, reimburseAccountId: claimId, reimbursed: false, createdAt: localStamp() };
       const posted = postFinanceTransaction(data.accounts, data.transactions, transaction);
@@ -1658,7 +1678,7 @@ function VaultPanel({ items, nativeOn, onReveal }: { items: { id?: string; title
   return <div className="page feature-page"><section className="vault-safe"><span>钥</span><h2>{nativeOn ? 'Keystore 密码库已连接' : '安全密码库入口'}</h2><p>密码明文只在本机 Keystore。点「查看」后需指纹或锁屏验证，不会写入网页存储，也不会进 AI。</p><b>{nativeOn ? '指纹验证后可查看' : '请在 Android App 中查看密码'}</b></section><section className="feature-section"><div className="feature-title"><div><span>METADATA</span><h2>账号目录</h2></div><small>{items.length} 项</small></div><div className="plain-list">{items.map((item) => <article key={item.id || item.title}><span>{item.title.slice(0, 1)}</span><div><strong>{item.title}</strong><small>{item.usernameHint}{item.note ? ` · ${item.note}` : ''}</small></div>{nativeOn && <div className="row-ops"><button type="button" className="edit" onClick={() => onReveal?.(item.id || item.title)}>查看</button></div>}</article>)}</div></section>{nativeOn && <div className="native-actions"><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openAutofillSettings?: () => void } }).SelfAgentNative?.openAutofillSettings?.()}>打开系统自动填充设置</button></div>}<HowToNative /><section className="vault-warning"><strong>密码不会进入 AI</strong><p>导出和管家问答只有账号名。查看明文必须通过指纹或锁屏验证，并只显示在系统弹窗里。</p></section></div>;
 }
 
-type FinancePanelProps = { data: AppData; currency: Currency; selectedAccountId: string | null; selectedHoldingId: string | null; onCurrency: (currency: Currency) => void; onSelectAccount: (id: string) => void; onSelectHolding: (id: string) => void; onBackAccount: () => void; onBackHolding: () => void; onNewTransaction: () => void; onEditTransaction: (id: string) => void; onDeleteTransaction: (id: string) => void; onNewAccount: () => void; onEditAccount: (id: string) => void; onNewHolding: () => void; onEditHolding: (id: string) => void; onNewRecurring: () => void; onEditRecurring: (id: string) => void; onDeleteRecurring: (id: string) => void; onRunRecurring: (id: string) => void; onSettleReimbursement: (id: string) => void; onSettleAccount: (id: string) => void; onNewRate: () => void; onEditRate: (currency: Exclude<Currency, 'CNY'>) => void; onDeleteRate: (currency: Exclude<Currency, 'CNY'>) => void; onRefreshQuotes: () => void };
+type FinancePanelProps = { data: AppData; currency: Currency; selectedAccountId: string | null; selectedHoldingId: string | null; onCurrency: (currency: Currency) => void; onSelectAccount: (id: string) => void; onSelectHolding: (id: string) => void; onBackAccount: () => void; onBackHolding: () => void; onNewTransaction: () => void; onEditTransaction: (id: string) => void; onDeleteTransaction: (id: string) => void; onNewAccount: () => void; onEditAccount: (id: string) => void; onNewHolding: () => void; onEditHolding: (id: string) => void; onNewRecurring: () => void; onEditRecurring: (id: string) => void; onDeleteRecurring: (id: string) => void; onRunRecurring: (id: string) => void; onSettleReimbursement: (id: string) => void; onSettleAccount: (id: string) => void; onNewRate: () => void; onEditRate: (currency: string) => void; onDeleteRate: (currency: string) => void; onRefreshQuotes: () => void };
 
 function FinancePanel({ data, currency, selectedAccountId, selectedHoldingId, onCurrency, onSelectAccount, onSelectHolding, onBackAccount, onBackHolding, onNewTransaction, onEditTransaction, onDeleteTransaction, onNewAccount, onEditAccount, onNewHolding, onEditHolding, onNewRecurring, onEditRecurring, onDeleteRecurring, onRunRecurring, onSettleReimbursement, onSettleAccount, onNewRate, onEditRate, onDeleteRate, onRefreshQuotes }: FinancePanelProps) {
   const [financeSection, setFinanceSection] = useState<(typeof FINANCE_TABS)[number]>('总览');

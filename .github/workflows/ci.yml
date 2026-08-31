@@ -41,6 +41,16 @@ jobs:
           cd static-web
           npm run build
 
+      - name: Install Playwright Chromium
+        run: |
+          cd static-web
+          npx playwright install --with-deps chromium
+
+      - name: Browser E2E
+        run: |
+          cd static-web
+          npm run test:e2e
+
   android-tests:
     runs-on: ubuntu-latest
     steps:

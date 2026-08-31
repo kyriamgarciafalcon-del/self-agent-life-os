@@ -5,6 +5,7 @@
   "scripts": {
     "build": "node prepare-css.mjs && vite build",
     "test": "vitest run",
+    "test:e2e": "npm run build && playwright test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -12,6 +13,7 @@
     "react-dom": "19.2.6"
   },
   "devDependencies": {
+    "@playwright/test": "1.62.1",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "4.7.0",

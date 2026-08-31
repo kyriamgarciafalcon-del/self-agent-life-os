@@ -8,6 +8,8 @@ tsconfig.tsbuildinfo
 static-web/node_modules/
 static-web/dist/
 static-web/globals.css
+static-web/test-results/
+static-web/playwright-report/
 android/app/src/main/assets/www/
 .DS_Store
 *.apk

@@ -31,8 +31,8 @@ object AiChatClient {
 
     private fun post(url: String, apiKey: String, body: String): String {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 20_000
-            readTimeout = 40_000
+            connectTimeout = 15_000
+            readTimeout = 15_000
             requestMethod = "POST"
             doOutput = true
             instanceFollowRedirects = false
@@ -43,6 +43,7 @@ object AiChatClient {
         return try {
             connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
             val code = connection.responseCode
+            if (code in 300..399) throw IllegalStateException("redirect")
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
             val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
             if (code in 200..299) text else throw IllegalStateException("http_$code")
@@ -54,6 +55,7 @@ object AiChatClient {
     private fun sanitize(error: Exception): String {
         val message = error.message.orEmpty()
         if (message.contains("unconfigured")) return "unconfigured"
+        if (message.contains("redirect")) return "redirect"
         if (message.startsWith("http_")) return "http_error"
         if (message.contains("invalid")) return "invalid"
         return "offline"

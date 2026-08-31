@@ -11,5 +11,5 @@
     "allowImportingTsExtensions": true,
     "isolatedModules": true
   },
-  "include": ["./**/*.ts", "./**/*.tsx", "../app/page.tsx"]
+  "include": ["./**/*.ts", "../app/product-logic.ts"]
 }

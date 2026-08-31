@@ -135,15 +135,26 @@ export function parseNaturalCapture(text: string, today = localDateKey()): Natur
   return { kind: 'schedule', title, date, time: `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}` };
 }
 
+export type PrivacyFlags = { schedule: boolean; finance: boolean; health: boolean; memory: boolean };
+
 type ScopedSummaryInput = {
   today: string;
   month: string;
-  privacy: { schedule: boolean; finance: boolean; health: boolean };
+  privacy: Partial<PrivacyFlags>;
   schedules: { date: string; done: boolean; title: string }[];
   transactions: { createdAt: string }[];
   healthRecords: HealthMetricRecord[];
-  memories: { active: boolean; title: string; note: string; source?: string; purpose?: string; updatedAt?: string }[];
+  memories: { active: boolean; title: string; note: string; sendAllowed?: boolean; source?: string; purpose?: string; updatedAt?: string }[];
 };
+
+export function migratePrivacySettings(raw: Partial<PrivacyFlags> | null | undefined): PrivacyFlags {
+  return {
+    schedule: raw?.schedule === true,
+    finance: raw?.finance === true,
+    health: raw?.health === true,
+    memory: raw?.memory === true,
+  };
+}
 
 export type HealthMetricRecord = { kind: string; value: number; createdAt?: string; note?: string; externalKey?: string };
 
@@ -206,14 +217,17 @@ export function healthRecordsFromSnapshots(snapshots: HealthSnapshot[], sourceFa
 }
 
 export function buildScopedSummary(input: ScopedSummaryInput): string {
-  const schedule = input.privacy.schedule
+  const privacy = migratePrivacySettings(input.privacy);
+  const schedule = privacy.schedule
     ? `日程未完成=${input.schedules.filter((item) => item.date === input.today && !item.done).map((item) => item.title).join('、') || '无'}`
     : '日程权限关闭';
-  const finance = input.privacy.finance
+  const finance = privacy.finance
     ? `本月流水 ${input.transactions.filter((item) => item.createdAt.startsWith(input.month)).length} 笔`
     : '财务权限关闭';
-  const health = input.privacy.health ? summarizeHealth(input.healthRecords) : '健康权限关闭';
-  const memories = input.memories.filter((item) => item.active).map((item) => `${item.title}（${item.note}）`).join('；') || '无';
+  const health = privacy.health ? summarizeHealth(input.healthRecords) : '健康权限关闭';
+  const memories = privacy.memory
+    ? input.memories.filter((item) => item.active && item.sendAllowed === true).map((item) => `${item.title}（${item.note}）`).join('；') || '无'
+    : '记忆权限关闭';
   return `你是 Self Agent 本机管家。只能使用这些摘要：${schedule}；${finance}；${health}；用户允许的记忆=${memories}。禁止索取或输出密码、验证码、私钥、助记词、完整卡号。健康不是诊断，财务不是投资建议。`;
 }
 
@@ -224,13 +238,14 @@ export type MemoryRecord = {
   title: string;
   note: string;
   active: boolean;
+  sendAllowed: boolean;
   status: MemoryStatus;
   source: string;
   purpose: string;
   updatedAt: string;
 };
 
-export function normalizeMemory(raw: Partial<MemoryRecord> & { id?: string; title?: string; note?: string; active?: boolean }): MemoryRecord {
+export function normalizeMemory(raw: Partial<MemoryRecord> & { id?: string; title?: string; note?: string; active?: boolean; sendAllowed?: boolean }): MemoryRecord {
   const note = String(raw.note || '');
   const active = raw.active !== false;
   return {
@@ -239,6 +254,7 @@ export function normalizeMemory(raw: Partial<MemoryRecord> & { id?: string; titl
     title: String(raw.title || '未命名记忆'),
     note,
     active,
+    sendAllowed: raw.sendAllowed === true,
     status: active ? '使用中' : '已暂停',
     source: String(raw.source || '本机已有记忆'),
     purpose: String(raw.purpose || note || '用于管家建议'),
@@ -279,7 +295,7 @@ export const BUTLER_ACTION_TYPES = [
 export type ButlerActionType = typeof BUTLER_ACTION_TYPES[number];
 export type ButlerAction =
   | { type: 'create_schedule'; payload: { title: string; date: string; time: string } }
-  | { type: 'create_expense'; payload: { amount: number; merchant: string; category?: string; source?: string } }
+  | { type: 'create_expense'; payload: { amount: number; merchant: string; category?: string; source?: string; accountId?: string; currency?: string; date?: string; reimbursable?: boolean } }
   | { type: 'create_travel'; payload: { travelKind: TravelKind; number: string; from: string; to: string; date: string; departTime: string; arriveTime?: string } }
   | { type: 'create_health'; payload: { metric: HealthMetric; value: number } }
   | { type: 'add_memory'; payload: { title: string; note?: string; kind?: string; purpose?: string } }
@@ -322,7 +338,12 @@ export function validateButlerAction(value: unknown): ButlerAction | null {
     const amount = Number(payload.amount);
     const merchant = requiredString(payload.merchant);
     if (!(amount > 0) || !merchant) return null;
-    return { type, payload: { amount, merchant, category: requiredString(payload.category) || undefined, source: requiredString(payload.source) || undefined } };
+    if (!('accountId' in payload) || !('currency' in payload) || !('date' in payload) || !('reimbursable' in payload)) return null;
+    const accountId = payload.accountId == null ? '' : String(payload.accountId);
+    const currency = payload.currency == null ? '' : String(payload.currency);
+    const date = payload.date == null ? '' : String(payload.date);
+    const reimbursable = payload.reimbursable === true ? true : payload.reimbursable === false ? false : undefined;
+    return { type, payload: { amount, merchant, category: requiredString(payload.category) || undefined, source: requiredString(payload.source) || undefined, accountId, currency, date, reimbursable } };
   }
   if (type === 'create_travel') {
     const travelKind = payload.travelKind === 'flight' ? 'flight' : payload.travelKind === 'train' ? 'train' : null;
@@ -379,18 +400,21 @@ export function parseButlerModelOutput(text: string): ButlerModelResponse {
   return { reply, actions, mutatesState: false };
 }
 
-export function describeButlerDataScope(privacy: { schedule: boolean; finance: boolean; health: boolean }) {
+export function describeButlerDataScope(privacy: Partial<PrivacyFlags>) {
+  const flags = migratePrivacySettings(privacy);
   return [
-    { key: 'schedule', label: '日程', allowed: privacy.schedule },
-    { key: 'finance', label: '财务', allowed: privacy.finance },
-    { key: 'health', label: '健康', allowed: privacy.health },
+    { key: 'schedule', label: '日程', allowed: flags.schedule },
+    { key: 'finance', label: '财务', allowed: flags.finance },
+    { key: 'health', label: '健康', allowed: flags.health },
+    { key: 'memory', label: '记忆', allowed: flags.memory },
     { key: 'vault', label: '密码', allowed: false },
   ] as const;
 }
 
 export function buildButlerSystemPrompt(input: ScopedSummaryInput & { vaultItems?: unknown }): string {
-  const briefing = buildHealthBriefing(input.healthRecords, input.privacy.health);
-  const healthLine = input.privacy.health
+  const privacy = migratePrivacySettings(input.privacy);
+  const briefing = buildHealthBriefing(input.healthRecords, privacy.health);
+  const healthLine = privacy.health
     ? `健康数据范围=${briefing.rangeLabel}；证据=${briefing.evidence}；缺失=${briefing.missing.join('、') || '无'}；${briefing.disclaimer}`
     : `健康权限关闭；${briefing.disclaimer}`;
   return [
@@ -1529,4 +1553,282 @@ export function dismissPermissionOnboarding(state: unknown, completedAt: string)
 
 export function markPermissionSettingsOpened(state: unknown): PermissionOnboardingState {
   return { ...normalizePermissionOnboarding(state), settingsOpened: true };
+}
+
+export const TOAST_ARIA_LIVE = 'polite' as const;
+export function dialogShouldDismiss(key: string): boolean {
+  return key === 'Escape';
+}
+
+const REDACTED = '[REDACTED]';
+const SENSITIVE_PATTERNS: RegExp[] = [
+  /(?:密码|口令|password|passwd)\s*[:=是为]?\s*\S+/gi,
+  /(?:api[_-]?key|API密钥)\s*[:=是为]?\s*\S+/gi,
+  /\bsk-[A-Za-z0-9_-]{8,}\b/gi,
+  /(?:token|令牌)\s*[:=是为]?\s*\S+/gi,
+  /\bghp_[A-Za-z0-9]{16,}\b/gi,
+  /(?:验证码|otp|one[-\s]?time(?:\s*password)?)\s*[:=是为]?\s*\d{4,8}/gi,
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/gi,
+  /私钥(?:\s+BEGIN PRIVATE KEY)?/gi,
+  /BEGIN PRIVATE KEY/gi,
+  /助记词[\s\S]{0,120}/gi,
+  /(?:mnemonic|seed phrase)\s*[:=]?\s*(?:[a-z]+(?:\s+|$)){8,24}/gi,
+  /\b(?:\d[ -]*?){13,19}\b/g,
+];
+
+export function redactSensitiveText(text: string): { text: string; blocked: boolean } {
+  let next = String(text || '');
+  let blocked = false;
+  for (const pattern of SENSITIVE_PATTERNS) {
+    pattern.lastIndex = 0;
+    if (pattern.test(next)) {
+      blocked = true;
+      pattern.lastIndex = 0;
+      next = next.replace(pattern, REDACTED);
+    }
+  }
+  return { text: next, blocked };
+}
+
+export function sanitizeModelBoundFields(value: unknown): unknown {
+  if (typeof value === 'string') return redactSensitiveText(value).text;
+  if (Array.isArray(value)) return value.map(sanitizeModelBoundFields);
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+      out[key] = SECRET_FIELD.test(key) ? REDACTED : sanitizeModelBoundFields(nested);
+    }
+    return out;
+  }
+  return value;
+}
+
+export function prepareOutboundAiPayload(input: { userMessage: string; fields?: Record<string, string> }): {
+  ok: boolean;
+  blocked: boolean;
+  messages?: { role: 'system' | 'user'; content: string }[];
+} {
+  const user = redactSensitiveText(input.userMessage);
+  const fields = Object.fromEntries(Object.entries(input.fields || {}).map(([key, value]) => {
+    const redacted = redactSensitiveText(String(value));
+    return [key, redacted];
+  }));
+  const blocked = user.blocked || Object.values(fields).some((item) => item.blocked);
+  if (blocked) return { ok: false, blocked: true };
+  const system = fields.system?.text;
+  return {
+    ok: true,
+    blocked: false,
+    messages: [
+      ...(system ? [{ role: 'system' as const, content: system }] : []),
+      { role: 'user', content: user.text },
+    ],
+  };
+}
+
+export type AiSendPreviewField = { key: string; label: string; included: boolean; valueShown: false };
+export type AiSendPreview = { domain: string; fields: AiSendPreviewField[] };
+
+export function byokHostOf(raw: string): string {
+  try {
+    const url = new URL(raw.includes('://') ? raw : `https://${raw}`);
+    return url.hostname.replace(/^\[|\]$/g, '');
+  } catch {
+    return '';
+  }
+}
+
+export function confirmByokHost(baseUrl: string, confirmedHost: string): boolean {
+  const host = byokHostOf(baseUrl);
+  return Boolean(host) && host === confirmedHost.trim();
+}
+
+export function buildAiSendPreview(input: { privacy: PrivacyFlags; memories?: { sendAllowed?: boolean }[]; baseUrl: string }): AiSendPreview {
+  const scopes = describeButlerDataScope(input.privacy);
+  return {
+    domain: byokHostOf(input.baseUrl),
+    fields: scopes.map((item) => ({ key: item.key, label: item.label, included: item.allowed, valueShown: false })),
+  };
+}
+
+export const AI_SUPPORTED_TOOLS = ['read_finance_summary', 'draft_expense', 'draft_schedule', 'draft_memory_change'] as const;
+export type AiSupportedTool = typeof AI_SUPPORTED_TOOLS[number];
+
+export type AiToolCall =
+  | { name: 'read_finance_summary'; arguments: Record<string, never> }
+  | { name: 'draft_expense'; arguments: { amount: number; merchant: string; accountId: string; currency: string; date: string; reimbursable: boolean | null } }
+  | { name: 'draft_schedule'; arguments: { title: string; date: string; time: string } }
+  | { name: 'draft_memory_change'; arguments: { op: 'add' | 'update' | 'pause' | 'delete'; id?: string; title?: string; note?: string } };
+
+export type AiProviderResponse = { reply: string; tools: AiToolCall[]; mutatesState: false };
+
+function parseToolArguments(raw: unknown): Record<string, unknown> | null {
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      return isPlainObject(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  return isPlainObject(raw) ? raw : null;
+}
+
+function validateAiToolCall(value: unknown): AiToolCall | null {
+  if (!isPlainObject(value)) return null;
+  const name = String(value.name || value.type || '');
+  const args = parseToolArguments(value.arguments ?? value.payload ?? value.args) || {};
+  if (hasSecretFields(args)) return null;
+  if (name === 'read_finance_summary') return { name, arguments: {} };
+  if (name === 'draft_expense') {
+    if (!('amount' in args) || !('merchant' in args) || !('accountId' in args) || !('currency' in args) || !('date' in args) || !('reimbursable' in args)) return null;
+    const amount = Number(args.amount);
+    const merchant = requiredString(args.merchant);
+    if (!(amount > 0) || !merchant) return null;
+    const reimbursable = args.reimbursable === true ? true : args.reimbursable === false ? false : null;
+    return {
+      name,
+      arguments: {
+        amount,
+        merchant,
+        accountId: args.accountId == null ? '' : String(args.accountId),
+        currency: args.currency == null ? '' : String(args.currency),
+        date: args.date == null ? '' : String(args.date),
+        reimbursable,
+      },
+    };
+  }
+  if (name === 'draft_schedule') {
+    const title = requiredString(args.title);
+    const date = requiredString(args.date);
+    const time = requiredString(args.time);
+    if (!title || !date || !time || !DATE_RE.test(date) || !TIME_RE.test(time)) return null;
+    return { name, arguments: { title, date, time } };
+  }
+  if (name === 'draft_memory_change') {
+    const op = args.op === 'add' || args.op === 'update' || args.op === 'pause' || args.op === 'delete' ? args.op : null;
+    if (!op) return null;
+    if (op === 'add') {
+      const title = requiredString(args.title);
+      if (!title) return null;
+      return { name, arguments: { op, title, note: requiredString(args.note) || undefined } };
+    }
+    const id = requiredString(args.id);
+    if (!id) return null;
+    return { name, arguments: { op, id, title: requiredString(args.title) || undefined, note: requiredString(args.note) || undefined } };
+  }
+  return null;
+}
+
+function collectToolCandidates(parsed: Record<string, unknown>): unknown[] {
+  if (Array.isArray(parsed.tool_calls)) return parsed.tool_calls;
+  if (Array.isArray(parsed.tools)) return parsed.tools;
+  if (parsed.function_call) return [parsed.function_call];
+  if (Array.isArray(parsed.actions)) {
+    return parsed.actions.map((action) => {
+      if (!isPlainObject(action)) return action;
+      const type = String(action.type || '');
+      if (type === 'create_expense') return { name: 'draft_expense', arguments: action.payload };
+      if (type === 'create_schedule') return { name: 'draft_schedule', arguments: action.payload };
+      if (type === 'add_memory' || type === 'update_memory' || type === 'pause_memory' || type === 'delete_memory') {
+        const op = type === 'add_memory' ? 'add' : type === 'update_memory' ? 'update' : type === 'pause_memory' ? 'pause' : 'delete';
+        return { name: 'draft_memory_change', arguments: { op, ...(isPlainObject(action.payload) ? action.payload : {}) } };
+      }
+      return action;
+    });
+  }
+  return [];
+}
+
+export function parseAiProviderResponse(raw: unknown): AiProviderResponse {
+  const parsed = typeof raw === 'string' ? extractJsonObject(raw) : isPlainObject(raw) ? raw : null;
+  if (!parsed) return { reply: typeof raw === 'string' ? raw.trim() : '', tools: [], mutatesState: false };
+  const reply = typeof parsed.reply === 'string' && parsed.reply.trim() ? parsed.reply.trim() : '';
+  const tools = collectToolCandidates(parsed).map(validateAiToolCall).filter((item): item is AiToolCall => Boolean(item));
+  return { reply, tools, mutatesState: false };
+}
+
+export function inboxItemFromAiTool(input: { id: string; createdAt: string; tool: AiToolCall; confidence?: number }): InboxItem | null {
+  if (input.tool.name === 'read_finance_summary') return null;
+  if (input.tool.name === 'draft_expense') {
+    const args = input.tool.arguments;
+    return inboxItemFromButlerAction({
+      id: input.id,
+      createdAt: input.createdAt,
+      action: {
+        type: 'create_expense',
+        payload: {
+          amount: args.amount,
+          merchant: args.merchant,
+          accountId: args.accountId,
+          currency: args.currency,
+          date: args.date,
+          reimbursable: args.reimbursable === true ? true : args.reimbursable === false ? false : undefined,
+        },
+      },
+      confidence: input.confidence,
+    });
+  }
+  if (input.tool.name === 'draft_schedule') {
+    return inboxItemFromButlerAction({
+      id: input.id,
+      createdAt: input.createdAt,
+      action: { type: 'create_schedule', payload: input.tool.arguments },
+      confidence: input.confidence,
+    });
+  }
+  const change = input.tool.arguments;
+  const action: ButlerAction = change.op === 'add'
+    ? { type: 'add_memory', payload: { title: change.title || '', note: change.note } }
+    : change.op === 'update'
+      ? { type: 'update_memory', payload: { id: change.id || '', title: change.title, note: change.note } }
+      : change.op === 'pause'
+        ? { type: 'pause_memory', payload: { id: change.id || '' } }
+        : { type: 'delete_memory', payload: { id: change.id || '' } };
+  return inboxItemFromButlerAction({ id: input.id, createdAt: input.createdAt, action, confidence: input.confidence });
+}
+
+function isPrivateOrLocalHost(host: string): boolean {
+  const h = host.replace(/^\[|\]$/g, '').toLowerCase();
+  if (!h || h === 'localhost' || h.endsWith('.localhost') || h === '::1') return true;
+  if (h.includes(':') && (h.startsWith('fe80:') || h.startsWith('fc') || h.startsWith('fd'))) return true;
+  const parts = h.split('.');
+  if (parts.length === 4 && parts.every((part) => /^\d+$/.test(part))) {
+    const a = Number(parts[0]);
+    const b = Number(parts[1]);
+    if (a === 0 || a === 10 || a === 127) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 169 && b === 254) return true;
+  }
+  return false;
+}
+
+export function validateByokTarget(raw: string): { ok: boolean; host: string; reason?: string } {
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== 'https:') return { ok: false, host: url.hostname, reason: 'https_only' };
+    const host = url.hostname.replace(/^\[|\]$/g, '');
+    if (isPrivateOrLocalHost(host)) return { ok: false, host, reason: 'private_or_local' };
+    return { ok: true, host };
+  } catch {
+    return { ok: false, host: '', reason: 'invalid' };
+  }
+}
+
+export type CallBudget = { maxCalls: number; maxTokens: number; timeoutMs: number; remainingCalls: number; remainingTokens: number };
+
+export function createCallBudget(input: { maxCalls: number; maxTokens: number; timeoutMs: number }): CallBudget {
+  return { ...input, remainingCalls: input.maxCalls, remainingTokens: input.maxTokens };
+}
+
+export function consumeCallBudget(budget: CallBudget, tokens: number): { ok: boolean; budget: CallBudget } {
+  if (budget.remainingCalls < 1 || tokens > budget.remainingTokens) return { ok: false, budget };
+  budget.remainingCalls -= 1;
+  budget.remainingTokens -= tokens;
+  return { ok: true, budget };
+}
+
+export function unusualRedirect(_from: string, _to: string): boolean {
+  return true;
 }

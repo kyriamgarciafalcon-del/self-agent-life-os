@@ -5,15 +5,13 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-val configuredWebAppUrl = providers.gradleProperty("webAppUrl")
-    .orElse("https://self-agent-life-os.kyriamgarciafalcon.chatgpt.site/")
-    .get()
-
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("keystore/keystore.properties")
 if (keystorePropertiesFile.exists()) {
     keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
 }
+val hasSigningMaterial = keystorePropertiesFile.exists() &&
+    !keystoreProperties.getProperty("storeFile").isNullOrBlank()
 
 android {
     namespace = "app.selfagent"
@@ -23,13 +21,15 @@ android {
         buildConfig = true
     }
 
-    signingConfigs {
-        create("update") {
-            storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
-            storePassword = keystoreProperties.getProperty("storePassword")
-            keyAlias = keystoreProperties.getProperty("keyAlias")
-            keyPassword = keystoreProperties.getProperty("keyPassword")
-            storeType = keystoreProperties.getProperty("storeType") ?: "PKCS12"
+    if (hasSigningMaterial) {
+        signingConfigs {
+            create("update") {
+                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+                storeType = keystoreProperties.getProperty("storeType") ?: "PKCS12"
+            }
         }
     }
 
@@ -39,17 +39,19 @@ android {
         targetSdk = 35
         versionCode = providers.gradleProperty("versionCode").orElse("100").get().toInt()
         versionName = providers.gradleProperty("versionName").orElse("1.1.0").get()
-
-        buildConfigField("String", "WEB_APP_URL", "\"${configuredWebAppUrl.replace("\"", "\\\"")}\"")
     }
 
     buildTypes {
         debug {
-            signingConfig = signingConfigs.getByName("update")
+            if (hasSigningMaterial) {
+                signingConfig = signingConfigs.getByName("update")
+            }
         }
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("update")
+            if (hasSigningMaterial) {
+                signingConfig = signingConfigs.getByName("update")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

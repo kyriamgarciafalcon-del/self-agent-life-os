@@ -4,12 +4,6 @@ on:
   push:
     branches: [main, server-http-webview]
   workflow_dispatch:
-    inputs:
-      web_app_url:
-        description: "Optional hosted Self Agent URL"
-        required: false
-        default: "https://self-agent-life-os.kyriamgarciafalcon.chatgpt.site/"
-        type: string
 
 permissions:
   contents: read
@@ -78,9 +72,7 @@ jobs:
 
       - name: Build signed APK
         working-directory: android
-        env:
-          WEB_APP_URL: ${{ inputs.web_app_url || 'https://self-agent-life-os.kyriamgarciafalcon.chatgpt.site/' }}
-        run: gradle --no-daemon assembleDebug -PwebAppUrl="$WEB_APP_URL" -PversionCode="$((100 + GITHUB_RUN_NUMBER))" -PversionName="1.1.${GITHUB_RUN_NUMBER}"
+        run: gradle --no-daemon assembleDebug -PversionCode="$((100 + GITHUB_RUN_NUMBER))" -PversionName="1.1.${GITHUB_RUN_NUMBER}"
 
       - name: Verify stable update signature
         run: python3 android/scripts/verify-update-cert.py android/app/build/outputs/apk/debug/app-debug.apk

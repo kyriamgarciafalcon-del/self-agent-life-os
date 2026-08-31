@@ -1,7 +1,7 @@
 'use client';
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { accountRole, addDaysKey, applyDailyFxRates, applyDailyPriceQuotes, applyInboxLifecycle, applyLedger, AI_CONFIG_EVENT, AI_CONFIG_STORAGE_KEY, AI_REPLY_EVENT, AUDIT_OUTCOMES, auditOutcomeLabel, auditReasonLabel, buildButlerSystemPrompt, buildHealthBriefing, canApplyLedger, canUndoInboxConfirm, cnyWealthTotal, defaultCashId, describeButlerDataScope, detectLegacyDemoData, dismissPermissionOnboarding, enqueueInboxItem, filterAuditLog, healthRecordsFromSnapshots, inboxConfidenceLabel, inboxConfirmBlockReason, inboxItemFromButlerAction, inboxItemFromNaturalCapture, inboxItemFromPayment, inboxItemFromTravelNotice, inboxSourceLabel, INBOX_ACTION_LABELS, INBOX_SOURCES, isBackupPayload, isDebtRole, latestHealthByKind, loadBrowserAiConfig, localDateKey, markPermissionSettingsOpened, migrateAuditLog, migrateInboxStore, migrateLegacyAiLocalStorage, migrateLegacyReimbursementAccounts, normalizeAccountBalance, normalizeMemory, normalizePermissionOnboarding, parseButlerModelOutput, parseCapabilityStatus, parseNaturalCapture, pendingInboxCount, pendingInboxItems, persistBrowserAiConfig, permissionOnboardingProgress, planAccountSettlement, reconcileRecurringConfirmations, releaseRecurringConfirmation, removeLedgerTransactionState, resolvePaymentAccountId, settleReimbursementState, shouldShowPermissionOnboarding, summarizeHealth, updateInboxItemPayload, upsertByExternalKey, wealthTotals, weekDates, type AuditEntry, type AuditOutcome, type ButlerAction, type CapabilityStatusSnapshot, type HealthMetric, type InboxItem, type InboxLifecycleEvent, type InboxSource, type PermissionCardId, type PermissionOnboardingState, type TravelKind } from './product-logic';
+import { accountRole, addDaysKey, applyDailyFxRates, applyDailyPriceQuotes, applyInboxLifecycle, applyLedger, AI_CONFIG_EVENT, AI_CONFIG_STORAGE_KEY, AI_REPLY_EVENT, AUDIT_OUTCOMES, auditOutcomeLabel, auditReasonLabel, buildButlerSystemPrompt, buildHealthBriefing, buildAiSendPreview, canApplyLedger, canUndoInboxConfirm, cnyWealthTotal, confirmByokHost, consumeCallBudget, createCallBudget, defaultCashId, describeButlerDataScope, detectLegacyDemoData, dialogShouldDismiss, dismissPermissionOnboarding, enqueueInboxItem, filterAuditLog, healthRecordsFromSnapshots, inboxConfidenceLabel, inboxConfirmBlockReason, inboxItemFromAiTool, inboxItemFromButlerAction, inboxItemFromNaturalCapture, inboxItemFromPayment, inboxItemFromTravelNotice, inboxSourceLabel, INBOX_ACTION_LABELS, INBOX_SOURCES, isBackupPayload, isDebtRole, latestHealthByKind, loadBrowserAiConfig, localDateKey, markPermissionSettingsOpened, migrateAuditLog, migrateInboxStore, migrateLegacyAiLocalStorage, migrateLegacyReimbursementAccounts, migratePrivacySettings, normalizeAccountBalance, normalizeMemory, normalizePermissionOnboarding, parseAiProviderResponse, parseButlerModelOutput, parseCapabilityStatus, parseNaturalCapture, pendingInboxCount, pendingInboxItems, persistBrowserAiConfig, permissionOnboardingProgress, planAccountSettlement, prepareOutboundAiPayload, reconcileRecurringConfirmations, releaseRecurringConfirmation, removeLedgerTransactionState, resolvePaymentAccountId, settleReimbursementState, shouldShowPermissionOnboarding, summarizeHealth, TOAST_ARIA_LIVE, updateInboxItemPayload, upsertByExternalKey, validateByokTarget, wealthTotals, weekDates, type AuditEntry, type AuditOutcome, type ButlerAction, type CapabilityStatusSnapshot, type HealthMetric, type InboxItem, type InboxLifecycleEvent, type InboxSource, type PermissionCardId, type PermissionOnboardingState, type TravelKind } from './product-logic';
 
 type Tab = 'home' | 'schedule' | 'capture' | 'finance' | 'profile' | 'health' | 'travel' | 'data' | 'butler' | 'privacy' | 'memory' | 'vault' | 'audit';
 type ScheduleColor = 'blue' | 'green' | 'orange';
@@ -22,8 +22,8 @@ type Account = { id: string; name: string; type: string; balance: number; curren
 type Transaction = { id: string; kind: TransactionKind; amount: number; accountAmount: number; currency: Currency; merchant: string; category: string; accountId: string; targetAccountId?: string; source: string; reimbursable: boolean; reimburseAccountId?: string; reimbursed?: boolean; reimbursementForId?: string; reimbursementTransactionId?: string; recurringRuleId?: string; createdAt: string };
 type RecurringRule = { id: string; name: string; kind: 'subscription' | 'credit-card'; amount: number; currency: Currency; accountId: string; targetAccountId?: string; dueDay: number; enabled: boolean; lastRunPeriod?: string };
 type HealthRecord = { id: string; kind: 'sleep' | 'meal' | 'exercise' | 'steps' | 'height' | 'weight' | 'heartRate' | 'stress' | 'pai'; value: number; note: string; createdAt: string; externalKey?: string };
-type MemoryItem = { id: string; kind: '目标' | '偏好' | '观察'; title: string; note: string; active: boolean; source: string; purpose: string; updatedAt: string };
-type PrivacySettings = { health: boolean; finance: boolean; schedule: boolean };
+type MemoryItem = { id: string; kind: '目标' | '偏好' | '观察'; title: string; note: string; active: boolean; sendAllowed: boolean; source: string; purpose: string; updatedAt: string };
+type PrivacySettings = { health: boolean; finance: boolean; schedule: boolean; memory: boolean };
 type VaultItem = { id: string; title: string; usernameHint: string; note: string };
 type TravelItem = { id: string; kind: 'train' | 'flight'; number: string; from: string; to: string; departAt: string; arriveAt: string; seat: string; terminal: string; status: 'upcoming' | 'completed' | 'changed'; source: 'manual' | 'calendar' | 'notification' | 'import'; verified: boolean };
 type InvestmentKind = 'fund' | 'stock' | 'crypto' | 'meme';
@@ -103,11 +103,11 @@ const demoData: AppData = {
   ],
   exchangeRates: [],
   memories: [
-    { id: 'm1', kind: '目标', title: '每月结余至少 2,000 元', note: '用于生成财务提醒，不自动修改账户。', active: true, source: '演示数据', purpose: '用于生成财务提醒，不自动修改账户。', updatedAt: TODAY },
-    { id: 'm2', kind: '偏好', title: '23:30 前开始睡前准备', note: '提醒保持温和，不因一次未完成而批评。', active: true, source: '演示数据', purpose: '用于提醒语气与作息建议', updatedAt: TODAY },
-    { id: 'm3', kind: '观察', title: '睡眠不足后外卖支出可能上升', note: '只是相关性观察，7 天后复核。', active: false, source: '演示数据', purpose: '用于观察复核，不自动下诊断', updatedAt: TODAY },
+    { id: 'm1', kind: '目标', title: '每月结余至少 2,000 元', note: '用于生成财务提醒，不自动修改账户。', active: true, sendAllowed: false, source: '演示数据', purpose: '用于生成财务提醒，不自动修改账户。', updatedAt: TODAY },
+    { id: 'm2', kind: '偏好', title: '23:30 前开始睡前准备', note: '提醒保持温和，不因一次未完成而批评。', active: true, sendAllowed: false, source: '演示数据', purpose: '用于提醒语气与作息建议', updatedAt: TODAY },
+    { id: 'm3', kind: '观察', title: '睡眠不足后外卖支出可能上升', note: '只是相关性观察，7 天后复核。', active: false, sendAllowed: false, source: '演示数据', purpose: '用于观察复核，不自动下诊断', updatedAt: TODAY },
   ],
-  privacy: { health: true, finance: true, schedule: true },
+  privacy: { health: true, finance: true, schedule: true, memory: false },
   vaultItems: [
     { id: 'v1', title: '招商银行', usernameHint: '账号已保存', note: '等待 Android Autofill 接管' },
     { id: 'v2', title: '个人邮箱', usernameHint: '账号已保存', note: '不在网页保存密码明文' },
@@ -131,7 +131,7 @@ const emptyData: AppData = {
   investments: [],
   exchangeRates: [],
   memories: [],
-  privacy: { health: false, finance: false, schedule: false },
+  privacy: { health: false, finance: false, schedule: false, memory: false },
   vaultItems: [],
   inboxItems: [],
   lastConfirmedInboxId: null,
@@ -245,7 +245,7 @@ function normalizeData(raw: Partial<AppData>): AppData {
       const kind: MemoryItem['kind'] = memory.kind === '目标' || memory.kind === '偏好' ? memory.kind : '观察';
       return { ...memory, kind };
     }),
-    privacy: { ...emptyData.privacy, ...(raw.privacy ?? {}) },
+    privacy: migratePrivacySettings({ ...emptyData.privacy, ...(raw.privacy ?? {}) }),
     vaultItems: raw.vaultItems ?? [],
     inboxItems: inbox.inboxItems,
     lastConfirmedInboxId: inbox.lastConfirmedInboxId,
@@ -305,6 +305,30 @@ export default function Home() {
   const [draft, setDraft] = useState<CaptureDraft | null>(null);
   const [editingInboxId, setEditingInboxId] = useState<string | null>(null);
   const captureSourceRef = useRef<InboxSource>('manual');
+  const overlayReturnFocus = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const open = Boolean(sheet) || permissionOnboardingOpen;
+    if (!open) return;
+    overlayReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const overlay = document.querySelector<HTMLElement>('.overlay[role="dialog"]');
+    overlay?.querySelector<HTMLElement>('input,select,textarea,button')?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (!dialogShouldDismiss(event.key)) return;
+      if (sheet) {
+        setSheet(null);
+        setEditingScheduleId(null);
+        setEditingTransactionId(null);
+        setEditingRecurringId(null);
+        setSettlingAccountId(null);
+      }
+      if (permissionOnboardingOpen) setPermissionOnboardingOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      overlayReturnFocus.current?.focus?.();
+    };
+  }, [sheet, permissionOnboardingOpen]);
 
   function navigate(next: Tab) {
     setTabState((current) => {
@@ -349,7 +373,9 @@ export default function Home() {
     return () => window.clearTimeout(timer);
   }, []);
   useEffect(() => {
-    if (hydrated && shouldShowPermissionOnboarding(data.permissionOnboarding)) setPermissionOnboardingOpen(true);
+    if (!hydrated || !shouldShowPermissionOnboarding(data.permissionOnboarding)) return;
+    const timer = window.setTimeout(() => setPermissionOnboardingOpen(true), 0);
+    return () => window.clearTimeout(timer);
   }, [hydrated, data.permissionOnboarding]);
   useEffect(() => {
     function onTravel(event: Event) {
@@ -920,6 +946,21 @@ export default function Home() {
     });
     notify(`管家建议已放入收件箱（${actions.length} 条），确认后才会写入`);
   }
+  function queueAiTools(tools: Parameters<typeof inboxItemFromAiTool>[0]['tool'][]) {
+    const items = tools.flatMap((tool) => {
+      const item = inboxItemFromAiTool({ id: uid('inbox'), createdAt: localStamp(), tool });
+      return item ? [item] : [];
+    });
+    if (!items.length) return;
+    setData((current) => {
+      let next = current;
+      for (const item of items) {
+        next = withInboxEvent(next, { type: 'enqueue', item, timestamp: localStamp(), id: uid('audit') });
+      }
+      return next;
+    });
+    notify(`管家建议已放入收件箱（${items.length} 条），确认后才会写入`);
+  }
   function addHealthRecord(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = new FormData(event.currentTarget);
     const kind = String(form.get('kind')) as HealthRecord['kind'];
@@ -987,6 +1028,7 @@ export default function Home() {
   }
   function togglePrivacy(key: keyof PrivacySettings) { setData((current) => ({ ...current, privacy: { ...current.privacy, [key]: !current.privacy[key] } })); }
   function toggleMemory(id: string) { setData((current) => ({ ...current, memories: current.memories.map((item) => item.id === id ? { ...item, active: !item.active, updatedAt: localStamp() } : item) })); }
+  function toggleMemorySend(id: string) { setData((current) => ({ ...current, memories: current.memories.map((item) => item.id === id ? { ...item, sendAllowed: !item.sendAllowed, updatedAt: localStamp() } : item) })); }
   function deleteMemory(id: string) { if (window.confirm('确定删除这条管家记忆吗？')) setData((current) => ({ ...current, memories: current.memories.filter((item) => item.id !== id) })); }
   function upsertMemory(next: MemoryItem, previousId?: string) {
     setData((current) => ({
@@ -1114,9 +1156,9 @@ export default function Home() {
     {tab === 'health' && <HealthPanel records={data.healthRecords} onAdd={() => setSheet('health')} onImport={importHealth} onSelectExport={chooseGadgetbridgeExport} onSaveBody={saveBodyMetrics} />}
     {tab === 'travel' && <TravelPanel items={data.travels} onSync={requestTravelSync} onAdd={() => setSheet('travel')} onDelete={(id) => { setData((current) => ({ ...current, travels: current.travels.filter((item) => item.id !== id) })); notify('行程已删除'); }} />}
     {tab === 'data' && <DataPanel data={data} />}
-    {tab === 'butler' && <ButlerPanel data={data} ai={aiConfig} onQueueActions={queueButlerActions} />}
+    {tab === 'butler' && <ButlerPanel data={data} ai={aiConfig} onQueueActions={queueButlerActions} onQueueTools={queueAiTools} />}
     {tab === 'privacy' && <PrivacyPanel settings={data.privacy} onToggle={togglePrivacy} />}
-    {tab === 'memory' && <MemoryPanel items={data.memories} onToggle={toggleMemory} onDelete={deleteMemory} />}
+    {tab === 'memory' && <MemoryPanel items={data.memories} onToggle={toggleMemory} onToggleSend={toggleMemorySend} onDelete={deleteMemory} />}
     {tab === 'vault' && <VaultPanel items={nativeOn && vaultMeta.length ? vaultMeta : data.vaultItems} nativeOn={nativeOn} onReveal={(id) => (window as Window & { SelfAgentNative?: { revealPassword?: (id: string) => void } }).SelfAgentNative?.revealPassword?.(id)} />}
     {tab === 'audit' && <AuditHistoryPanel entries={data.auditLog} />}
 
@@ -1132,7 +1174,7 @@ export default function Home() {
     {sheet === 'health' && <div className="overlay" role="dialog" aria-modal="true" onMouseDown={(event) => event.currentTarget === event.target && setSheet(null)}><form onSubmit={addHealthRecord} className="sheet"><div className="handle" /><header><div><span>HEALTH RECORD</span><h2>添加健康记录</h2></div><button type="button" onClick={() => setSheet(null)}>×</button></header><div className="row"><label>记录类型<select name="kind"><option value="height">身高 cm</option><option value="weight">体重 kg</option><option value="heartRate">心率 次/分</option><option value="stress">压力</option><option value="sleep">睡眠小时</option><option value="pai">PAI</option><option value="exercise">运动分钟</option><option value="meal">饮食餐数</option></select></label><label>数值<input required name="value" type="number" min="0" step="0.1" /></label></div><label>备注<input name="note" placeholder="例如：晨起心率、昨晚睡眠" /></label><small className="form-tip">管家只会在健康权限打开时读取这些数值，不等于诊断。</small><button className="save" type="submit">保存记录</button></form></div>}
     {sheet === 'travel' && <div className="overlay" role="dialog" aria-modal="true" onMouseDown={(event) => event.currentTarget === event.target && setSheet(null)}><form onSubmit={addTravel} className="sheet scroll-sheet"><div className="handle" /><header><div><span>NEW TRIP</span><h2>手动添加行程</h2></div><button type="button" onClick={() => setSheet(null)}>×</button></header><div className="row"><label>类型<select name="kind"><option value="train">火车</option><option value="flight">航班</option></select></label><label>车次 / 航班号<input required name="number" placeholder="例如：G11" /></label></div><div className="row"><label>出发地<input required name="from" /></label><label>目的地<input required name="to" /></label></div><label>出发时间<input required name="departAt" type="datetime-local" /></label><label>到达时间<input required name="arriveAt" type="datetime-local" /></label><div className="row"><label>座位<input name="seat" placeholder="06车 08A" /></label><label>航站楼 / 检票口<input name="terminal" placeholder="T2 / 12A" /></label></div><button className="save" type="submit">保存行程</button></form></div>}
     {sheet === 'holding' && <div className="overlay" role="dialog" aria-modal="true" onMouseDown={(event) => event.currentTarget === event.target && setSheet(null)}><form key={editingHolding?.id ?? 'new-holding'} onSubmit={addHolding} className="sheet scroll-sheet"><div className="handle" /><header><div><span>{editingHolding ? 'EDIT ASSET' : 'NEW ASSET'}</span><h2>{editingHolding ? '更新理财产品' : '添加理财产品'}</h2></div><button type="button" onClick={() => setSheet(null)}>×</button></header><div className="row"><label>产品类型<select name="kind" defaultValue={editingHolding?.kind ?? 'fund'}><option value="fund">基金 / ETF</option><option value="stock">股票</option><option value="crypto">虚拟货币</option><option value="meme">Meme 币</option></select></label><label>所属账户<select name="accountId" defaultValue={editingHolding?.accountId ?? selectedAccountId ?? undefined}>{data.accounts.filter((account) => account.type === '理财账户').map((account) => <option key={account.id} value={account.id}>{account.name} · {account.currency}</option>)}</select></label></div><label>产品名称<input required name="name" placeholder="例如：标普500 ETF" defaultValue={editingHolding?.name} /></label><label>基金 / 股票 / 币种代码<input name="code" placeholder="例如：510300.SH、AAPL、BTC" defaultValue={editingHolding?.code} /></label><div className="row"><label>网络<select name="network" defaultValue={editingHolding?.network}><option value="">非链上产品</option><option>Ethereum</option><option>Solana</option><option>BNB Chain</option><option>Base</option><option>Arbitrum</option><option>Polygon</option></select></label><label>合约地址<input name="contract" placeholder="Meme 币必填" defaultValue={editingHolding?.contract} /></label></div><div className="row"><label>持有数量<input required name="quantity" type="number" min="0" step="any" defaultValue={editingHolding?.quantity} /></label><label>平均成本<input required name="averageCost" type="number" min="0" step="any" defaultValue={editingHolding?.averageCost} /></label></div><label>当前价格 / 今日净值<input required name="currentPrice" type="number" min="0" step="any" defaultValue={editingHolding?.currentPrice} /></label><small className="form-tip">保存会形成今日收益点。连接行情服务后，App 可按代码或“网络 + 合约”每日自动更新。</small><button className="save" type="submit">{editingHolding ? '保存今日更新' : '添加产品'}</button>{editingHolding && <button className="danger-button" type="button" onClick={deleteHolding}>删除这个产品</button>}</form></div>}
-    {toast && <div className="toast">✓ {toast}</div>}
+    {toast && <div className="toast" role="status" aria-live={TOAST_ARIA_LIVE}>✓ {toast}</div>}
   </main>;
 }
 
@@ -1299,12 +1341,32 @@ function formatHealthAnswer(briefing: { rangeLabel: string; evidence: string; mi
   return [extra, `数据范围：${briefing.rangeLabel}`, `证据：${briefing.evidence}`, `缺失指标：${missing}`, briefing.disclaimer].filter(Boolean).join('\n');
 }
 
-function ButlerPanel({ data, ai, onQueueActions }: { data: AppData; ai: AiConfig; onQueueActions: (actions: ButlerAction[]) => void }) {
+function ButlerPanel({ data, ai, onQueueActions, onQueueTools }: { data: AppData; ai: AiConfig; onQueueActions: (actions: ButlerAction[]) => void; onQueueTools: (tools: Parameters<typeof inboxItemFromAiTool>[0]['tool'][]) => void }) {
   const connected = Boolean(ai.baseUrl && ai.configured);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [linkState, setLinkState] = useState<'unconfigured' | 'ready' | 'busy' | 'offline'>(connected ? 'ready' : 'unconfigured');
   const [pending, setPending] = useState<ButlerAction[]>([]);
+  const [confirmSend, setConfirmSend] = useState<{ text: string; preview: ReturnType<typeof buildAiSendPreview> } | null>(null);
+  const [confirmedHost, setConfirmedHost] = useState('');
+  const budgetRef = useRef(createCallBudget({ maxCalls: 20, maxTokens: 4096, timeoutMs: 15_000 }));
+  const confirmDialogRef = useRef<HTMLDivElement | null>(null);
+  const confirmReturnFocus = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!confirmSend) return;
+    confirmReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusable = confirmDialogRef.current?.querySelector<HTMLElement>('input,button');
+    focusable?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (!dialogShouldDismiss(event.key)) return;
+      setConfirmSend(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      confirmReturnFocus.current?.focus?.();
+    };
+  }, [confirmSend]);
   const briefing = buildHealthBriefing(data.healthRecords, data.privacy.health);
   const scopes = describeButlerDataScope(data.privacy);
   const [messages, setMessages] = useState<{ role: 'user' | 'bot'; text: string }[]>([{ role: 'bot', text: connected ? '已连接你配置的 AI 接口。我只会发送允许的摘要，不会读取密码。写操作都要你确认。' : '尚未配置 AI 接口时，我使用本机规则摘要。密码永远不会进入请求。' }]);
@@ -1322,54 +1384,97 @@ function ButlerPanel({ data, ai, onQueueActions }: { data: AppData; ai: AiConfig
       return `本月已确认收入 ${money(income)} 元、支出 ${money(expense)} 元，结余 ${money(income - expense)} 元。未读取订单号或密码。财务不是投资建议。`;
     }
     if (/记忆/.test(text)) {
-      const active = data.memories.filter((item) => item.active);
-      return active.length ? `当前使用中的记忆：${active.map((item) => item.title).join('、')}。修改需要确认管家动作。` : '还没有使用中的记忆。可以说出要记住的内容，确认后才会保存。';
+      if (!data.privacy.memory) return '记忆摘要权限已关闭。你可以在隐私与权限中单独开启，并按条允许发送。';
+      const allowed = data.memories.filter((item) => item.active && item.sendAllowed);
+      return allowed.length ? `当前允许发送的记忆：${allowed.map((item) => item.title).join('、')}。修改需要确认管家动作。` : '还没有允许发送给 AI 的记忆。';
     }
     if (!data.privacy.schedule) return '日程摘要权限已关闭。你可以在隐私与权限中重新开启。';
     const open = data.schedules.filter((item) => item.date === TODAY && !item.done);
     return open.length ? `建议先处理“${open[0].title}”，完成后再安排下一项。` : '今天没有未完成日程，可以保留一点空白。';
   }
-  async function send(text = input) {
-    const value = text.trim(); if (!value || busy) return;
-    setInput(''); setBusy(true); setLinkState(connected ? 'busy' : 'unconfigured');
-    setMessages((current) => [...current, { role: 'user', text: value }]);
-    if (/密码|验证码|私钥|助记词/.test(value)) {
-      setMessages((current) => [...current, { role: 'bot', text: localAnswer(value) }]);
+  async function dispatchAi(value: string) {
+    setBusy(true); setLinkState('busy');
+    let reply = localAnswer(value);
+    const system = buildButlerSystemPrompt({ today: TODAY, month: MONTH, privacy: data.privacy, schedules: data.schedules, transactions: data.transactions, healthRecords: data.privacy.health ? data.healthRecords : [], memories: data.memories });
+    const outbound = prepareOutboundAiPayload({ userMessage: value, fields: { system } });
+    if (!outbound.ok || !outbound.messages) {
+      setMessages((current) => [...current, { role: 'bot', text: '检测到密码、令牌、验证码、私钥、助记词或完整卡号，这条消息不会发给 AI。' }]);
       setBusy(false); setLinkState(connected ? 'ready' : 'unconfigured');
       return;
     }
-    let reply = localAnswer(value);
-    let actions: ButlerAction[] = [];
-    if (connected) {
-      try {
-        const native = (window as Window & { SelfAgentNative?: NativeAiBridge }).SelfAgentNative;
-        const request = { requestId: uid('ai'), model: ai.model || 'gpt-4o-mini', messages: [{ role: 'system', content: buildButlerSystemPrompt({ today: TODAY, month: MONTH, privacy: data.privacy, schedules: data.schedules, transactions: data.transactions, healthRecords: data.privacy.health ? data.healthRecords : [], memories: data.memories }) }, { role: 'user', content: value }] };
-        let content = '';
-        if (native?.nativeReady?.() && native.askAi) {
-          content = await askNativeAi(native, request);
-        } else {
-          const response = await fetch(`${ai.baseUrl}/chat/completions`, { method: 'POST', redirect: 'error', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ai.apiKey}` }, body: JSON.stringify({ model: request.model, messages: request.messages }) });
-          if (!response.ok) throw new Error(`http_${response.status}`);
-          const payload = await response.json() as { choices?: { message?: { content?: string } }[] };
-          content = payload.choices?.[0]?.message?.content?.trim() || '';
-        }
-        const parsed = parseButlerModelOutput(content || reply);
-        reply = parsed.reply;
-        actions = parsed.actions;
-        if (/健康|心率|睡眠|压力|PAI|身高|体重|步数/.test(value) && !reply.includes('不是诊断')) reply = formatHealthAnswer(briefing, reply);
-        setLinkState('ready');
-      } catch {
-        reply = `${reply}\n\n（AI 接口暂时不可用，以上为本机规则结果）`;
-        setLinkState('offline');
+    const target = validateByokTarget(ai.baseUrl);
+    if (!target.ok) {
+      setMessages((current) => [...current, { role: 'bot', text: 'AI 接口地址不安全：只允许 HTTPS 公网主机，禁止 localhost/内网/链路本地地址。' }]);
+      setBusy(false); setLinkState('offline');
+      return;
+    }
+    const budget = consumeCallBudget(budgetRef.current, 256);
+    if (!budget.ok) {
+      setMessages((current) => [...current, { role: 'bot', text: '已达到本次会话的调用或 token 上限。' }]);
+      setBusy(false); setLinkState('ready');
+      return;
+    }
+    try {
+      const native = (window as Window & { SelfAgentNative?: NativeAiBridge }).SelfAgentNative;
+      const request = { requestId: uid('ai'), model: ai.model || 'gpt-4o-mini', messages: outbound.messages };
+      let content = '';
+      if (native?.nativeReady?.() && native.askAi) {
+        content = await askNativeAi(native, request);
+      } else {
+        const controller = new AbortController();
+        const timer = window.setTimeout(() => controller.abort(), budgetRef.current.timeoutMs);
+        const response = await fetch(`${ai.baseUrl}/chat/completions`, { method: 'POST', redirect: 'error', signal: controller.signal, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ai.apiKey}` }, body: JSON.stringify({ model: request.model, max_tokens: 1024, messages: request.messages }) });
+        window.clearTimeout(timer);
+        if (!response.ok) throw new Error(`http_${response.status}`);
+        const payload = await response.json() as { choices?: { message?: { content?: string } }[] };
+        content = payload.choices?.[0]?.message?.content?.trim() || '';
       }
+      const parsed = parseAiProviderResponse(content || reply);
+      reply = parsed.reply || reply;
+      if (parsed.tools.length) {
+        onQueueTools(parsed.tools);
+        reply = `${reply}\n\n已放入收件箱 ${parsed.tools.filter((item) => item.name !== 'read_finance_summary').length} 条，确认后才会写入。`;
+      } else {
+        const fallback = parseButlerModelOutput(content || reply);
+        if (fallback.actions.length) {
+          onQueueActions(fallback.actions);
+          reply = `${fallback.reply}\n\n已放入收件箱 ${fallback.actions.length} 条，确认后才会写入。`;
+        }
+      }
+      if (/健康|心率|睡眠|压力|PAI|身高|体重|步数/.test(value) && !reply.includes('不是诊断')) reply = formatHealthAnswer(briefing, reply);
+      setLinkState('ready');
+    } catch {
+      reply = `${reply}\n\n（AI 接口暂时不可用，以上为本机规则结果）`;
+      setLinkState('offline');
     }
     setPending([]);
-    if (actions.length) {
-      onQueueActions(actions);
-      reply = `${reply}\n\n已放入收件箱 ${actions.length} 条，确认后才会写入。`;
-    }
     setMessages((current) => [...current, { role: 'bot', text: reply }]);
     setBusy(false);
+  }
+  async function send(text = input) {
+    const value = text.trim(); if (!value || busy) return;
+    setInput('');
+    setMessages((current) => [...current, { role: 'user', text: value }]);
+    if (/密码|验证码|私钥|助记词/.test(value) || !prepareOutboundAiPayload({ userMessage: value }).ok) {
+      setMessages((current) => [...current, { role: 'bot', text: localAnswer(value).includes('密码库') ? localAnswer(value) : '检测到敏感数据，这条消息不会发给 AI。' }]);
+      return;
+    }
+    if (connected) {
+      setConfirmSend({ text: value, preview: buildAiSendPreview({ privacy: data.privacy, memories: data.memories, baseUrl: ai.baseUrl }) });
+      setConfirmedHost('');
+      return;
+    }
+    setMessages((current) => [...current, { role: 'bot', text: localAnswer(value) }]);
+  }
+  function confirmOutbound() {
+    if (!confirmSend) return;
+    if (!confirmByokHost(ai.baseUrl, confirmedHost)) {
+      setMessages((current) => [...current, { role: 'bot', text: `请精确确认目标主机 ${confirmSend.preview.domain}，不会发送。` }]);
+      return;
+    }
+    const pendingText = confirmSend.text;
+    setConfirmSend(null);
+    void dispatchAi(pendingText);
   }
   const statusLabel = busy || linkState === 'busy' ? '正在连接' : linkState === 'offline' ? '接口不可用，已回退本机规则' : connected ? '已配置，可连接' : '未配置，使用本机规则';
   return <div className="page butler-page">
@@ -1378,11 +1483,11 @@ function ButlerPanel({ data, ai, onQueueActions }: { data: AppData; ai: AiConfig
     <section className="butler-briefing"><span>健康回答边界</span><p>数据范围：{briefing.rangeLabel}</p><p>缺失指标：{briefing.missing.length ? briefing.missing.join('、') : '无'}</p><p>{briefing.disclaimer}</p></section>
     <div className="butler-quick"><button type="button" onClick={() => send('帮我安排明天上午的日程')}>安排日程</button><button type="button" onClick={() => send('帮我记下今天的健康数据')}>记健康</button><button type="button" onClick={() => send('分析最近的健康记录')}>分析健康</button><button type="button" onClick={() => send('帮我查看并管理记忆')}>管理记忆</button></div>
     <div className="chat-messages">{messages.map((message, index) => <div key={index} className={message.role}>{message.text}</div>)}</div>
+    {confirmSend && <div ref={confirmDialogRef} className="butler-pending" role="dialog" aria-modal="true" aria-label="发送前确认"><article><span>发送前确认</span><h3>将发往 {confirmSend.preview.domain}</h3><p>当前字段（不含值）：</p><ul>{confirmSend.preview.fields.map((field) => <li key={field.key}>{field.label} · {field.included ? '会发送摘要' : '不会发送'}</li>)}</ul><label>精确确认主机<input value={confirmedHost} onChange={(event) => setConfirmedHost(event.target.value)} placeholder={confirmSend.preview.domain} /></label><div><button type="button" onClick={confirmOutbound}>确认发送</button><button type="button" onClick={() => setConfirmSend(null)}>取消</button></div></article></div>}
     {pending.length > 0 && <div className="butler-pending"><article><span>已转入收件箱</span><h3>写操作需要在收件箱确认</h3><p>管家只生成草稿，不会直接改账本或日程。</p></article></div>}
     <form className="butler-composer" onSubmit={(event) => { event.preventDefault(); send(); }}><input value={input} onChange={(event) => setInput(event.target.value)} placeholder={busy ? '正在生成…' : '问问今天的状态…'} /><button disabled={busy}>发送</button></form>
   </div>;
 }
-
 function AuditHistoryPanel({ entries }: { entries: AuditEntry[] }) {
   const [outcome, setOutcome] = useState('');
   const [source, setSource] = useState('');
@@ -1398,12 +1503,12 @@ function AuditHistoryPanel({ entries }: { entries: AuditEntry[] }) {
   </div>;
 }
 
-function MemoryPanel({ items, onToggle, onDelete }: { items: MemoryItem[]; onToggle: (id: string) => void; onDelete: (id: string) => void }) {
-  return <div className="page feature-page"><section className="feature-heading"><span>MEMORY</span><h2>你决定管家记住什么。</h2><p>记忆可以随时暂停或删除。修改请让管家生成草稿，确认后才会写入。</p></section><div className="memory-list">{items.map((item) => { const memory = normalizeMemory(item); return <article key={item.id} className={!memory.active ? 'inactive' : ''}><header><span>{memory.kind}</span><b>{memory.status}</b></header><h3>{memory.title}</h3><p>{memory.note}</p><dl className="memory-meta"><div><dt>来源</dt><dd>{memory.source || '本机已有记忆'}</dd></div><div><dt>用途</dt><dd>{memory.purpose}</dd></div><div><dt>更新</dt><dd>{memory.updatedAt || '尚未更新'}</dd></div></dl><div><button onClick={() => onToggle(item.id)}>{memory.active ? '暂停使用' : '重新启用'}</button><button className="danger-text" onClick={() => onDelete(item.id)}>删除</button></div></article>; })}</div></div>;
+function MemoryPanel({ items, onToggle, onToggleSend, onDelete }: { items: MemoryItem[]; onToggle: (id: string) => void; onToggleSend: (id: string) => void; onDelete: (id: string) => void }) {
+  return <div className="page feature-page"><section className="feature-heading"><span>MEMORY</span><h2>你决定管家记住什么。</h2><p>记忆默认只留在本机。允许发送给 AI 需要单独打开，且记忆摘要权限也要开启。</p></section><div className="memory-list">{items.map((item) => { const memory = normalizeMemory(item); return <article key={item.id} className={!memory.active ? 'inactive' : ''}><header><span>{memory.kind}</span><b>{memory.status}</b></header><h3>{memory.title}</h3><p>{memory.note}</p><dl className="memory-meta"><div><dt>来源</dt><dd>{memory.source || '本机已有记忆'}</dd></div><div><dt>用途</dt><dd>{memory.purpose}</dd></div><div><dt>发送</dt><dd>{memory.sendAllowed ? '允许进入 AI 摘要' : '仅本机，不发送'}</dd></div><div><dt>更新</dt><dd>{memory.updatedAt || '尚未更新'}</dd></div></dl><div><button onClick={() => onToggle(item.id)}>{memory.active ? '暂停使用' : '重新启用'}</button><button onClick={() => onToggleSend(item.id)}>{memory.sendAllowed ? '禁止发送给 AI' : '允许发送给 AI'}</button><button className="danger-text" onClick={() => onDelete(item.id)}>删除</button></div></article>; })}</div></div>;
 }
 
 function PrivacyPanel({ settings, onToggle }: { settings: PrivacySettings; onToggle: (key: keyof PrivacySettings) => void }) {
-  const rows: { key: keyof PrivacySettings; title: string; note: string }[] = [{ key: 'health', title: '健康摘要', note: '身高、体重、心率、压力、睡眠和 PAI' }, { key: 'finance', title: '财务摘要', note: '收入、支出、分类和未来扣款' }, { key: 'schedule', title: '日程与行动', note: '用于排序、提醒与完成情况' }];
+  const rows: { key: keyof PrivacySettings; title: string; note: string }[] = [{ key: 'health', title: '健康摘要', note: '身高、体重、心率、压力、睡眠和 PAI' }, { key: 'finance', title: '财务摘要', note: '收入、支出、分类和未来扣款' }, { key: 'schedule', title: '日程与行动', note: '用于排序、提醒与完成情况' }, { key: 'memory', title: '记忆摘要', note: '仅发送已单独允许的记忆，默认关闭' }];
   return <div className="page feature-page"><section className="security-hero"><span>当前保护状态</span><h2>本机优先</h2><p>每类摘要可以单独关闭；密码权限永久不开放。</p></section><section className="permission-list">{rows.map((row) => <article key={row.key}><div><strong>{row.title}</strong><small>{row.note}</small></div><button className={settings[row.key] ? 'on' : ''} onClick={() => onToggle(row.key)} aria-label={`${row.title}权限`}><i /></button></article>)}<article><div><strong>密码与恢复码</strong><small>密码、验证码、私钥、助记词永久禁止</small></div><button disabled aria-label="密码权限永久关闭"><i /></button></article></section><p className="security-copy">当前开关会真实影响本机管家回答时可使用的摘要范围，不只是界面状态。</p></div>;
 }
 

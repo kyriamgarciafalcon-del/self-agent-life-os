@@ -148,7 +148,7 @@ describe('butler action protocol', () => {
       reply: '建议记下这趟车，确认后才会保存。',
       actions: [
         { type: 'create_schedule', payload: { title: '吃药', date: '2026-08-30', time: '09:00' } },
-        { type: 'create_expense', payload: { amount: 36, merchant: '午饭' } },
+        { type: 'create_expense', payload: { amount: 36, merchant: '午饭', accountId: '', currency: '', date: '', reimbursable: null } },
         { type: 'create_travel', payload: { travelKind: 'train', number: 'G123', from: '北京南', to: '上海虹桥', date: '2026-08-30', departTime: '09:00' } },
         { type: 'create_health', payload: { metric: 'steps', value: 8000 } },
         { type: 'add_memory', payload: { title: '早睡', note: '23:30 前准备' } },
@@ -238,13 +238,14 @@ describe('truthful product state', () => {
       privacy: { schedule: false, finance: false, health: false },
       schedules: [{ date: '2026-08-29', done: false, title: '秘密日程' }],
       transactions: [{ createdAt: '2026-08-29' }],
-      healthRecords: [{ id: 'h1' }],
+      healthRecords: [{ kind: 'sleep', value: 1 }],
       memories: [{ active: true, title: '每月还债', note: '优先完成' }],
     });
 
     expect(summary).toContain('日程权限关闭');
     expect(summary).not.toContain('秘密日程');
-    expect(summary).toContain('每月还债');
+    expect(summary).toContain('记忆权限关闭');
+    expect(summary).not.toContain('每月还债');
   });
 
   it('summarizes latest height weight heart rate stress sleep and PAI for AI', () => {
@@ -434,8 +435,8 @@ describe('truthful product state', () => {
       { id: 'pay', type: '资金账户', currency: 'CNY', balance: 800 },
       { id: 'deposit', type: '储蓄卡', currency: 'CNY', balance: 100 },
     ];
-    const original = { id: 'expense', kind: 'expense' as const, accountId: 'pay', accountAmount: 200, reimbursable: true, reimbursed: false };
-    const credit = { id: 'credit', kind: 'income' as const, accountId: 'deposit', accountAmount: 200 };
+    const original = { id: 'expense', kind: 'expense' as 'expense' | 'income', accountId: 'pay', accountAmount: 200, reimbursable: true, reimbursed: false };
+    const credit = { id: 'credit', kind: 'income' as 'expense' | 'income', accountId: 'deposit', accountAmount: 200, reimbursable: false, reimbursed: false };
     const settled = settleReimbursementState(paid, [original], original.id, credit);
     expect(settled.accounts.find((item) => item.id === 'deposit')?.balance).toBe(300);
     expect(settled.transactions.find((item) => item.id === original.id)).toMatchObject({ reimbursed: true, reimbursementTransactionId: 'credit' });
@@ -815,7 +816,7 @@ describe('v2 audit log inbox lifecycle', () => {
     const invalidHealth = { ...health, payload: { ...health.payload, value: 0 } };
     expect(inboxConfirmBlockReason(invalidHealth, [])).toMatchObject({ reason: 'invalid_health', dataScope: 'health' });
 
-    let store = applyInboxLifecycle({ inboxItems: [noAmount], auditLog: [] }, {
+    const store = applyInboxLifecycle({ inboxItems: [noAmount], auditLog: [] }, {
       type: 'fail',
       itemId: 'pay-0',
       reason: 'missing_amount',

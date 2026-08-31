@@ -26,6 +26,7 @@ import app.selfagent.ai.AiChatProtocol
 import app.selfagent.ai.EncryptedAiConfig
 import app.selfagent.capture.CaptureController
 import app.selfagent.health.HealthBus
+import app.selfagent.health.HealthImportDiagnostics
 import app.selfagent.health.HealthImportActivity
 import app.selfagent.health.GadgetbridgeImportActivity
 import app.selfagent.ledger.ConfirmBus
@@ -46,6 +47,7 @@ class MainActivity : Activity() {
         const val EXTRA_AUTO_SAVE = "ledger_auto_save"
         const val LOCAL_APP_URL = "https://appassets.androidplatform.net/assets/www/index.html"
         const val LOCAL_APP_HOST = "appassets.androidplatform.net"
+        private const val REQUEST_EXPORT_HEALTH_DIAGNOSTICS = 904
 
         fun ledgerIntent(context: Context, json: String, autoSave: Boolean): Intent =
             Intent(context, MainActivity::class.java)
@@ -320,6 +322,17 @@ class MainActivity : Activity() {
         }
 
         @JavascriptInterface
+        fun exportHealthDiagnostics() {
+            runOnUiThread {
+                startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "application/json"
+                    putExtra(Intent.EXTRA_TITLE, "self-agent-health-diagnostics-${System.currentTimeMillis()}.json")
+                }, REQUEST_EXPORT_HEALTH_DIAGNOSTICS)
+            }
+        }
+
+        @JavascriptInterface
         fun openHealthConnectHelp() {
             startActivity(Intent(Settings.ACTION_SETTINGS))
         }
@@ -395,6 +408,21 @@ class MainActivity : Activity() {
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_EXPORT_HEALTH_DIAGNOSTICS) {
+            if (resultCode == RESULT_OK && data?.data != null) {
+                runCatching {
+                    contentResolver.openOutputStream(data.data!!, "wt").use { output ->
+                        requireNotNull(output) { "无法创建诊断日志" }
+                        output.bufferedWriter().use { it.write(HealthImportDiagnostics.exportJson(this)) }
+                    }
+                }.onSuccess {
+                    android.widget.Toast.makeText(this, "健康诊断日志已导出", android.widget.Toast.LENGTH_SHORT).show()
+                }.onFailure {
+                    android.widget.Toast.makeText(this, "健康诊断日志导出失败", android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+            return
+        }
         if (requestCode == CaptureController.REQUEST_IMAGE && ::capture.isInitialized) {
             capture.onImage(if (resultCode == RESULT_OK) data?.data else null)
         }

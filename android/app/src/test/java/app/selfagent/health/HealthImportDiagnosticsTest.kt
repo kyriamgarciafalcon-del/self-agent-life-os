@@ -67,7 +67,7 @@ class HealthImportDiagnosticsTest {
             JSONObject().put("stage", "import-error").put("errorClass", "SQLiteException"),
         )
         events += (1..260).map { index ->
-            JSONObject().put("stage", "selected").put("date", "2026-08-${String((index % 28) + 1).padStart(2, '0')}")
+            JSONObject().put("stage", "selected").put("date", "2026-08-${((index % 28) + 1).toString().padStart(2, '0')}")
                 .put("metrics", JSONObject().put("heartRate", index).put("stress", index / 2.0))
         }
 

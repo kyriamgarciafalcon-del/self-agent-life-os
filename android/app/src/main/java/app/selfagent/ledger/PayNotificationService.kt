@@ -46,14 +46,20 @@ class PayNotificationService : NotificationListenerService() {
             }
         }
         if (sbn.packageName !in payApps) return
-        val pending = PayParser.parse(sbn.packageName, raw) ?: return
-        if (recentPay.any { same(it, pending) }) return
+        val notificationAt = sbn.notification.`when`.takeIf { it > 0L } ?: sbn.postTime
+        val sourceEventId = java.util.UUID.nameUUIDFromBytes(
+            "notification|${sbn.key}|$notificationAt".toByteArray()
+        ).toString()
+        val pending = PayParser.parse(
+            pkg = sbn.packageName,
+            raw = raw,
+            at = sbn.postTime,
+            channel = "notification",
+            sourceEventId = sourceEventId,
+        ) ?: return
+        if (recentPay.any { it.id == pending.id }) return
         recentPay.addFirst(pending)
         while (recentPay.size > 20) recentPay.removeLast()
         ConfirmBus.post(pending, this)
     }
-
-    private fun same(a: PendingTxn, b: PendingTxn) =
-        a.source == b.source && a.amount == b.amount && a.title == b.title &&
-            kotlin.math.abs(a.at - b.at) < 10_000
 }

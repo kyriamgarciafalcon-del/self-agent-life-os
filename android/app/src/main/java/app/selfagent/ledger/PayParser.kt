@@ -9,7 +9,8 @@ data class PendingTxn(
     val accountHint: String,
     val category: String,
     val raw: String,
-    val at: Long
+    val at: Long,
+    val channel: String = "unknown",
 )
 
 object PayParser {
@@ -30,7 +31,13 @@ object PayParser {
         yen.find(raw)?.groupValues?.get(1)?.toDoubleOrNull()
             ?: yuan.find(raw)?.groupValues?.get(1)?.toDoubleOrNull()
 
-    fun parse(pkg: String, raw: String, at: Long = System.currentTimeMillis()): PendingTxn? {
+    fun parse(
+        pkg: String,
+        raw: String,
+        at: Long = System.currentTimeMillis(),
+        channel: String = "unknown",
+        sourceEventId: String? = null,
+    ): PendingTxn? {
         val text = raw.replace(Regex("\\s+"), " ").trim()
         if (text.isEmpty() || !isPayText(text)) return null
         val source = sourceOf(pkg)
@@ -50,9 +57,10 @@ object PayParser {
             else -> "其他"
         }
         val dir = if (incoming) "in" else "out"
-        val id = java.util.UUID.nameUUIDFromBytes(
-            listOf(source, amount?.toString() ?: "na", title, dir, (at / 180_000).toString()).joinToString("|").toByteArray()
-        ).toString()
+        val id = sourceEventId?.trim()?.takeIf { it.isNotEmpty() }
+            ?: java.util.UUID.nameUUIDFromBytes(
+                listOf(source, amount?.toString() ?: "na", title, dir, channel, at.toString()).joinToString("|").toByteArray()
+            ).toString()
         return PendingTxn(
             id = id,
             amount = amount,
@@ -62,7 +70,8 @@ object PayParser {
             accountHint = if (source == "alipay") "支付宝" else if (source == "wechat") "微信零钱/银行卡" else "资金账户",
             category = category,
             raw = text,
-            at = at
+            at = at,
+            channel = channel,
         )
     }
 }

@@ -21,8 +21,17 @@ class PayAccessibilityService : AccessibilityService() {
             val text = collect(root, StringBuilder(), 0).toString()
             if (text.isBlank()) return
             if (Regex("支付密码|请输入密码|验证码|密码键盘|指纹支付").containsMatchIn(text)) return
-            val pending = PayParser.parse(pkg, text) ?: return
-            if (recent.any { same(it, pending) }) return
+            val sourceEventId = java.util.UUID.nameUUIDFromBytes(
+                "accessibility|$pkg|${event.windowId}|${text.trim()}|${event.eventTime / 2_000L}".toByteArray()
+            ).toString()
+            val pending = PayParser.parse(
+                pkg = pkg,
+                raw = text,
+                at = now,
+                channel = "accessibility",
+                sourceEventId = sourceEventId,
+            ) ?: return
+            if (recent.any { it.id == pending.id }) return
             recent.addFirst(pending)
             while (recent.size > 20) recent.removeLast()
             ConfirmBus.post(pending, this)
@@ -45,8 +54,4 @@ class PayAccessibilityService : AccessibilityService() {
         }
         return out
     }
-
-    private fun same(a: PendingTxn, b: PendingTxn) =
-        a.source == b.source && a.amount == b.amount && a.title == b.title &&
-            kotlin.math.abs(a.at - b.at) < 12_000
 }

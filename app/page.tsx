@@ -1,11 +1,11 @@
 'use client';
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { accountRole, addDaysKey, applyDailyFxRates, applyDailyPriceQuotes, applyInboxLifecycle, applyLedger, AI_CONFIG_EVENT, AI_CONFIG_STORAGE_KEY, AI_REPLY_EVENT, AUDIT_OUTCOMES, auditOutcomeLabel, auditReasonLabel, buildButlerSystemPrompt, buildHealthBriefing, buildAiSendPreview, canApplyLedger, canUndoInboxConfirm, cnyWealthTotal, confirmByokHost, consumeCallBudget, createCallBudget, defaultCashId, describeButlerDataScope, detectLegacyDemoData, dialogShouldDismiss, dismissPermissionOnboarding, enqueueInboxItem, filterAuditLog, healthRecordsFromSnapshots, inboxConfidenceLabel, inboxConfirmBlockReason, inboxItemFromAiTool, inboxItemFromButlerAction, inboxItemFromNaturalCapture, inboxItemFromPayment, inboxItemFromTravelNotice, inboxSourceLabel, INBOX_ACTION_LABELS, INBOX_SOURCES, isBackupPayload, isDebtRole, latestHealthByKind, loadBrowserAiConfig, localDateKey, markPermissionSettingsOpened, migrateAuditLog, migrateInboxStore, migrateLegacyAiLocalStorage, migrateLegacyReimbursementAccounts, migratePrivacySettings, normalizeAccountBalance, normalizeMemory, normalizePermissionOnboarding, parseAiProviderResponse, parseButlerModelOutput, parseCapabilityStatus, parseNaturalCapture, pendingInboxCount, pendingInboxItems, persistBrowserAiConfig, permissionOnboardingProgress, planAccountSettlement, prepareOutboundAiPayload, reconcileRecurringConfirmations, releaseRecurringConfirmation, removeLedgerTransactionState, resolvePaymentAccountId, settleReimbursementState, shouldShowPermissionOnboarding, summarizeHealth, TOAST_ARIA_LIVE, updateInboxItemPayload, upsertByExternalKey, validateByokTarget, wealthTotals, weekDates, type AuditEntry, type AuditOutcome, type ButlerAction, type CapabilityStatusSnapshot, type HealthMetric, type InboxItem, type InboxLifecycleEvent, type InboxSource, type PermissionCardId, type PermissionOnboardingState, type TravelKind } from './product-logic';
+import { accountRole, addDaysKey, applyDailyFxRates, applyDailyPriceQuotes, applyInboxLifecycle, applyLedger, AI_CONFIG_EVENT, AI_CONFIG_STORAGE_KEY, AI_REPLY_EVENT, AUDIT_OUTCOMES, auditOutcomeLabel, auditReasonLabel, buildButlerSystemPrompt, buildHealthBriefing, buildAiSendPreview, canApplyLedger, canUndoInboxConfirm, cnyWealthTotal, confirmByokHost, consumeCallBudget, createCallBudget, defaultCashId, describeButlerDataScope, detectLegacyDemoData, dialogShouldDismiss, dismissPermissionOnboarding, enqueueInboxItem, filterAuditLog, healthRecordsFromSnapshots, inboxConfidenceLabel, inboxConfirmBlockReason, inboxItemFromAiTool, inboxItemFromButlerAction, inboxItemFromNaturalCapture, inboxItemFromPayment, inboxItemFromTravelNotice, inboxSourceLabel, INBOX_ACTION_LABELS, INBOX_SOURCES, isBackupPayload, isDebtRole, latestHealthByKind, loadBrowserAiConfig, localDateKey, markPermissionSettingsOpened, migrateAuditLog, migrateInboxStore, migrateLegacyAiLocalStorage, migrateLegacyReimbursementAccounts, migratePrivacySettings, normalizeAccountBalance, normalizeMemory, normalizePermissionOnboarding, parseAiProviderResponse, parseButlerModelOutput, parseCapabilityStatus, parseNaturalCapture, pendingInboxCount, pendingInboxItems, persistBrowserAiConfig, permissionOnboardingProgress, planAccountSettlement, prepareOutboundAiPayload, reconcileRecurringConfirmations, releaseRecurringConfirmation, removeLedgerTransactionState, resolvePaymentAccountId, settleReimbursementState, shouldShowPermissionOnboarding, summarizeHealth, TOAST_ARIA_LIVE, updateInboxItemPayload, upsertByExternalKey, validateByokTarget, wealthTotals, weekDates, ACCOUNT_TYPES, buildReimbursementSettlement, canDeleteAccount, FINANCE_TABS, financeTransactionFields, investmentAccountSnapshot, isMonthlyIncome, monthlyIncomeTotal, normalizeFinanceRecords, postBalanceAdjustment, postFinanceTransaction, refreshHoldingsValuation, reimbursementOutstandingAmount, removePostedTransaction, resolveTransferAmounts, type AuditEntry, type AuditOutcome, type ButlerAction, type CapabilityStatusSnapshot, type HealthMetric, type InboxItem, type InboxLifecycleEvent, type InboxSource, type PermissionCardId, type PermissionOnboardingState, type TravelKind } from './product-logic';
 
 type Tab = 'home' | 'schedule' | 'capture' | 'finance' | 'profile' | 'health' | 'travel' | 'data' | 'butler' | 'privacy' | 'memory' | 'vault' | 'audit';
 type ScheduleColor = 'blue' | 'green' | 'orange';
-type TransactionKind = 'expense' | 'income' | 'transfer';
+type TransactionKind = 'expense' | 'income' | 'transfer' | 'adjustment' | 'settlement';
 type Currency = 'CNY' | 'USD' | 'HKD' | 'EUR' | 'JPY';
 
 type ScheduleItem = {
@@ -18,8 +18,9 @@ type ScheduleItem = {
   done: boolean;
 };
 
-type Account = { id: string; name: string; type: string; balance: number; currency: Currency; tone: 'forest' | 'clay' | 'ink' };
-type Transaction = { id: string; kind: TransactionKind; amount: number; accountAmount: number; currency: Currency; merchant: string; category: string; accountId: string; targetAccountId?: string; source: string; reimbursable: boolean; reimburseAccountId?: string; reimbursed?: boolean; reimbursementForId?: string; reimbursementTransactionId?: string; recurringRuleId?: string; createdAt: string };
+type Account = { id: string; name: string; type: string; balance: number; currency: Currency; tone: 'forest' | 'clay' | 'ink'; openingBalance?: number };
+type LedgerPosting = { accountId: string; amount: number; currency: string };
+type Transaction = { id: string; kind: TransactionKind; amount: number; accountAmount: number; currency: Currency; merchant: string; category: string; accountId: string; targetAccountId?: string; targetAmount?: number; targetCurrency?: Currency; exchangeRate?: number; source: string; reimbursable: boolean; reimburseAccountId?: string; reimbursed?: boolean; reimbursementForId?: string; reimbursementTransactionId?: string; recurringRuleId?: string; createdAt: string; postings?: LedgerPosting[] };
 type RecurringRule = { id: string; name: string; kind: 'subscription' | 'credit-card'; amount: number; currency: Currency; accountId: string; targetAccountId?: string; dueDay: number; enabled: boolean; lastRunPeriod?: string };
 type HealthRecord = { id: string; kind: 'sleep' | 'meal' | 'exercise' | 'steps' | 'height' | 'weight' | 'heartRate' | 'stress' | 'pai'; value: number; note: string; createdAt: string; externalKey?: string };
 type MemoryItem = { id: string; kind: '目标' | '偏好' | '观察'; title: string; note: string; active: boolean; sendAllowed: boolean; source: string; purpose: string; updatedAt: string };
@@ -46,7 +47,7 @@ const MONTH = TODAY.slice(0, 7);
 const now = new Date();
 const TODAY_LABEL = new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' }).format(now);
 const GREETING = now.getHours() < 5 ? '夜深了，先照顾好休息。' : now.getHours() < 11 ? '早上好，今天慢慢来。' : now.getHours() < 14 ? '中午好，给自己留点余地。' : now.getHours() < 18 ? '下午好，一次做好一件事。' : '晚上好，收好今天再休息。';
-const accountTypes = ['资金账户', '储蓄卡', '现金', '信用卡', '理财账户', '储值账户', '订阅账户', '待收回', '欠款', '物品资产'];
+const accountTypes = [...ACCOUNT_TYPES];
 const currencies: Currency[] = ['CNY', 'USD', 'HKD', 'EUR', 'JPY'];
 function roleLabel(type: string) {
   const role = accountRole(type);
@@ -199,10 +200,33 @@ function localStamp(date = new Date()) {
 }
 function investmentValue(item: InvestmentHolding) { return item.quantity * item.currentPrice; }
 function investmentProfit(item: InvestmentHolding) { return investmentValue(item) - item.quantity * item.averageCost; }
-function syncInvestmentBalances(accounts: Account[], investments: InvestmentHolding[]) {
-  const totals = new Map<string, number>();
-  investments.forEach((item) => totals.set(item.accountId, (totals.get(item.accountId) ?? 0) + investmentValue(item)));
-  return accounts.map((account) => totals.has(account.id) ? { ...account, balance: totals.get(account.id) ?? account.balance } : account);
+function toAccounts(accounts: Account[]): Account[] {
+  return accounts.map((account) => ({ ...account, openingBalance: Number.isFinite(account.openingBalance) ? Number(account.openingBalance) : account.balance }));
+}
+function toTransactions(transactions: Array<Partial<Transaction> & { id: string; kind: TransactionKind; accountId: string }>): Transaction[] {
+  return transactions.map((item) => ({
+    id: item.id,
+    kind: item.kind,
+    amount: Math.abs(Number(item.amount ?? item.accountAmount ?? 0)),
+    accountAmount: Math.abs(Number(item.accountAmount ?? item.amount ?? 0)),
+    currency: (item.currency as Currency) ?? 'CNY',
+    merchant: item.merchant ?? '',
+    category: item.category ?? '',
+    accountId: item.accountId,
+    targetAccountId: item.targetAccountId,
+    targetAmount: item.targetAmount,
+    targetCurrency: item.targetCurrency,
+    exchangeRate: item.exchangeRate,
+    source: item.source ?? '手动记录',
+    reimbursable: item.reimbursable ?? false,
+    reimburseAccountId: item.reimburseAccountId,
+    reimbursed: item.reimbursed ?? false,
+    reimbursementForId: item.reimbursementForId,
+    reimbursementTransactionId: item.reimbursementTransactionId,
+    recurringRuleId: item.recurringRuleId,
+    createdAt: item.createdAt ?? localStamp(),
+    postings: item.postings,
+  }));
 }
 function normalizeData(raw: Partial<AppData>): AppData {
   const investments = raw.investments ?? [];
@@ -214,8 +238,9 @@ function normalizeData(raw: Partial<AppData>): AppData {
     reimbursable: item.reimbursable ?? false,
     reimbursed: item.reimbursed ?? false,
   }));
-  const migrated = migrateLegacyReimbursementAccounts(rawAccounts, rawTransactions);
-  const accounts = syncInvestmentBalances(migrated.accounts, investments);
+  const finance = normalizeFinanceRecords(rawAccounts, rawTransactions, investments);
+  const accounts = toAccounts(finance.accounts as Account[]);
+  const transactions = toTransactions(finance.transactions as Array<Partial<Transaction> & { id: string; kind: TransactionKind; accountId: string }>);
   const inbox = migrateInboxStore(raw);
   const auditLog = migrateAuditLog(raw);
   return {
@@ -223,19 +248,8 @@ function normalizeData(raw: Partial<AppData>): AppData {
     demoMode: raw.demoMode ?? detectLegacyDemoData(raw),
     schedules: raw.schedules ?? [],
     accounts,
-    transactions: migrated.transactions.map((item) => ({
-      ...item,
-      currency: item.currency ?? accounts.find((account) => account.id === item.accountId)?.currency ?? 'CNY',
-      accountAmount: item.accountAmount ?? item.amount,
-      reimbursable: item.reimbursable ?? false,
-      reimbursed: item.reimbursed ?? false,
-      reimburseAccountId: (() => {
-        const dest = accounts.find((account) => account.id === item.reimburseAccountId);
-        if (dest && accountRole(dest.type) === 'receivable') return undefined;
-        return item.reimburseAccountId;
-      })(),
-    })),
-    recurringRules: reconcileRecurringConfirmations(raw.recurringRules ?? [], migrated.transactions),
+    transactions,
+    recurringRules: reconcileRecurringConfirmations(raw.recurringRules ?? [], transactions),
     healthRecords: raw.healthRecords ?? [],
     travels: raw.travels ?? [],
     investments,
@@ -278,6 +292,39 @@ function parseCapture(text: string, accounts: Account[]): CaptureDraft {
   };
 }
 
+function TransactionComposer({ accounts, currency, editing, onClose, onSubmit, onDelete }: {
+  accounts: Account[];
+  currency: Currency;
+  editing?: Transaction;
+  onClose: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onDelete?: () => void;
+}) {
+  const [kind, setKind] = useState<TransactionKind>(editing?.kind === 'income' || editing?.kind === 'transfer' ? editing.kind : 'expense');
+  const [reimbursable, setReimbursable] = useState(Boolean(editing?.reimbursable));
+  const [accountId, setAccountId] = useState(editing?.accountId ?? accounts[0]?.id ?? '');
+  const [targetAccountId, setTargetAccountId] = useState(editing?.targetAccountId ?? '');
+  const source = accounts.find((account) => account.id === accountId);
+  const target = accounts.find((account) => account.id === targetAccountId);
+  const sameCurrency = !target || source?.currency === target.currency;
+  const fields = financeTransactionFields(kind === 'settlement' ? 'transfer' : kind === 'adjustment' ? 'adjustment' : kind, { reimbursable, sameCurrency: kind === 'transfer' ? sameCurrency : true });
+  const show = (name: string) => fields.includes(name);
+  return <div className="overlay" role="dialog" aria-modal="true" onMouseDown={(event) => event.currentTarget === event.target && onClose()}><form key={editing?.id ?? 'new-transaction'} onSubmit={onSubmit} className="sheet scroll-sheet"><div className="handle" /><header><div><span>{editing ? 'EDIT RECORD' : 'NEW RECORD'}</span><h2>{editing ? '编辑账目' : '确认一笔流水'}</h2></div><button type="button" onClick={onClose}>×</button></header>
+    {show('kind') && <div className="row"><label>类型<select name="kind" value={kind} onChange={(event) => setKind(event.target.value as TransactionKind)}><option value="expense">支出</option><option value="income">收入</option><option value="transfer">账户转账</option></select></label>{show('amount') && <label>金额<input required name="amount" inputMode="decimal" type="number" min="0.01" step="0.01" placeholder="0.00" defaultValue={editing?.amount} /></label>}</div>}
+    {show('currency') && <div className="row"><label>币种<select name="currency" defaultValue={editing?.currency ?? source?.currency ?? currency}>{currencies.map((item) => <option key={item}>{item}</option>)}</select></label>{show('accountId') && <label>账户<select name="accountId" value={accountId} onChange={(event) => setAccountId(event.target.value)}>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {account.currency}</option>)}</select></label>}</div>}
+    {show('merchant') && <label>商家 / 用途<input required name="merchant" placeholder="例如：午餐" defaultValue={editing?.merchant} /></label>}
+    {show('category') && <label>分类<select name="category" defaultValue={editing?.category}><option>餐饮</option><option>交通</option><option>生活</option><option>医疗</option><option>订阅</option><option>其他</option></select></label>}
+    {show('targetAccountId') && <label>转入账户<select name="targetAccountId" value={targetAccountId} onChange={(event) => setTargetAccountId(event.target.value)}>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {account.currency}</option>)}</select></label>}
+    {(show('rate') || show('targetAmount')) && <div className="row">{show('rate') && <label>汇率<input name="exchangeRate" type="number" min="0.000001" step="0.000001" defaultValue={editing?.exchangeRate ?? 1} /></label>}{show('targetAmount') && <label>对方金额<input name="targetAmount" type="number" min="0.01" step="0.01" defaultValue={editing?.targetAmount} /></label>}</div>}
+    {show('reimbursable') && <label className="check-option"><input name="reimbursable" type="checkbox" checked={reimbursable} onChange={(event) => setReimbursable(event.target.checked)} />待报销（垫付时增加待收回）</label>}
+    {show('reimburseAccountId') && <label>报销记入（待收回）<select name="reimburseToAccountId" defaultValue={editing?.reimburseAccountId ?? accounts.find((account) => accountRole(account.type) === 'receivable')?.id}>{accounts.filter((account) => accountRole(account.type) === 'receivable').map((account) => <option key={account.id} value={account.id}>{account.name} · {account.currency}</option>)}</select></label>}
+    {show('reimburseAccountId') && source && accounts.find((account) => account.id === (editing?.reimburseAccountId ?? accounts.find((item) => accountRole(item.type) === 'receivable')?.id))?.currency !== source.currency && <label>待收回金额<input name="targetAmount" type="number" min="0.01" step="0.01" defaultValue={editing?.targetAmount} /></label>}
+    <small className="form-tip">勾选待报销：支出账户减少，待收回立即增加。到账时再点入账，填写金额和对方账户。</small>
+    <button className="save" type="submit">{editing ? '保存修改' : '确认入账'}</button>
+    {editing && onDelete && <button className="danger-button" type="button" onClick={onDelete}>删除这笔账目</button>}
+  </form></div>;
+}
+
 export default function Home() {
   const [data, setData] = useState<AppData>(emptyData);
   const [hydrated, setHydrated] = useState(false);
@@ -290,7 +337,7 @@ export default function Home() {
   const [permissionOnboardingOpen, setPermissionOnboardingOpen] = useState(false);
   const [vaultMeta, setVaultMeta] = useState<{ title: string; usernameHint: string }[]>([]);
   const [selectedDate, setSelectedDate] = useState(TODAY);
-  const [sheet, setSheet] = useState<'schedule' | 'transaction' | 'account' | 'recurring' | 'exchange-rate' | 'health' | 'travel' | 'holding' | 'settle-account' | null>(null);
+  const [sheet, setSheet] = useState<'schedule' | 'transaction' | 'account' | 'recurring' | 'exchange-rate' | 'health' | 'travel' | 'holding' | 'settle-account' | 'settle-reimbursement' | null>(null);
   const [financeCurrency, setFinanceCurrency] = useState<Currency>('CNY');
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
   const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
@@ -300,6 +347,7 @@ export default function Home() {
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [selectedHoldingId, setSelectedHoldingId] = useState<string | null>(null);
   const [settlingAccountId, setSettlingAccountId] = useState<string | null>(null);
+  const [settlingTransactionId, setSettlingTransactionId] = useState<string | null>(null);
   const [toast, setToast] = useState('');
   const [captureText, setCaptureText] = useState('');
   const [draft, setDraft] = useState<CaptureDraft | null>(null);
@@ -477,7 +525,7 @@ export default function Home() {
       const detail = (event as CustomEvent<{ rates?: ExchangeRate[]; quotes?: { holdingId: string; price: number; asOf: string; source: string }[] }>).detail || {};
       setData((current) => {
         const investments = applyDailyPriceQuotes(current.investments, detail.quotes ?? []);
-        return { ...current, exchangeRates: applyDailyFxRates(current.exchangeRates, (detail.rates ?? []).map((rate) => ({ ...rate, source: 'daily' }))), investments, accounts: syncInvestmentBalances(current.accounts, investments) };
+        return { ...current, exchangeRates: applyDailyFxRates(current.exchangeRates, (detail.rates ?? []).map((rate) => ({ ...rate, source: 'daily' }))), investments: refreshHoldingsValuation(current.accounts, investments, detail.quotes ?? []).holdings };
       });
       notify('已按今日参考价更新估值，账本流水未改动');
     }
@@ -580,6 +628,8 @@ export default function Home() {
   const editingHolding = editingHoldingId ? data.investments.find((item) => item.id === editingHoldingId) : undefined;
   const editingRecurring = editingRecurringId ? data.recurringRules.find((item) => item.id === editingRecurringId) : undefined;
   const settlingAccount = settlingAccountId ? data.accounts.find((item) => item.id === settlingAccountId) : undefined;
+  const settlingTransaction = settlingTransactionId ? data.transactions.find((item) => item.id === settlingTransactionId) : undefined;
+  const settlingReimbursement = settlingTransaction ? reimbursementOutstandingAmount(settlingTransaction) : undefined;
 
   function notify(message: string) { setToast(message); window.setTimeout(() => setToast(''), 2200); }
   function toggleSchedule(id: string) { setData((current) => ({ ...current, schedules: current.schedules.map((item) => item.id === id ? { ...item, done: !item.done } : item) })); }
@@ -618,7 +668,10 @@ export default function Home() {
     const reimbursable = transactionKind === 'expense' && input.reimbursable;
     const claimId = reimbursable ? data.accounts.find((account) => accountRole(account.type) === 'receivable' && account.currency === input.currency)?.id : undefined;
     const transaction: Transaction = { id: uid('transaction'), kind: transactionKind, amount: Math.abs(input.amount), accountAmount: Math.abs(input.accountAmount ?? input.amount), currency: input.currency, merchant: input.merchant, category: transactionKind === 'income' ? '收入' : input.category, accountId: input.accountId, source: input.source, reimbursable, reimburseAccountId: claimId, reimbursed: false, createdAt: localStamp() };
-    setData((current) => ({ ...current, transactions: [transaction, ...current.transactions], accounts: adjustAccounts(current.accounts, transaction, 1) }));
+    setData((current) => {
+      const posted = postFinanceTransaction(current.accounts, current.transactions, transaction);
+      return { ...current, transactions: toTransactions(posted.transactions as Array<Partial<Transaction> & { id: string; kind: TransactionKind; accountId: string }>), accounts: toAccounts(posted.accounts as Account[]) };
+    });
     return transaction.id;
   }
   function addTransaction(event: FormEvent<HTMLFormElement>) {
@@ -630,25 +683,48 @@ export default function Home() {
     const paidFrom = String(form.get('accountId'));
     const targetId = kind === 'transfer' ? String(form.get('targetAccountId')) : undefined;
     const reimburseTo = String(form.get('reimburseToAccountId') || '');
-    const depositTo = String(form.get('reimburseDepositAccountId') || paidFrom);
     const sourceAccount = data.accounts.find((account) => account.id === paidFrom);
     const targetAccount = targetId ? data.accounts.find((account) => account.id === targetId) : undefined;
     const reimburseAccount = data.accounts.find((account) => account.id === reimburseTo);
-    const depositAccount = data.accounts.find((account) => account.id === depositTo);
     if (!Number.isFinite(amount) || amount <= 0) { notify('请输入大于 0 的金额'); return; }
-    if (!canHoldMoney(sourceAccount) && accountRole(sourceAccount?.type ?? '') !== 'payable') { notify('请选择真实的资金或信用卡账户'); return; }
+    if (!canHoldMoney(sourceAccount) && accountRole(sourceAccount?.type ?? '') !== 'payable' && accountRole(sourceAccount?.type ?? '') !== 'liability') { notify('请选择真实的资金或信用卡账户'); return; }
     if (kind === 'transfer' && (!targetAccount || targetId === paidFrom)) { notify('请选择不同的转入账户'); return; }
-    if (kind === 'transfer' && targetAccount && sourceAccount?.currency !== targetAccount.currency) { notify('暂不支持跨币种转账，请选择同币种账户'); return; }
     if (reimbursable && accountRole(reimburseAccount?.type ?? '') !== 'receivable') { notify('报销请记入「待收回」账户，垫付时这里会增加应收'); return; }
-    if (reimbursable && reimburseAccount?.currency !== sourceAccount?.currency) { notify('待收回账户必须和支出账户同币种'); return; }
-    if (reimbursable && (!canHoldMoney(depositAccount) || depositAccount?.currency !== sourceAccount?.currency)) { notify('报销后打入账户必须是同币种资金账户'); return; }
+    const sourceCurrency = sourceAccount?.currency ?? String(form.get('currency') || 'CNY');
+    const targetCurrency = (kind === 'transfer' ? targetAccount?.currency : reimburseAccount?.currency) ?? sourceCurrency;
+    const explicitTarget = Number(form.get('targetAmount'));
+    const rateInput = Number(form.get('exchangeRate') || 1);
+    const amounts = resolveTransferAmounts({
+      sourceCurrency,
+      targetCurrency,
+      amount,
+      rate: rateInput,
+      targetAmount: Number.isFinite(explicitTarget) && explicitTarget > 0 ? explicitTarget : undefined,
+    });
     const wasSettled = Boolean(previous?.reimbursementTransactionId);
-    const transaction: Transaction = { id: previous?.id ?? uid('transaction'), kind, amount: Math.abs(amount), accountAmount: Math.abs(amount * Number(form.get('exchangeRate') || 1)), currency: String(form.get('currency')) as Currency, merchant: String(form.get('merchant')), category: kind === 'income' ? '收入' : kind === 'transfer' ? '账户转账' : String(form.get('category')), accountId: paidFrom, targetAccountId: kind === 'transfer' ? targetId : reimbursable ? depositTo : undefined, source: previous?.source ?? '手动记录', reimbursable, reimburseAccountId: reimbursable ? reimburseTo : undefined, reimbursed: reimbursable ? (wasSettled ? false : previous?.reimbursed ?? false) : false, createdAt: previous?.createdAt ?? localStamp() };
-    const baseline = previous ? removeLedgerTransactionState(data.accounts, data.transactions, previous.id) : { accounts: data.accounts, transactions: data.transactions };
-    if (!canApplyLedger(baseline.accounts, transaction)) { notify('还款金额不能超过当前欠款；请拆分或修改金额'); return; }
+    const draft: Transaction = {
+      id: previous?.id ?? uid('transaction'),
+      kind,
+      amount: amounts.sourceAmount,
+      accountAmount: amounts.sourceAmount,
+      currency: sourceCurrency as Currency,
+      targetAmount: amounts.targetAmount,
+      targetCurrency: targetCurrency as Currency,
+      exchangeRate: amounts.rate,
+      merchant: String(form.get('merchant')),
+      category: kind === 'income' ? '收入' : kind === 'transfer' ? '账户转账' : String(form.get('category') || '其他'),
+      accountId: paidFrom,
+      targetAccountId: kind === 'transfer' ? targetId : undefined,
+      source: previous?.source ?? '手动记录',
+      reimbursable,
+      reimburseAccountId: reimbursable ? reimburseTo : undefined,
+      reimbursed: reimbursable ? (wasSettled ? false : previous?.reimbursed ?? false) : false,
+      createdAt: previous?.createdAt ?? localStamp(),
+    };
     setData((current) => {
-      const removed = previous ? removeLedgerTransactionState(current.accounts, current.transactions, previous.id) : { accounts: current.accounts, transactions: current.transactions };
-      return { ...current, accounts: applyLedger(removed.accounts, transaction, 1), transactions: [transaction, ...removed.transactions] };
+      const removed = previous ? removePostedTransaction(current.accounts, current.transactions, previous.id) : { accounts: current.accounts, transactions: current.transactions };
+      const posted = postFinanceTransaction(removed.accounts, removed.transactions, draft);
+      return { ...current, accounts: toAccounts(posted.accounts as Account[]), transactions: toTransactions(posted.transactions as Array<Partial<Transaction> & { id: string; kind: TransactionKind; accountId: string }>) };
     });
     setEditingTransactionId(null); setSheet(null); notify(previous ? (wasSettled ? '账目已更新，原报销到账已撤销，请重新入账' : reimbursable ? '微信等支出账户已减少，待收回已增加' : '账目和账户余额已更新') : reimbursable ? '支出已记，待收回应收已增加；到账后再点入账' : '流水已确认入账');
   }
@@ -658,8 +734,25 @@ export default function Home() {
     const previous = editingAccountId ? data.accounts.find((item) => item.id === editingAccountId) : undefined;
     const currency = String(form.get('currency')) as Currency;
     if (previous && data.investments.some((item) => item.accountId === previous.id && item.currency !== currency)) { notify('请先调整该账户内持仓币种'); return; }
-    const account: Account = { id: previous?.id ?? uid('account'), name: String(form.get('name')), type: String(form.get('type')), balance: normalizeAccountBalance(String(form.get('type')), Number(form.get('balance') || 0)), currency, tone: previous?.tone ?? tones[data.accounts.length % tones.length] };
-    setData((current) => ({ ...current, accounts: previous ? current.accounts.map((item) => item.id === previous.id ? account : item) : [...current.accounts, account] })); setEditingAccountId(null); setSheet(null); setFinanceCurrency(account.currency); notify(previous ? '账户资料和余额已更新' : '账户已添加');
+    const nextBalance = normalizeAccountBalance(String(form.get('type')), Number(form.get('balance') || 0));
+    const account: Account = { id: previous?.id ?? uid('account'), name: String(form.get('name')), type: String(form.get('type')), balance: previous ? previous.balance : nextBalance, currency, tone: previous?.tone ?? tones[data.accounts.length % tones.length], openingBalance: previous?.openingBalance ?? nextBalance };
+    setData((current) => {
+      const renamed = previous ? current.accounts.map((item) => item.id === previous.id ? { ...account, balance: item.balance, openingBalance: item.openingBalance } : item) : [...current.accounts, account];
+      if (previous && Math.abs(nextBalance - previous.balance) > 0.0001) {
+        const adjusted = postBalanceAdjustment(renamed, current.transactions, { id: uid('transaction'), accountId: previous.id, targetBalance: nextBalance, createdAt: localStamp() });
+        return { ...current, accounts: toAccounts(adjusted.accounts as Account[]), transactions: toTransactions(adjusted.transactions as Array<Partial<Transaction> & { id: string; kind: TransactionKind; accountId: string }>) };
+      }
+      return { ...current, accounts: renamed };
+    }); setEditingAccountId(null); setSheet(null); setFinanceCurrency(account.currency); notify(previous ? (Math.abs(nextBalance - (previous.balance)) > 0.0001 ? '已用余额调整流水更新账户' : '账户资料已更新') : '账户已添加');
+  }
+  function deleteAccount(id?: string) {
+    const accountId = id ?? editingAccountId;
+    if (!accountId) return;
+    const gate = canDeleteAccount({ accountId, accounts: data.accounts, transactions: data.transactions, holdings: data.investments, rules: data.recurringRules });
+    if (!gate.ok) { notify(gate.reason || '无法删除账户'); return; }
+    if (!window.confirm('确定删除这个账户吗？')) return;
+    setData((current) => ({ ...current, accounts: current.accounts.filter((item) => item.id !== accountId) }));
+    setEditingAccountId(null); setSelectedAccountId(null); setSheet(null); notify('账户已删除');
   }
   function addExchangeRate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = new FormData(event.currentTarget);
@@ -679,11 +772,11 @@ export default function Home() {
     const previous = data.transactions.find((item) => item.id === (id ?? editingTransactionId));
     if (!previous || !window.confirm('确定删除这笔账目吗？对应账户余额会自动恢复。')) return;
     setData((current) => {
-      const removed = removeLedgerTransactionState(current.accounts, current.transactions, previous.id);
+      const removed = removePostedTransaction(current.accounts, current.transactions, previous.id);
       return {
         ...current,
-        accounts: removed.accounts,
-        transactions: removed.transactions,
+        accounts: toAccounts(removed.accounts as Account[]),
+        transactions: toTransactions(removed.transactions as Array<Partial<Transaction> & { id: string; kind: TransactionKind; accountId: string }>),
         recurringRules: releaseRecurringConfirmation(current.recurringRules, removed.transactions, previous),
       };
     });
@@ -692,19 +785,36 @@ export default function Home() {
   function settleReimbursement(id: string) {
     const previous = data.transactions.find((item) => item.id === id);
     if (!previous?.reimbursable || previous.reimbursed) { notify('这笔不是待报销，或已经入账'); return; }
-    const destId = canHoldMoney(data.accounts.find((account) => account.id === previous.targetAccountId))
-      ? previous.targetAccountId
-      : canHoldMoney(data.accounts.find((account) => account.id === previous.reimburseAccountId))
-        ? previous.reimburseAccountId
-        : defaultCashId(data.accounts, previous.currency);
-    const destination = data.accounts.find((account) => account.id === destId);
-    if (!canHoldMoney(destination) || destination.currency !== data.accounts.find((account) => account.id === previous.accountId)?.currency) { notify('请指定同币种资金账户作为报销到账账户'); return; }
-    const credit: Transaction = { id: uid('transaction'), kind: 'income', amount: previous.amount, accountAmount: previous.accountAmount, currency: destination.currency, merchant: `报销入账 · ${previous.merchant}`, category: '报销入账', accountId: destId, source: '报销确认', reimbursable: false, reimbursed: false, createdAt: localStamp() };
+    setSettlingTransactionId(id);
+    setSheet('settle-reimbursement');
+  }
+  function confirmReimbursementSettlement(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const previous = settlingTransactionId ? data.transactions.find((item) => item.id === settlingTransactionId) : undefined;
+    if (!previous?.reimbursable || previous.reimbursed) { notify('这笔不是待报销，或已经入账'); return; }
+    const amount = Number(form.get('amount'));
+    const counterpartId = String(form.get('counterpartId'));
+    const counterpart = data.accounts.find((account) => account.id === counterpartId);
+    if (!canHoldMoney(counterpart)) { notify('请指定资金账户作为报销到账账户'); return; }
+    if (!(amount > 0)) { notify('请输入大于 0 的金额'); return; }
+    const outstanding = reimbursementOutstandingAmount(previous);
+    if (counterpart.currency !== outstanding.currency) { notify(`报销到账账户必须使用 ${outstanding.currency}`); return; }
+    if (Math.abs(amount - outstanding.amount) > 0.0001) { notify(`本笔应收为 ${outstanding.currency} ${money(outstanding.amount)}，请按实际账户金额结清`); return; }
+    const settlement = buildReimbursementSettlement(previous, { id: uid('transaction'), counterpartId, amount, currency: counterpart.currency });
     setData((current) => {
-      const settled = settleReimbursementState(current.accounts, current.transactions, previous.id, credit);
-      return { ...current, accounts: settled.accounts, transactions: settled.transactions };
+      const posted = postFinanceTransaction(current.accounts, current.transactions.map((item) => item.id === previous.id ? { ...item, reimbursed: true, reimbursementTransactionId: settlement.id } : item), {
+        ...settlement,
+        merchant: `报销入账 · ${previous.merchant}`,
+        category: '报销入账',
+        source: '报销确认',
+        createdAt: localStamp(),
+      });
+      return { ...current, accounts: toAccounts(posted.accounts as Account[]), transactions: toTransactions(posted.transactions as Array<Partial<Transaction> & { id: string; kind: TransactionKind; accountId: string }>) };
     });
-    notify('报销已打入指定账户');
+    setSettlingTransactionId(null);
+    setSheet(null);
+    notify('报销已作为结算入账，不计入月度收入');
   }
   function settleAccount(id: string) {
     const account = data.accounts.find((item) => item.id === id);
@@ -740,7 +850,10 @@ export default function Home() {
       reimbursed: false,
       createdAt: localStamp(),
     };
-    setData((current) => ({ ...current, accounts: applyLedger(current.accounts, transaction, 1), transactions: [transaction, ...current.transactions] }));
+    setData((current) => {
+      const posted = postFinanceTransaction(current.accounts, current.transactions, transaction);
+      return { ...current, accounts: toAccounts(posted.accounts as Account[]), transactions: toTransactions(posted.transactions as Array<Partial<Transaction> & { id: string; kind: TransactionKind; accountId: string }>) };
+    });
     setSettlingAccountId(null);
     setSheet(null);
     notify(role === 'receivable' ? `已收回 ${money(amount)} 到 ${counterpart?.name ?? '资金账户'}` : `已用 ${counterpart?.name ?? '资金账户'} 还 ${money(amount)}`);
@@ -772,11 +885,12 @@ export default function Home() {
     if (!selected || !selected.enabled || selected.lastRunPeriod === MONTH) { notify('本月已经处理'); return; }
     if (selected.dueDay > Number(TODAY.slice(-2))) { notify(`将在本月 ${selected.dueDay} 日到期`); return; }
     const transaction: Transaction = { id: uid('transaction'), kind: selected.kind === 'subscription' ? 'expense' : 'transfer', amount: selected.amount, accountAmount: selected.amount, currency: selected.currency, merchant: selected.name, category: selected.kind === 'subscription' ? '订阅' : '信用卡还款', accountId: selected.accountId, targetAccountId: selected.targetAccountId, source: '自动扣款确认', reimbursable: false, reimbursed: false, recurringRuleId: selected.id, createdAt: localStamp() };
-    if (!canApplyLedger(data.accounts, transaction)) { notify('还款金额不能超过当前欠款；请先编辑账单金额'); return; }
     setData((current) => {
       const rule = current.recurringRules.find((item) => item.id === id);
-      if (!rule || !rule.enabled || rule.lastRunPeriod === MONTH || !canApplyLedger(current.accounts, transaction)) return current;
-      return { ...current, transactions: [transaction, ...current.transactions], accounts: applyLedger(current.accounts, transaction, 1), recurringRules: current.recurringRules.map((item) => item.id === id ? { ...item, lastRunPeriod: MONTH } : item) };
+      if (!rule || !rule.enabled || rule.lastRunPeriod === MONTH) return current;
+      const posted = postFinanceTransaction(current.accounts, current.transactions, transaction);
+      if (!posted.transactions.some((item) => item.id === transaction.id)) return current;
+      return { ...current, transactions: toTransactions(posted.transactions as Array<Partial<Transaction> & { id: string; kind: TransactionKind; accountId: string }>), accounts: toAccounts(posted.accounts as Account[]), recurringRules: current.recurringRules.map((item) => item.id === id ? { ...item, lastRunPeriod: MONTH } : item) };
     });
     notify(selected.kind === 'subscription' ? '订阅扣款已确认入账' : '信用卡还款已确认转账');
   }
@@ -869,10 +983,12 @@ export default function Home() {
       const currency = account?.currency ?? 'CNY';
       const claimId = reimbursable ? data.accounts.find((entry) => accountRole(entry.type) === 'receivable' && entry.currency === currency)?.id : undefined;
       const transaction: Transaction = { id: uid('transaction'), kind: transactionKind, amount, accountAmount: amount, currency, merchant: String(payload.merchant || '待补充商家'), category: transactionKind === 'income' ? '收入' : String(payload.category || '其他'), accountId, source: String(payload.paySource || inboxSourceLabel(item.source)), reimbursable, reimburseAccountId: claimId, reimbursed: false, createdAt: localStamp() };
-      if (!canApplyLedger(data.accounts, transaction)) { recordInboxFail(id, 'ledger_rejected', 'finance'); notify('这笔账无法入账，请先检查账户'); return; }
+      const posted = postFinanceTransaction(data.accounts, data.transactions, transaction);
+      if (!posted.transactions.some((item) => item.id === transaction.id)) { recordInboxFail(id, 'ledger_rejected', 'finance'); notify('这笔账无法入账，请先检查账户'); return; }
       setData((current) => {
         const next = withInboxEvent(current, { type: 'confirm', itemId: id, resultEntityId: transaction.id, timestamp: localStamp(), id: uid('audit') });
-        return { ...next, transactions: [transaction, ...next.transactions], accounts: adjustAccounts(next.accounts, transaction, 1), lastConfirmedInboxId: id };
+        const applied = postFinanceTransaction(next.accounts, next.transactions, { ...transaction, source: String(payload.paySource || inboxSourceLabel(item.source)) });
+        return { ...next, transactions: toTransactions(applied.transactions as Array<Partial<Transaction> & { id: string; kind: TransactionKind; accountId: string }>), accounts: toAccounts(applied.accounts as Account[]), lastConfirmedInboxId: id };
       });
       notify('已确认并记入账本');
       setEditingInboxId(null);
@@ -924,7 +1040,7 @@ export default function Home() {
     const item = data.inboxItems.find((entry) => entry.id === data.lastConfirmedInboxId);
     if (!canUndoInboxConfirm(item) || !item?.resultEntityId) { notify('最近一次确认不能撤销'); return; }
     setData((current) => {
-      const removed = removeLedgerTransactionState(current.accounts, current.transactions, item.resultEntityId as string);
+      const removed = removePostedTransaction(current.accounts, current.transactions, item.resultEntityId as string);
       const next = withInboxEvent(current, { type: 'undo', itemId: item.id, timestamp: localStamp(), id: uid('audit') });
       return {
         ...next,
@@ -1016,14 +1132,14 @@ export default function Home() {
     if (holding.kind === 'meme' && !holding.contract) { notify('Meme 币需要填写合约地址'); return; }
     setData((current) => {
       const investments = previous ? current.investments.map((item) => item.id === previous.id ? holding : item) : [...current.investments, holding];
-      return { ...current, investments, accounts: syncInvestmentBalances(current.accounts, investments) };
+      return { ...current, investments };
     });
     setEditingHoldingId(null); setSheet(null); setSelectedAccountId(accountId); notify(previous ? '持仓与今日净值已更新' : '理财产品已添加');
   }
   function deleteHolding() {
     const selected = editingHoldingId ? data.investments.find((item) => item.id === editingHoldingId) : undefined;
     if (!selected || !window.confirm('确定删除这个理财产品吗？历史收益记录也会删除。')) return;
-    setData((current) => { const investments = current.investments.filter((item) => item.id !== selected.id); return { ...current, investments, accounts: syncInvestmentBalances(current.accounts, investments) }; });
+    setData((current) => { const investments = current.investments.filter((item) => item.id !== selected.id); return { ...current, investments }; });
     setEditingHoldingId(null); setSelectedHoldingId(null); setSheet(null); notify('理财产品已删除');
   }
   function togglePrivacy(key: keyof PrivacySettings) { setData((current) => ({ ...current, privacy: { ...current.privacy, [key]: !current.privacy[key] } })); }
@@ -1166,9 +1282,10 @@ export default function Home() {
     <nav className="bottom-nav" aria-label="主导航">{navItems.map((item) => <button key={item.id} className={tab === item.id ? 'active' : ''} onClick={() => navigate(item.id)}><span className="nav-icon">{item.icon}{item.id === 'capture' && inboxPendingCount > 0 && <b className="nav-badge">{inboxPendingCount > 9 ? '9+' : inboxPendingCount}</b>}</span>{item.label}</button>)}</nav>
 
     {sheet === 'schedule' && <div className="overlay" role="dialog" aria-modal="true" onMouseDown={(event) => event.currentTarget === event.target && setSheet(null)}><form key={editingSchedule?.id ?? 'new-schedule'} onSubmit={addSchedule} className="sheet"><div className="handle" /><header><div><span>{editingSchedule ? 'EDIT SCHEDULE' : 'NEW SCHEDULE'}</span><h2>{editingSchedule ? '编辑日程' : '新建日程'}</h2></div><button type="button" onClick={() => { setSheet(null); setEditingScheduleId(null); }}>×</button></header><label>日程名称<input required autoFocus name="title" placeholder="例如：准备周末徒步装备" defaultValue={editingSchedule?.title} /></label><div className="row"><label>日期<input required name="date" type="date" defaultValue={editingSchedule?.date ?? selectedDate} /></label><label>时间<input required name="time" type="time" defaultValue={editingSchedule?.time ?? '10:00'} /></label></div><label>类型<input name="detail" placeholder="个人、工作或健康" defaultValue={editingSchedule?.detail?.split(' · ')[0] ?? '个人'} /></label><small className="form-tip">会提前 10 分钟弹一次，到点再弹一次。请允许通知。</small><button className="save" type="submit">{editingSchedule ? '保存修改' : '确认添加'}</button>{editingSchedule && <button className="danger-button" type="button" onClick={() => deleteSchedule(editingSchedule.id)}>删除这条日程</button>}</form></div>}
-    {sheet === 'transaction' && <div className="overlay" role="dialog" aria-modal="true" onMouseDown={(event) => event.currentTarget === event.target && setSheet(null)}><form key={editingTransaction?.id ?? 'new-transaction'} onSubmit={addTransaction} className="sheet scroll-sheet"><div className="handle" /><header><div><span>{editingTransaction ? 'EDIT RECORD' : 'NEW RECORD'}</span><h2>{editingTransaction ? '编辑账目' : '确认一笔流水'}</h2></div><button type="button" onClick={() => setSheet(null)}>×</button></header><div className="row"><label>类型<select name="kind" defaultValue={editingTransaction?.kind ?? 'expense'}><option value="expense">支出</option><option value="income">收入</option><option value="transfer">账户转账</option></select></label><label>金额<input required name="amount" inputMode="decimal" type="number" min="0.01" step="0.01" placeholder="0.00" defaultValue={editingTransaction?.amount} /></label></div><div className="row"><label>币种<select name="currency" defaultValue={editingTransaction?.currency ?? financeCurrency}>{currencies.map((currency) => <option key={currency}>{currency}</option>)}</select></label><label>入账汇率<input required name="exchangeRate" type="number" min="0.000001" step="0.000001" defaultValue={editingTransaction ? editingTransaction.accountAmount / editingTransaction.amount : 1} /></label></div><label>商家 / 用途<input required name="merchant" placeholder="例如：午餐" defaultValue={editingTransaction?.merchant} /></label><div className="row"><label>支出账户（钱从哪出去）<select name="accountId" defaultValue={editingTransaction?.accountId}>{data.accounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {account.currency}</option>)}</select></label><label>报销记入（待收回）<select name="reimburseToAccountId" defaultValue={editingTransaction?.reimburseAccountId ?? data.accounts.find((account) => accountRole(account.type) === 'receivable')?.id}>{data.accounts.filter((account) => accountRole(account.type) === 'receivable').map((account) => <option key={account.id} value={account.id}>{account.name} · {account.currency}</option>)}</select></label><label>报销后打入账户<select name="reimburseDepositAccountId" defaultValue={editingTransaction?.targetAccountId ?? editingTransaction?.accountId}>{data.accounts.filter((account) => canHoldMoney(account)).map((account) => <option key={account.id} value={account.id}>{account.name} · {account.currency}</option>)}</select></label></div><label>转入账户（仅转账）<select name="targetAccountId" defaultValue={editingTransaction?.targetAccountId}>{data.accounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {account.currency}</option>)}</select></label><label>分类<select name="category" defaultValue={editingTransaction?.category}><option>餐饮</option><option>交通</option><option>生活</option><option>医疗</option><option>订阅</option><option>其他</option><option>账户转账</option></select></label><label className="check-option"><input name="reimbursable" type="checkbox" defaultChecked={editingTransaction?.reimbursable} />待报销（垫付时增加待收回）</label><small className="form-tip">勾选待报销：支出账户减少，待收回增加。报销后打入账户要等流水点「入账」才会到账。</small><button className="save" type="submit">{editingTransaction ? '保存修改' : '确认入账'}</button>{editingTransaction && <button className="danger-button" type="button" onClick={() => deleteTransaction(editingTransaction?.id)}>删除这笔账目</button>}</form></div>}
-    {sheet === 'account' && <div className="overlay" role="dialog" aria-modal="true" onMouseDown={(event) => event.currentTarget === event.target && setSheet(null)}><form key={editingAccount?.id ?? 'new-account'} onSubmit={addAccount} className="sheet"><div className="handle" /><header><div><span>{editingAccount ? 'EDIT ACCOUNT' : 'NEW ACCOUNT'}</span><h2>{editingAccount ? '编辑账户' : '添加自定义账户'}</h2></div><button type="button" onClick={() => setSheet(null)}>×</button></header><label>账户名称<input required autoFocus name="name" placeholder="例如：港币旅行卡" defaultValue={editingAccount?.name} /></label><div className="row"><label>账户类型<select name="type" defaultValue={editingAccount?.type}>{accountTypes.map((type) => <option key={type} value={type}>{type}{accountRole(type) === 'receivable' ? ' · 债务应收' : isDebtRole(accountRole(type)) ? ' · 债务应付' : ''}</option>)}</select></label><label>币种<select name="currency" defaultValue={editingAccount?.currency}>{currencies.map((currency) => <option key={currency}>{currency}</option>)}</select></label></div><label>{editingAccount && isDebtRole(accountRole(editingAccount.type)) ? '当前欠款' : accountRole(editingAccount?.type || '') === 'receivable' ? '应收余额' : '当前余额'}<input name="balance" type="number" step="0.01" defaultValue={editingAccount?.balance ?? 0} /></label><small className="form-tip">{editingAccount && isDebtRole(accountRole(editingAccount.type)) ? '欠款和信用卡是债务·应付，填你还欠多少。' : accountRole(editingAccount?.type || '') === 'receivable' ? '待收回是债务·应收，别人欠你的钱。报销不用单独开账户。' : '可直接调整余额。'}</small><button className="save" type="submit">{editingAccount ? '保存修改' : '保存账户'}</button></form></div>}
+    {sheet === 'transaction' && <TransactionComposer accounts={data.accounts} currency={financeCurrency} editing={editingTransaction} onClose={() => setSheet(null)} onSubmit={addTransaction} onDelete={() => deleteTransaction(editingTransaction?.id)} />}
+    {sheet === 'account' && <div className="overlay" role="dialog" aria-modal="true" onMouseDown={(event) => event.currentTarget === event.target && setSheet(null)}><form key={editingAccount?.id ?? 'new-account'} onSubmit={addAccount} className="sheet"><div className="handle" /><header><div><span>{editingAccount ? 'EDIT ACCOUNT' : 'NEW ACCOUNT'}</span><h2>{editingAccount ? '编辑账户' : '添加自定义账户'}</h2></div><button type="button" onClick={() => setSheet(null)}>×</button></header><label>账户名称<input required autoFocus name="name" placeholder="例如：港币旅行卡" defaultValue={editingAccount?.name} /></label><div className="row"><label>账户类型<select name="type" defaultValue={editingAccount?.type}>{accountTypes.map((type) => <option key={type} value={type}>{type}{accountRole(type) === 'receivable' ? ' · 债务应收' : isDebtRole(accountRole(type)) ? ' · 债务应付' : ''}</option>)}</select></label><label>币种<select name="currency" defaultValue={editingAccount?.currency}>{currencies.map((currency) => <option key={currency}>{currency}</option>)}</select></label></div><label>{editingAccount && isDebtRole(accountRole(editingAccount.type)) ? '当前欠款' : accountRole(editingAccount?.type || '') === 'receivable' ? '应收余额' : '当前余额'}<input name="balance" type="number" step="0.01" defaultValue={editingAccount?.balance ?? 0} /></label><small className="form-tip">{editingAccount && isDebtRole(accountRole(editingAccount.type)) ? '欠款和信用卡是债务·应付，填你还欠多少。' : accountRole(editingAccount?.type || '') === 'receivable' ? '待收回是债务·应收，别人欠你的钱。报销不用单独开账户。' : '新建时填写期初余额；已有账户改余额会生成一笔「余额调整」流水，不会直接改期初。'}</small><button className="save" type="submit">{editingAccount ? '保存修改' : '保存账户'}</button>{editingAccount && <button className="danger-button" type="button" onClick={() => deleteAccount(editingAccount.id)}>删除这个账户</button>}</form></div>}
     {sheet === 'settle-account' && settlingAccount && <div className="overlay" role="dialog" aria-modal="true" onMouseDown={(event) => event.currentTarget === event.target && setSheet(null)}><form key={settlingAccount.id} onSubmit={confirmAccountSettlement} className="sheet"><div className="handle" /><header><div><span>SETTLE ACCOUNT</span><h2>{isDebtRole(accountRole(settlingAccount.type)) ? '还多少、用哪个账户' : '收回多少、进哪个账户'}</h2></div><button type="button" onClick={() => { setSheet(null); setSettlingAccountId(null); }}>×</button></header><p className="form-tip">{settlingAccount.name} 当前{isDebtRole(accountRole(settlingAccount.type)) ? '欠款' : '应收'} {currencyMark(settlingAccount.currency)} {money(settlingAccount.balance)}</p><label>{isDebtRole(accountRole(settlingAccount.type)) ? '还款金额' : '收回金额'}<input required name="amount" type="number" min="0.01" max={settlingAccount.balance} step="0.01" defaultValue={settlingAccount.balance} /></label><label>{isDebtRole(accountRole(settlingAccount.type)) ? '用哪个资金账户还' : '收到哪个资金账户'}<select name="counterpartId" defaultValue={defaultCashId(data.accounts, settlingAccount.currency)}>{data.accounts.filter((account) => canHoldMoney(account) && account.currency === settlingAccount.currency && account.id !== settlingAccount.id).map((account) => <option key={account.id} value={account.id}>{account.name} · 余额 {currencyMark(account.currency)}{money(account.balance)}</option>)}</select></label><small className="form-tip">{isDebtRole(accountRole(settlingAccount.type)) ? '不会自动还清。你填多少、选哪个账户，就从那个账户扣多少。' : '不会自动全部收回。你填多少、选哪个账户，钱就进那个账户。'}</small><button className="save" type="submit">{isDebtRole(accountRole(settlingAccount.type)) ? '确认还款' : '确认收回'}</button></form></div>}
+    {sheet === 'settle-reimbursement' && settlingTransactionId && <div className="overlay" role="dialog" aria-modal="true" onMouseDown={(event) => event.currentTarget === event.target && setSheet(null)}><form onSubmit={confirmReimbursementSettlement} className="sheet"><div className="handle" /><header><div><span>SETTLE REIMBURSEMENT</span><h2>报销到账：填金额和对方账户</h2></div><button type="button" onClick={() => { setSheet(null); setSettlingTransactionId(null); }}>×</button></header><label>到账金额（{settlingReimbursement?.currency}）<input required name="amount" type="number" min="0.01" step="0.01" defaultValue={settlingReimbursement?.amount} /></label><label>打入哪个资金账户<select name="counterpartId" defaultValue={defaultCashId(data.accounts, settlingReimbursement?.currency ?? financeCurrency)}>{data.accounts.filter((account) => canHoldMoney(account) && account.currency === settlingReimbursement?.currency).map((account) => <option key={account.id} value={account.id}>{account.name} · {account.currency}</option>)}</select></label><small className="form-tip">按账户实际应收金额结清；这是现金流结算，不会记成月度收入。</small><button className="save" type="submit">确认收回</button></form></div>}
     {sheet === 'recurring' && <div className="overlay" role="dialog" aria-modal="true" onMouseDown={(event) => event.currentTarget === event.target && setSheet(null)}><form key={editingRecurring?.id ?? 'new-bill'} onSubmit={addRecurringRule} className="sheet scroll-sheet"><div className="handle" /><header><div><span>{editingRecurring ? 'EDIT BILL' : 'NEW BILL'}</span><h2>{editingRecurring ? '编辑每月账单' : '添加每月账单'}</h2></div><button type="button" onClick={() => { setSheet(null); setEditingRecurringId(null); }}>×</button></header><div className="row"><label>规则类型<select name="ruleKind" defaultValue={editingRecurring?.kind ?? 'subscription'}><option value="subscription">订阅扣款</option><option value="credit-card">信用卡还款</option></select></label><label>每月到期日<input name="dueDay" type="number" min="1" max="31" defaultValue={editingRecurring?.dueDay ?? 1} /></label></div><label>名称<input required name="name" placeholder="例如：视频会员" defaultValue={editingRecurring?.name} /></label><div className="row"><label>金额<input required name="amount" type="number" min="0.01" step="0.01" defaultValue={editingRecurring?.amount} /></label><label>币种<select name="currency" defaultValue={editingRecurring?.currency}>{currencies.map((currency) => <option key={currency}>{currency}</option>)}</select></label></div><label>扣款账户<select name="accountId" defaultValue={editingRecurring?.accountId}>{data.accounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {account.currency}</option>)}</select></label><label>还款目标账户（订阅可忽略）<select name="targetAccountId" defaultValue={editingRecurring?.targetAccountId}>{data.accounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {account.currency}</option>)}</select></label>{editingRecurring && <button type="button" className="rule-toggle" onClick={() => toggleRecurringRule(editingRecurring.id)}>{editingRecurring.enabled ? '暂停这条提醒' : '重新启用提醒'}</button>}<button className="save" type="submit">{editingRecurring ? '保存修改' : '保存账单'}</button>{editingRecurring && <button className="danger-button" type="button" onClick={() => deleteRecurringRule(editingRecurring.id)}>删除这条账单</button>}</form></div>}
     {sheet === 'exchange-rate' && <div className="overlay" role="dialog" aria-modal="true" onMouseDown={(event) => event.currentTarget === event.target && setSheet(null)}><form key={editingRateCurrency ?? 'new-rate'} onSubmit={addExchangeRate} className="sheet"><div className="handle" /><header><div><span>EXCHANGE RATE</span><h2>人民币汇率</h2></div><button type="button" onClick={() => { setSheet(null); setEditingRateCurrency(null); }}>×</button></header><label>原币种<select name="currency" defaultValue={editingRateCurrency ?? 'USD'}>{currencies.filter((currency) => currency !== 'CNY').map((currency) => <option key={currency}>{currency}</option>)}</select></label><label>1 单位原币 = 人民币<input required name="cnyRate" type="number" min="0.000001" step="0.000001" defaultValue={editingRateCurrency ? data.exchangeRates.find((item) => item.currency === editingRateCurrency)?.cnyRate : ''} placeholder="例如 USD 填 7.200000" /></label><label>适用日期<input required name="asOf" type="date" defaultValue={editingRateCurrency ? data.exchangeRates.find((item) => item.currency === editingRateCurrency)?.asOf : TODAY} /></label><small className="form-tip">仅保存你手动确认的汇率；不会联网编造行情。缺失汇率的币种不会计入人民币总额。</small><button className="save" type="submit">保存手动汇率</button>{editingRateCurrency && <button className="danger-button" type="button" onClick={() => { deleteExchangeRate(editingRateCurrency); setEditingRateCurrency(null); setSheet(null); }}>删除此汇率</button>}</form></div>}
     {sheet === 'health' && <div className="overlay" role="dialog" aria-modal="true" onMouseDown={(event) => event.currentTarget === event.target && setSheet(null)}><form onSubmit={addHealthRecord} className="sheet"><div className="handle" /><header><div><span>HEALTH RECORD</span><h2>添加健康记录</h2></div><button type="button" onClick={() => setSheet(null)}>×</button></header><div className="row"><label>记录类型<select name="kind"><option value="height">身高 cm</option><option value="weight">体重 kg</option><option value="heartRate">心率 次/分</option><option value="stress">压力</option><option value="sleep">睡眠小时</option><option value="pai">PAI</option><option value="exercise">运动分钟</option><option value="meal">饮食餐数</option></select></label><label>数值<input required name="value" type="number" min="0" step="0.1" /></label></div><label>备注<input name="note" placeholder="例如：晨起心率、昨晚睡眠" /></label><small className="form-tip">管家只会在健康权限打开时读取这些数值，不等于诊断。</small><button className="save" type="submit">保存记录</button></form></div>}
@@ -1556,6 +1673,7 @@ function VaultPanel({ items, nativeOn, onReveal }: { items: { id?: string; title
 type FinancePanelProps = { data: AppData; currency: Currency; selectedAccountId: string | null; selectedHoldingId: string | null; onCurrency: (currency: Currency) => void; onSelectAccount: (id: string) => void; onSelectHolding: (id: string) => void; onBackAccount: () => void; onBackHolding: () => void; onNewTransaction: () => void; onEditTransaction: (id: string) => void; onDeleteTransaction: (id: string) => void; onNewAccount: () => void; onEditAccount: (id: string) => void; onNewHolding: () => void; onEditHolding: (id: string) => void; onNewRecurring: () => void; onEditRecurring: (id: string) => void; onDeleteRecurring: (id: string) => void; onRunRecurring: (id: string) => void; onToggleRecurring: (id: string) => void; onSettleReimbursement: (id: string) => void; onSettleAccount: (id: string) => void; onNewRate: () => void; onEditRate: (currency: Exclude<Currency, 'CNY'>) => void; onDeleteRate: (currency: Exclude<Currency, 'CNY'>) => void; onRefreshQuotes: () => void };
 
 function FinancePanel({ data, currency, selectedAccountId, selectedHoldingId, onCurrency, onSelectAccount, onSelectHolding, onBackAccount, onBackHolding, onNewTransaction, onEditTransaction, onDeleteTransaction, onNewAccount, onEditAccount, onNewHolding, onEditHolding, onNewRecurring, onEditRecurring, onDeleteRecurring, onRunRecurring, onToggleRecurring, onSettleReimbursement, onSettleAccount, onNewRate, onEditRate, onDeleteRate, onRefreshQuotes }: FinancePanelProps) {
+  const [financeSection, setFinanceSection] = useState<(typeof FINANCE_TABS)[number]>('总览');
   const selectedHolding = selectedHoldingId ? data.investments.find((item) => item.id === selectedHoldingId) : undefined;
   if (selectedHolding) return <HoldingDetail holding={selectedHolding} account={data.accounts.find((item) => item.id === selectedHolding.accountId)} onBack={onBackHolding} onEdit={() => onEditHolding(selectedHolding.id)} />;
   const selectedAccount = selectedAccountId ? data.accounts.find((item) => item.id === selectedAccountId) : undefined;
@@ -1578,16 +1696,17 @@ function FinancePanel({ data, currency, selectedAccountId, selectedHoldingId, on
   const wealth = wealthTotals(data.accounts, data.transactions);
   const cnyWealth = cnyWealthTotal(data.accounts, data.transactions, data.exchangeRates);
   return <div className="page finance-page">
-    <section className="finance-toolbar"><div><span>{Number(MONTH.slice(0, 4))}年{Number(MONTH.slice(5, 7))}月</span><h2>财务</h2></div><select aria-label="月度收支币种" value={currency} onChange={(event) => onCurrency(event.target.value as Currency)}>{currencies.map((item) => <option key={item}>{item}</option>)}</select></section>
+    <nav className="finance-tabs" role="tablist" aria-label="财务分类">{FINANCE_TABS.map((section) => <button key={section} type="button" role="tab" aria-selected={financeSection === section} className={financeSection === section ? 'active' : ''} onClick={() => setFinanceSection(section)}>{section}</button>)}</nav>
+    <div className="finance-tab-panel" role="tabpanel" hidden={financeSection !== '总览'}><section className="finance-toolbar"><div><span>{Number(MONTH.slice(0, 4))}年{Number(MONTH.slice(5, 7))}月</span><h2>财务</h2></div><select aria-label="月度收支币种" value={currency} onChange={(event) => onCurrency(event.target.value as Currency)}>{currencies.map((item) => <option key={item}>{item}</option>)}</select></section>
     <section className="asset-summary"><span>NET WORTH · CNY</span><h2>净资产（统一折算人民币）</h2><div className="asset-lines"><strong>¥ {money(cnyWealth.convertedCny)}</strong></div>{cnyWealth.unresolved.length > 0 && <p>待补汇率，暂未计入：{cnyWealth.unresolved.map((item) => `${item.currency} ${money(item.amount)}`).join(' · ')}</p>}{wealth.map((line) => <p key={`${line.currency}-break`}>{line.currency} 资产 {formatAssetAmount(line.currency, line.assets)} · 债务 · 应收 {formatAssetAmount(line.currency, line.receivable)} · 债务 · 应付 {formatAssetAmount(line.currency, line.payable)}</p>)}<p>{data.accounts.length ? '外币按每日参考汇率折算人民币；缺失汇率的币种不伪造总额。债务里有应收和应付，报销不是独立账户。' : '还没有账户，净资产为 ¥ 0.00。'}</p>{!data.accounts.length && <button type="button" onClick={onNewAccount}>添加第一个账户</button>}</section>
     <section className="section-block"><div className="section-title"><div><span>EXCHANGE RATES</span><h2>人民币汇率</h2></div><div className="section-actions"><button type="button" onClick={onRefreshQuotes}>每日更新</button></div></div>{data.exchangeRates.length ? <div className="plain-list">{data.exchangeRates.map((rate) => <article key={rate.currency}><span>{rate.currency}</span><div><strong>1 {rate.currency} = ¥ {money(rate.cnyRate)}</strong><small>每日参考 · Frankfurter · 适用 {rate.asOf} · 更新 {rate.updatedAt.replace('T', ' ')}</small></div></article>)}</div> : <div className="list-empty">还没有网络汇率。点「每日更新」，或等每天 18:00 自动拉取。</div>}<p className="automation-note">汇率来自 Frankfurter（欧洲央行公开日频），持仓收盘价来自 Stooq。每天 18:00 更新一次，只改估值，不改流水。</p></section>
     <section className="monthly-summary"><article><span>本月收入</span><strong className="income">+{mark}{money(monthIncome)}</strong></article><article><span>本月支出</span><strong>−{mark}{money(monthExpense)}</strong></article><article><span>本月结余</span><strong className={monthIncome - monthExpense >= 0 ? 'income' : ''}>{monthIncome - monthExpense >= 0 ? '+' : '−'}{mark}{money(Math.abs(monthIncome - monthExpense))}</strong></article></section>
     <section className="daily-card"><header><div><span>DAILY SPEND</span><h3>每日支出</h3></div><div><small>今天</small><strong>{mark}{money(todayExpense)}</strong></div></header><div className="spend-chart">{chartDays.map((item) => <div key={item.day}><span><i style={{ height: `${Math.max(5, item.amount / maxDay * 100)}%` }} /></span><small>{item.day}日</small></div>)}</div><footer><span>待报销</span><strong>{mark}{money(reimburse)}</strong></footer></section>
-    <button className="bookkeeping-button" onClick={onNewTransaction}><span>＋</span><div><strong>记一笔</strong><small>选择账户、币种与报销状态</small></div><b>›</b></button>
-    <section className="section-block account-section"><div className="section-title"><div><span>ACCOUNTS</span><h2>我的账户</h2></div><button onClick={onNewAccount}>＋ 添加账户</button></div>{data.accounts.length ? <div className="account-grid">{data.accounts.map((account) => <article className={account.tone} key={account.id} role="button" tabIndex={0} onClick={() => onSelectAccount(account.id)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onSelectAccount(account.id); }}><span>{roleLabel(account.type)} · {account.currency}</span><button className="account-edit-button" onClick={(event) => { event.stopPropagation(); onEditAccount(account.id); }}>编辑</button><h3>{account.name}</h3><strong>{isDebtRole(accountRole(account.type)) ? '欠 ' : ''}{currencyMark(account.currency)} {money(normalizeAccountBalance(account.type, account.balance))}</strong><small className="account-open-hint">查看账单 ›</small></article>)}</div> : <div className="list-empty">还没有账户，净资产为 0</div>}</section>
-    <section className="section-block investment-section"><div className="section-title"><div><span>INVESTMENTS · {currency}</span><h2>理财与投资</h2></div><button onClick={onNewHolding}>＋ 添加产品</button></div><div className="investment-toolbar"><span>每天 18:00 用收盘价重算收益，账户余额按持仓计算</span></div><InvestmentList items={data.investments.filter((item) => item.currency === currency)} onSelect={onSelectHolding} /><p className="automation-note">行情只覆盖今日价格点。历史流水和成本不变。</p></section>
-    <section className="section-block"><div className="section-title"><div><span>MONTHLY BILLS</span><h2>每月账单</h2></div><button onClick={onNewRecurring}>＋ 添加账单</button></div><div className="recurring-list">{data.recurringRules.length ? data.recurringRules.map((rule) => { const future = rule.dueDay > Number(TODAY.slice(-2)); return <article key={rule.id} className={!rule.enabled ? 'disabled' : ''}><span className="rule-icon">{rule.kind === 'subscription' ? '订' : '还'}</span><div><strong>{rule.name}</strong><small>每月 {rule.dueDay} 日 · {data.accounts.find((account) => account.id === rule.accountId)?.name || '账户待补充'}</small><button disabled={!rule.enabled || rule.lastRunPeriod === MONTH || future} onClick={() => onRunRecurring(rule.id)}>{rule.lastRunPeriod === MONTH ? '本月已确认' : !rule.enabled ? '已暂停' : future ? `${rule.dueDay}日到期` : rule.kind === 'subscription' ? '确认已扣款' : '确认已还款'}</button></div><b>{currencyMark(rule.currency)}{money(rule.amount)}</b><div className="row-ops"><button type="button" className="edit" onClick={() => onEditRecurring(rule.id)}>编辑</button><button type="button" className="del" onClick={() => onDeleteRecurring(rule.id)}>删除</button></div></article>; }) : <div className="list-empty">还没有每月账单</div>}</div><p className="automation-note">只做本机到期提醒，不会替你扣款。你确认实际发生后，才会写入账本并改变余额。每条账单都可以单独编辑或删除。</p></section>
-    <section className="section-block"><div className="section-title"><div><span>LEDGER · {currency}</span><h2>本月流水</h2></div></div><TransactionList items={monthItems} accounts={data.accounts} onEdit={onEditTransaction} onDelete={onDeleteTransaction} onSettle={onSettleReimbursement} /></section>
+    </div>
+    <section className="section-block account-section" role="tabpanel" hidden={financeSection !== '账户'}><div className="section-title"><div><span>ACCOUNTS</span><h2>我的账户</h2></div><button onClick={onNewAccount}>＋ 添加账户</button></div>{data.accounts.length ? <div className="account-grid">{data.accounts.map((account) => <article className={account.tone} key={account.id} role="button" tabIndex={0} onClick={() => onSelectAccount(account.id)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onSelectAccount(account.id); }}><span>{roleLabel(account.type)} · {account.currency}</span><button className="account-edit-button" onClick={(event) => { event.stopPropagation(); onEditAccount(account.id); }}>编辑</button><h3>{account.name}</h3><strong>{isDebtRole(accountRole(account.type)) ? '欠 ' : ''}{currencyMark(account.currency)} {money(normalizeAccountBalance(account.type, account.balance))}</strong><small className="account-open-hint">查看账单 ›</small></article>)}</div> : <div className="list-empty">还没有账户，净资产为 0</div>}</section>
+    <section className="section-block investment-section" role="tabpanel" hidden={financeSection !== '投资'}><div className="section-title"><div><span>INVESTMENTS · {currency}</span><h2>理财与投资</h2></div><button onClick={onNewHolding}>＋ 添加产品</button></div><div className="investment-toolbar"><span>每天 18:00 用收盘价重算收益，账户余额按持仓计算</span></div><InvestmentList items={data.investments.filter((item) => item.currency === currency)} onSelect={onSelectHolding} /><p className="automation-note">行情只覆盖今日价格点。历史流水和成本不变。</p></section>
+    <section className="section-block" role="tabpanel" hidden={financeSection !== '周期账单'}><div className="section-title"><div><span>MONTHLY BILLS</span><h2>每月账单</h2></div><button onClick={onNewRecurring}>＋ 添加账单</button></div><div className="recurring-list">{data.recurringRules.length ? data.recurringRules.map((rule) => { const future = rule.dueDay > Number(TODAY.slice(-2)); return <article key={rule.id} className={!rule.enabled ? 'disabled' : ''}><span className="rule-icon">{rule.kind === 'subscription' ? '订' : '还'}</span><div><strong>{rule.name}</strong><small>每月 {rule.dueDay} 日 · {data.accounts.find((account) => account.id === rule.accountId)?.name || '账户待补充'}</small><button disabled={!rule.enabled || rule.lastRunPeriod === MONTH || future} onClick={() => onRunRecurring(rule.id)}>{rule.lastRunPeriod === MONTH ? '本月已确认' : !rule.enabled ? '已暂停' : future ? `${rule.dueDay}日到期` : rule.kind === 'subscription' ? '确认已扣款' : '确认已还款'}</button></div><b>{currencyMark(rule.currency)}{money(rule.amount)}</b><div className="row-ops"><button type="button" className="edit" onClick={() => onEditRecurring(rule.id)}>编辑</button><button type="button" className="del" onClick={() => onDeleteRecurring(rule.id)}>删除</button></div></article>; }) : <div className="list-empty">还没有每月账单</div>}</div><p className="automation-note">只做本机到期提醒，不会替你扣款。你确认实际发生后，才会写入账本并改变余额。每条账单都可以单独编辑或删除。</p></section>
+    <section className="section-block" role="tabpanel" hidden={financeSection !== '流水'}><div className="section-title"><div><span>LEDGER · {currency}</span><h2>本月流水</h2></div></div><TransactionList items={monthItems} accounts={data.accounts} onEdit={onEditTransaction} onDelete={onDeleteTransaction} onSettle={onSettleReimbursement} /></section>
   </div>;
 }
 

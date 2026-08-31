@@ -480,6 +480,7 @@ export function normalizeAccountBalance(type: string, balance: number): number {
 }
 
 export type WealthAccount = { id?: string; type: string; currency: string; balance: number };
+export type WealthHolding = { accountId?: string; quantity: number; currentPrice: number };
 export type WealthLine = {
   currency: string;
   assets: number;
@@ -499,7 +500,7 @@ export type WealthTxn = {
   reimburseAccountId?: string;
 };
 
-export function wealthTotals(accounts: WealthAccount[], transactions: WealthTxn[] = []): WealthLine[] {
+export function wealthTotals(accounts: WealthAccount[], transactions: WealthTxn[] = [], holdings: WealthHolding[] = []): WealthLine[] {
   const map = new Map<string, WealthLine>();
   const line = (currency: string) => map.get(currency) ?? { currency, assets: 0, receivable: 0, liability: 0, payable: 0, net: 0 };
   for (const account of accounts) {
@@ -511,6 +512,13 @@ export function wealthTotals(accounts: WealthAccount[], transactions: WealthTxn[
     else if (role === 'receivable') current.receivable += amount;
     else if (role === 'liability') current.payable += amount;
     else if (role === 'payable') current.payable += amount;
+    map.set(currency, current);
+  }
+  for (const holding of holdings) {
+    const account = accounts.find((item) => item.id && item.id === holding.accountId);
+    const currency = account?.currency || 'CNY';
+    const current = line(currency);
+    current.assets += Number(holding.quantity) * Number(holding.currentPrice);
     map.set(currency, current);
   }
   for (const transaction of transactions) {
@@ -548,11 +556,11 @@ function validRateDate(value: string): boolean {
   return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
 }
 
-export function cnyWealthTotal(accounts: WealthAccount[], transactions: WealthTxn[] = [], rates: ExchangeRate[] = []): CnyWealthTotal {
+export function cnyWealthTotal(accounts: WealthAccount[], transactions: WealthTxn[] = [], rates: ExchangeRate[] = [], holdings: WealthHolding[] = []): CnyWealthTotal {
   const ratesByCurrency = new Map(rates.filter((rate) => Number.isFinite(rate.cnyRate) && rate.cnyRate > 0 && validRateDate(rate.asOf) && Number.isFinite(Date.parse(rate.updatedAt))).map((rate) => [rate.currency, rate]));
   let convertedCny = 0;
   const unresolved = new Map<string, number>();
-  for (const line of wealthTotals(accounts, transactions)) {
+  for (const line of wealthTotals(accounts, transactions, holdings)) {
     const rate = line.currency === 'CNY' ? 1 : ratesByCurrency.get(line.currency)?.cnyRate;
     if (!rate) {
       unresolved.set(line.currency, (unresolved.get(line.currency) ?? 0) + line.net);
@@ -567,6 +575,8 @@ export function cnyWealthTotal(accounts: WealthAccount[], transactions: WealthTx
 }
 
 export type LegacyReimbursementTxn = WealthTxn & { reimburseAccountId?: string };
+
+
 
 export function migrateLegacyReimbursementAccounts<TA extends WealthAccount & { id: string }, TT extends LegacyReimbursementTxn>(
   accounts: TA[],
@@ -622,7 +632,7 @@ export function applyDailyFxRates(current: ExchangeRate[], incoming: ExchangeRat
 
 export type LedgerAccount = { id: string; name?: string; type: string; currency: string; balance: number };
 export type LedgerTxn = {
-  kind: 'expense' | 'income' | 'transfer';
+  kind: 'expense' | 'income' | 'transfer' | 'adjustment' | 'settlement';
   accountId: string;
   targetAccountId?: string;
   accountAmount: number;
@@ -658,12 +668,13 @@ function ledgerDelta(account: LedgerAccount, transaction: LedgerTxn): number {
   if (account.id === transaction.accountId) {
     if (transaction.kind === 'income') return debt ? -amount : amount;
     if (transaction.kind === 'expense') return debt ? amount : -amount;
-    if (transaction.kind === 'transfer') return debt ? amount : -amount;
+    if (transaction.kind === 'transfer' || transaction.kind === 'settlement') return debt ? amount : -amount;
+    if (transaction.kind === 'adjustment') return amount;
   }
   if (transaction.kind === 'expense' && transaction.reimbursable && !transaction.reimbursed && account.id === transaction.reimburseAccountId && role === 'receivable') {
     return amount;
   }
-  if (transaction.kind === 'transfer' && account.id === transaction.targetAccountId) {
+  if ((transaction.kind === 'transfer' || transaction.kind === 'settlement') && account.id === transaction.targetAccountId) {
     return debt ? -amount : amount;
   }
   return 0;
@@ -725,9 +736,13 @@ export function settleReimbursementState<TA extends LedgerAccount, TT extends Li
   const original = transactions.find((item) => item.id === originalId);
   if (!original?.reimbursable || original.reimbursed) return { accounts, transactions };
   const linkedCredit = { ...credit, reimbursementForId: original.id } as TT;
-  let nextAccounts = applyLedger(accounts, linkedCredit, 1);
+  const ledgerCredit = linkedCredit.kind === 'settlement' || linkedCredit.kind === 'adjustment'
+    ? { ...linkedCredit, kind: linkedCredit.kind === 'settlement' ? 'settlement' as const : 'adjustment' as const }
+    : linkedCredit;
+  let nextAccounts = applyLedger(accounts, ledgerCredit, 1);
   const claim = accounts.find((account) => account.id === original.reimburseAccountId);
-  if (claim && accountRole(claim.type) === 'receivable') {
+  const touchesClaim = Boolean(claim && (linkedCredit.accountId === claim.id || linkedCredit.targetAccountId === claim.id));
+  if (claim && accountRole(claim.type) === 'receivable' && !touchesClaim) {
     nextAccounts = applyLedger(nextAccounts, { kind: 'expense', accountId: claim.id, accountAmount: original.accountAmount }, 1);
   }
   return {
@@ -1832,3 +1847,28 @@ export function consumeCallBudget(budget: CallBudget, tokens: number): { ok: boo
 export function unusualRedirect(_from: string, _to: string): boolean {
   return true;
 }
+export {
+  ACCOUNT_TYPES,
+  FINANCE_TABS,
+  applyPostings,
+  buildReimbursementSettlement,
+  canDeleteAccount,
+  composeTransactionPostings,
+  derivedAccountBalance,
+  financeTransactionFields,
+  investmentAccountSnapshot,
+  isMonthlyIncome,
+  migrateInvestmentCash,
+  migrateSubscriptionAccounts,
+  migrateToPostingLedger,
+  monthlyIncomeTotal,
+  normalizeFinanceRecords,
+  postBalanceAdjustment,
+  postFinanceTransaction,
+  refreshHoldingsValuation,
+  reimbursementOutstandingAmount,
+  removePostedTransaction,
+  resolveTransferAmounts,
+  runFinanceInvariantSequence,
+  settlePostedReimbursement,
+} from './finance-core';

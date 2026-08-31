@@ -594,11 +594,17 @@ describe('subscription migration and account deletion', () => {
   });
 });
 
-describe('deterministic finance invariants', () => {
-  it('holds derived balances and unduplicated wealth for a seeded random sequence', () => {
-    const report = runFinanceInvariantSequence(20260831, 48);
-    expect(report.ok).toBe(true);
-    expect(report.violations).toEqual([]);
+describe('deterministic finance property gate', () => {
+  it('holds ledger, receivable and investment invariants across a stable seed matrix', () => {
+    const failures: Array<{ seed: number; violations: string[] }> = [];
+    const seeds = Array.from({ length: 48 }, (_, index) => (20260831 + index * 7919) >>> 0);
+
+    for (const seed of seeds) {
+      const report = runFinanceInvariantSequence(seed, 72);
+      if (!report.ok) failures.push({ seed, violations: report.violations });
+    }
+
+    expect(failures).toEqual([]);
   });
 });
 

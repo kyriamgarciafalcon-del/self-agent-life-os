@@ -28,6 +28,7 @@ import {
   canApplyLedger,
   defaultCashId,
   reconcileRecurringConfirmations,
+  generateRecurringDrafts,
   releaseRecurringConfirmation,
   removeLedgerTransactionState,
   resolvePaymentAccountId,
@@ -352,6 +353,56 @@ describe('truthful product state', () => {
       { id: 'wechat', type: '资金账户', currency: 'CNY', balance: 100 },
     ];
     expect(planAccountSettlement(accounts, 'claim', 'wechat', 40).ok).toBe(false);
+  });
+
+  it('generates due recurring rules as stable inbox drafts without posting transactions', () => {
+    const transactions = [{ id: 'existing-tx' }];
+    const drafts = generateRecurringDrafts([
+      { id: 'netflix', name: 'Netflix', kind: 'subscription', amount: 68, currency: 'CNY', accountId: 'bank', dueDay: 5, enabled: true },
+      { id: 'card', name: '信用卡还款', kind: 'credit-card', amount: 500, currency: 'CNY', accountId: 'bank', targetAccountId: 'credit', dueDay: 6, enabled: true },
+      { id: 'future', name: '未来账单', kind: 'subscription', amount: 10, currency: 'CNY', accountId: 'bank', dueDay: 20, enabled: true },
+      { id: 'paused', name: '已暂停', kind: 'subscription', amount: 10, currency: 'CNY', accountId: 'bank', dueDay: 1, enabled: false },
+      { id: 'done', name: '本月已确认', kind: 'subscription', amount: 10, currency: 'CNY', accountId: 'bank', dueDay: 1, enabled: true, lastRunPeriod: '2026-08' },
+    ], { period: '2026-08', day: 6, createdAt: '2026-08-06T09:00:00' });
+
+    expect(drafts).toHaveLength(2);
+    expect(drafts.map((item) => item.proposedAction)).toEqual(['create_expense', 'create_transfer']);
+    expect(drafts.map((item) => item.sourceEventId)).toEqual([
+      'recurring:netflix:2026-08',
+      'recurring:card:2026-08',
+    ]);
+    expect(drafts[0]?.payload).toMatchObject({ recurringRuleId: 'netflix', amount: 68, currency: 'CNY', accountId: 'bank', reimbursable: false });
+    expect(drafts[1]?.payload).toMatchObject({ recurringRuleId: 'card', amount: 500, currency: 'CNY', accountId: 'bank', targetAccountId: 'credit' });
+    expect(transactions).toEqual([{ id: 'existing-tx' }]);
+  });
+
+  it('blocks recurring transfer drafts without a valid same-currency target account', () => {
+    const base = normalizeInboxItem({
+      id: 'recurring:card:2026-08',
+      source: 'manual',
+      proposedAction: 'create_transfer',
+      payload: { amount: 500, currency: 'CNY', accountId: 'bank', targetAccountId: '', recurringRuleId: 'card' },
+      createdAt: '2026-08-06T09:00:00',
+      status: 'pending',
+      sourceEventId: 'recurring:card:2026-08',
+    })!;
+    const accounts = [
+      { id: 'bank', currency: 'CNY', type: '储蓄卡', balance: 600 },
+      { id: 'credit', currency: 'CNY', type: '信用卡', balance: 600 },
+      { id: 'usd-credit', currency: 'USD', type: '信用卡', balance: 600 },
+    ];
+
+    expect(inboxConfirmBlockReason(base, accounts)).toMatchObject({ reason: 'missing_target_account', dataScope: 'finance' });
+    expect(inboxConfirmBlockReason({ ...base, payload: { ...base.payload, targetAccountId: 'usd-credit' } }, accounts)).toMatchObject({ reason: 'missing_currency', dataScope: 'finance' });
+    expect(inboxConfirmBlockReason({ ...base, payload: { ...base.payload, targetAccountId: 'credit' } }, accounts)).toBeNull();
+    expect(inboxConfirmBlockReason(
+      { ...base, payload: { ...base.payload, targetAccountId: 'credit' } },
+      accounts.map((account) => account.id === 'bank' ? { ...account, balance: 400 } : account),
+    )).toMatchObject({ reason: 'insufficient_funds', dataScope: 'finance' });
+    expect(inboxConfirmBlockReason(
+      { ...base, payload: { ...base.payload, targetAccountId: 'credit' } },
+      accounts.map((account) => account.id === 'credit' ? { ...account, balance: 300 } : account),
+    )).toMatchObject({ reason: 'overpayment', dataScope: 'finance' });
   });
 
   it('clears a stale monthly-bill confirmation when the posting is already gone', () => {
@@ -696,6 +747,16 @@ describe('unified inbox state transitions', () => {
     });
     const confirmedTravel = confirmInboxItem([travel], 'tr-1', 'travel-1');
     expect(canUndoInboxConfirm(confirmedTravel[0])).toBe(false);
+    const transfer = normalizeInboxItem({
+      id: 'recurring:card:2026-08',
+      source: 'manual',
+      proposedAction: 'create_transfer',
+      payload: { amount: 500, currency: 'CNY', accountId: 'bank', targetAccountId: 'credit', recurringRuleId: 'card' },
+      createdAt: '2026-08-06T09:00:00',
+      status: 'pending',
+      sourceEventId: 'recurring:card:2026-08',
+    })!;
+    expect(canUndoInboxConfirm(confirmInboxItem([transfer], transfer.id, 'tx-card')[0])).toBe(true);
     expect(updateInboxItemPayload([seed], 'pay-1', { amount: 40, merchant: '晚餐' })[0].preview).toContain('晚餐');
     expect(pendingInboxCount(confirmed)).toBe(0);
   });

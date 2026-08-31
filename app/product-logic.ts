@@ -895,6 +895,7 @@ export type InboxStatus = typeof INBOX_STATUSES[number];
 export const INBOX_ACTIONS = [
   'create_expense',
   'create_income',
+  'create_transfer',
   'create_schedule',
   'create_travel',
   'update_travel',
@@ -918,6 +919,7 @@ export const INBOX_SOURCE_LABELS: Record<InboxSource, string> = {
 export const INBOX_ACTION_LABELS: Record<InboxProposedAction, string> = {
   create_expense: '记一笔支出',
   create_income: '记一笔收入',
+  create_transfer: '确认一笔转账',
   create_schedule: '添加日程',
   create_travel: '添加行程',
   update_travel: '更新行程',
@@ -1041,6 +1043,9 @@ export function inboxPreviewFor(action: InboxProposedAction, payload: Record<str
   if (action === 'create_expense' || action === 'create_income') {
     return `${payload.merchant || payload.title || '支付'} · ${payload.amount ?? '待补金额'}`;
   }
+  if (action === 'create_transfer') {
+    return `${payload.merchant || payload.title || '转账'} · ${payload.amount ?? '待补金额'}`;
+  }
   if (action === 'create_schedule') return `${payload.date || ''} ${payload.time || ''} · ${payload.title || '新日程'}`.trim();
   if (action === 'create_travel' || action === 'update_travel') {
     return `${payload.travelKind === 'flight' || payload.kind === 'flight' ? '航班' : '火车'} ${payload.number || ''} ${payload.from || ''} → ${payload.to || ''}`.replace(/\s+/g, ' ').trim();
@@ -1090,6 +1095,53 @@ export function normalizeInboxItems(raw: unknown): InboxItem[] {
     items.push(item);
   }
   return items;
+}
+
+export type RecurringDraftRule = {
+  id: string;
+  name: string;
+  kind: 'subscription' | 'credit-card';
+  amount: number;
+  currency: string;
+  accountId: string;
+  targetAccountId?: string;
+  dueDay: number;
+  enabled: boolean;
+  lastRunPeriod?: string;
+};
+
+export function generateRecurringDrafts(
+  rules: RecurringDraftRule[],
+  input: { period: string; day: number; createdAt: string },
+): InboxItem[] {
+  return rules.flatMap((rule) => {
+    if (!rule.enabled || rule.lastRunPeriod === input.period || rule.dueDay > input.day) return [];
+    if (!(rule.amount > 0) || !rule.currency || !rule.accountId) return [];
+    if (rule.kind === 'credit-card' && !rule.targetAccountId) return [];
+    const sourceEventId = `recurring:${rule.id}:${input.period}`;
+    const item = normalizeInboxItem({
+      id: sourceEventId,
+      source: 'manual',
+      confidence: 1,
+      proposedAction: rule.kind === 'subscription' ? 'create_expense' : 'create_transfer',
+      payload: {
+        recurringRuleId: rule.id,
+        period: input.period,
+        amount: rule.amount,
+        currency: rule.currency,
+        accountId: rule.accountId,
+        targetAccountId: rule.targetAccountId,
+        merchant: rule.name,
+        category: rule.kind === 'subscription' ? '订阅' : '信用卡还款',
+        paySource: '周期账单确认',
+        reimbursable: false,
+      },
+      createdAt: input.createdAt,
+      status: 'pending',
+      sourceEventId,
+    });
+    return item ? [item] : [];
+  });
 }
 
 export function migrateInboxStore(raw: unknown): InboxStore {
@@ -1158,7 +1210,7 @@ export function reopenInboxItem(items: InboxItem[], id: string): InboxItem[] {
 }
 
 export function canUndoInboxConfirm(item: InboxItem | undefined | null): boolean {
-  return Boolean(item && item.status === 'confirmed' && (item.proposedAction === 'create_expense' || item.proposedAction === 'create_income') && item.resultEntityId);
+  return Boolean(item && item.status === 'confirmed' && (item.proposedAction === 'create_expense' || item.proposedAction === 'create_income' || item.proposedAction === 'create_transfer') && item.resultEntityId);
 }
 
 export function inboxItemFromNaturalCapture(input: {
@@ -1289,6 +1341,11 @@ export const AUDIT_OUTCOME_LABELS: Record<AuditOutcome, string> = {
 export const AUDIT_REASON_LABELS: Record<string, string> = {
   missing_amount: '缺少金额',
   missing_account: '缺少账户',
+  missing_target_account: '缺少目标债务账户',
+  missing_currency: '账户币种不一致',
+  insufficient_funds: '资金账户余额不足',
+  overpayment: '还款金额超过当前欠款',
+  stale_period: '账单草稿已过期',
   invalid_health: '健康数值无效',
   invalid_travel: '行程信息不完整',
   ledger_rejected: '无法入账',
@@ -1399,7 +1456,27 @@ export function filterAuditLog(entries: AuditEntry[], filters: { outcome?: strin
   });
 }
 
-export function inboxConfirmBlockReason(item: InboxItem, accounts: { id: string; currency?: string }[]): { reason: string; dataScope?: string } | null {
+export function inboxConfirmBlockReason(item: InboxItem, accounts: { id: string; currency?: string; type?: string; balance?: number }[]): { reason: string; dataScope?: string } | null {
+  if (item.proposedAction === 'create_transfer') {
+    const amount = Math.abs(Number(item.payload.amount ?? 0));
+    if (!amount) return { reason: 'missing_amount', dataScope: 'finance' };
+    const accountId = String(item.payload.accountId || '');
+    const targetAccountId = String(item.payload.targetAccountId || '');
+    const account = accounts.find((entry) => entry.id === accountId);
+    const target = accounts.find((entry) => entry.id === targetAccountId);
+    if (!accountId || !account) return { reason: 'missing_account', dataScope: 'finance' };
+    if (!targetAccountId || !target || target.id === account.id) return { reason: 'missing_target_account', dataScope: 'finance' };
+    const currency = String(item.payload.currency || '');
+    if (!currency || account.currency !== currency || target.currency !== currency) return { reason: 'missing_currency', dataScope: 'finance' };
+    if ((account.type && isDebtRole(accountRole(account.type))) || (target.type && !isDebtRole(accountRole(target.type)))) {
+      return { reason: 'missing_target_account', dataScope: 'finance' };
+    }
+    const sourceBalance = Number(account.balance);
+    const targetBalance = Number(target.balance);
+    if (!Number.isFinite(sourceBalance) || sourceBalance + 0.0001 < amount) return { reason: 'insufficient_funds', dataScope: 'finance' };
+    if (!Number.isFinite(targetBalance) || targetBalance + 0.0001 < amount) return { reason: 'overpayment', dataScope: 'finance' };
+    return null;
+  }
   if (item.proposedAction === 'create_expense' || item.proposedAction === 'create_income') {
     const amount = Math.abs(Number(item.payload.amount ?? 0));
     if (!amount) return { reason: 'missing_amount', dataScope: 'finance' };

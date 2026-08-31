@@ -1,7 +1,7 @@
 'use client';
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { accountRole, addDaysKey, applyDailyFxRates, applyDailyPriceQuotes, applyInboxLifecycle, AI_CONFIG_EVENT, AI_CONFIG_STORAGE_KEY, AI_REPLY_EVENT, AUDIT_OUTCOMES, auditOutcomeLabel, auditReasonLabel, buildButlerSystemPrompt, buildHealthBriefing, buildAiSendPreview, canUndoInboxConfirm, cnyWealthTotal, confirmByokHost, consumeCallBudget, createCallBudget, defaultCashId, describeButlerDataScope, detectLegacyDemoData, dialogShouldDismiss, dismissPermissionOnboarding, filterAuditLog, healthRecordsFromSnapshots, inboxConfidenceLabel, inboxConfirmBlockReason, inboxItemFromAiTool, inboxItemFromButlerAction, inboxItemFromNaturalCapture, inboxItemFromPayment, inboxItemFromTravelNotice, inboxSourceLabel, ledgerIdempotencyKeyForInboxItem, INBOX_ACTION_LABELS, isBackupPayload, isDebtRole, latestHealthByKind, loadBrowserAiConfig, localDateKey, markPermissionSettingsOpened, migrateAuditLog, migrateInboxStore, migrateLegacyAiLocalStorage, migratePrivacySettings, normalizeAccountBalance, normalizeMemory, normalizePermissionOnboarding, parseAiProviderResponse, parseButlerModelOutput, parseCapabilityStatus, parseNaturalCapture, pendingInboxItems, persistBrowserAiConfig, permissionOnboardingProgress, planAccountSettlement, prepareOutboundAiPayload, reconcileRecurringConfirmations, releaseRecurringConfirmation, resolveInboxFinanceConfirmation, resolvePaymentAccountId, shouldShowPermissionOnboarding, summarizeHealth, TOAST_ARIA_LIVE, updateInboxItemPayload, upsertByExternalKey, validateByokTarget, wealthTotals, weekDates, ACCOUNT_TYPES, buildReimbursementSettlement, canDeleteAccount, FINANCE_TABS, financeTransactionFields, investmentAccountSnapshot, monthlyIncomeTotal, normalizeFinanceRecords, postBalanceAdjustment, postFinanceTransaction, refreshHoldingsValuation, reimbursementOutstandingAmount, removePostedTransaction, settlePostedReimbursement, resolveTransferAmounts, type AuditEntry, type ButlerAction, type CapabilityStatusSnapshot, type HealthMetric, type InboxItem, type InboxLifecycleEvent, type InboxSource, type PermissionCardId, type PermissionOnboardingState, type TravelKind } from './product-logic';
+import { accountRole, addDaysKey, applyDailyFxRates, applyDailyPriceQuotes, applyInboxLifecycle, AI_CONFIG_EVENT, AI_CONFIG_STORAGE_KEY, AI_REPLY_EVENT, AUDIT_OUTCOMES, auditOutcomeLabel, auditReasonLabel, buildButlerSystemPrompt, buildHealthBriefing, buildAiSendPreview, canUndoInboxConfirm, cnyWealthTotal, confirmByokHost, consumeCallBudget, createCallBudget, defaultCashId, describeButlerDataScope, detectLegacyDemoData, dialogShouldDismiss, dismissPermissionOnboarding, filterAuditLog, generateRecurringDrafts, healthRecordsFromSnapshots, inboxConfidenceLabel, inboxConfirmBlockReason, inboxItemFromAiTool, inboxItemFromButlerAction, inboxItemFromNaturalCapture, inboxItemFromPayment, inboxItemFromTravelNotice, inboxSourceLabel, ledgerIdempotencyKeyForInboxItem, INBOX_ACTION_LABELS, isBackupPayload, isDebtRole, latestHealthByKind, loadBrowserAiConfig, localDateKey, markPermissionSettingsOpened, migrateAuditLog, migrateInboxStore, migrateLegacyAiLocalStorage, migratePrivacySettings, normalizeAccountBalance, normalizeMemory, normalizePermissionOnboarding, parseAiProviderResponse, parseButlerModelOutput, parseCapabilityStatus, parseNaturalCapture, pendingInboxItems, persistBrowserAiConfig, permissionOnboardingProgress, planAccountSettlement, prepareOutboundAiPayload, reconcileRecurringConfirmations, releaseRecurringConfirmation, resolveInboxFinanceConfirmation, resolvePaymentAccountId, shouldShowPermissionOnboarding, summarizeHealth, TOAST_ARIA_LIVE, updateInboxItemPayload, upsertByExternalKey, validateByokTarget, wealthTotals, weekDates, ACCOUNT_TYPES, buildReimbursementSettlement, canDeleteAccount, FINANCE_TABS, financeTransactionFields, investmentAccountSnapshot, monthlyIncomeTotal, normalizeFinanceRecords, postBalanceAdjustment, postFinanceTransaction, refreshHoldingsValuation, reimbursementOutstandingAmount, removePostedTransaction, settlePostedReimbursement, resolveTransferAmounts, type AuditEntry, type ButlerAction, type CapabilityStatusSnapshot, type HealthMetric, type InboxItem, type InboxLifecycleEvent, type InboxSource, type PermissionCardId, type PermissionOnboardingState, type TravelKind } from './product-logic';
 
 type Tab = 'home' | 'schedule' | 'capture' | 'finance' | 'profile' | 'health' | 'travel' | 'data' | 'butler' | 'privacy' | 'memory' | 'vault' | 'audit';
 type ScheduleColor = 'blue' | 'green' | 'orange';
@@ -904,15 +904,11 @@ export default function Home() {
     const selected = data.recurringRules.find((rule) => rule.id === id);
     if (!selected || !selected.enabled || selected.lastRunPeriod === MONTH) { notify('本月已经处理'); return; }
     if (selected.dueDay > Number(TODAY.slice(-2))) { notify(`将在本月 ${selected.dueDay} 日到期`); return; }
-    const transaction: Transaction = { id: uid('transaction'), kind: selected.kind === 'subscription' ? 'expense' : 'transfer', amount: selected.amount, accountAmount: selected.amount, currency: selected.currency, merchant: selected.name, category: selected.kind === 'subscription' ? '订阅' : '信用卡还款', accountId: selected.accountId, targetAccountId: selected.targetAccountId, source: '自动扣款确认', reimbursable: false, reimbursed: false, recurringRuleId: selected.id, createdAt: localStamp() };
-    setData((current) => {
-      const rule = current.recurringRules.find((item) => item.id === id);
-      if (!rule || !rule.enabled || rule.lastRunPeriod === MONTH) return current;
-      const posted = postFinanceTransaction(current.accounts, current.transactions, transaction);
-      if (!posted.transactions.some((item) => item.id === transaction.id)) return current;
-      return { ...current, transactions: toTransactions(posted.transactions as Array<Partial<Transaction> & { id: string; kind: TransactionKind; accountId: string }>), accounts: toAccounts(posted.accounts as Account[]), recurringRules: current.recurringRules.map((item) => item.id === id ? { ...item, lastRunPeriod: MONTH } : item) };
-    });
-    notify(selected.kind === 'subscription' ? '订阅扣款已确认入账' : '信用卡还款已确认转账');
+    const draft = generateRecurringDrafts([selected], { period: MONTH, day: Number(TODAY.slice(-2)), createdAt: localStamp() })[0];
+    if (!draft) { notify('账单信息不完整，请先编辑'); return; }
+    setData((current) => withInboxEvent(current, { type: 'enqueue', item: draft, timestamp: localStamp(), id: uid('audit') }));
+    navigate('capture');
+    notify('已加入收件箱，确认后才会入账');
   }
   function organizeCapture(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -991,26 +987,39 @@ export default function Home() {
     const item = data.inboxItems.find((entry) => entry.id === id && entry.status === 'pending');
     if (!item) return;
     const payload = item.payload;
-    if (item.proposedAction === 'create_expense' || item.proposedAction === 'create_income') {
+    if (item.proposedAction === 'create_expense' || item.proposedAction === 'create_income' || item.proposedAction === 'create_transfer') {
       const blocked = inboxConfirmBlockReason(item, data.accounts);
-      if (blocked) { recordInboxFail(id, blocked.reason, blocked.dataScope); notify(blocked.reason === 'missing_amount' ? '请先补充金额' : blocked.reason === 'missing_currency' ? '请选择账户币种' : blocked.reason === 'missing_reimbursable' ? '请明确这笔是否报销' : '请先选择入账账户'); return; }
+      if (blocked) { recordInboxFail(id, blocked.reason, blocked.dataScope); notify(blocked.reason === 'missing_amount' ? '请先补充金额' : blocked.reason === 'missing_currency' ? '请选择相同币种账户' : blocked.reason === 'missing_reimbursable' ? '请明确这笔是否报销' : blocked.reason === 'missing_target_account' ? '请选择目标债务账户' : blocked.reason === 'insufficient_funds' ? '资金账户余额不足' : blocked.reason === 'overpayment' ? '还款金额不能超过当前欠款' : '请先选择入账账户'); return; }
       const amount = Math.abs(Number(payload.amount ?? 0));
       const accountId = String(payload.accountId || '');
       const account = data.accounts.find((entry) => entry.id === accountId);
-      const transactionKind = item.proposedAction === 'create_income' ? 'income' : 'expense';
+      const isTransfer = item.proposedAction === 'create_transfer';
+      const transactionKind: TransactionKind = item.proposedAction === 'create_income' ? 'income' : isTransfer ? 'transfer' : 'expense';
       const reimbursable = transactionKind === 'expense' && payload.reimbursable === true;
       const currencyValue = String(payload.currency || account?.currency || '');
       if (!isCurrency(currencyValue)) { recordInboxFail(id, 'missing_currency', 'finance'); notify('请选择账户币种'); return; }
       const currency = currencyValue;
       const claimId = reimbursable ? data.accounts.find((entry) => accountRole(entry.type) === 'receivable' && entry.currency === currency)?.id : undefined;
-      const transaction: Transaction = { id: uid('transaction'), kind: transactionKind, amount, accountAmount: amount, currency, merchant: String(payload.merchant || '待补充商家'), category: transactionKind === 'income' ? '收入' : String(payload.category || '其他'), accountId, source: String(payload.paySource || inboxSourceLabel(item.source)), reimbursable, reimburseAccountId: claimId, reimbursed: false, createdAt: localStamp(), idempotencyKey: ledgerIdempotencyKeyForInboxItem(item) };
+      const recurringRuleId = typeof payload.recurringRuleId === 'string' ? payload.recurringRuleId : undefined;
+      const recurringPeriod = typeof payload.period === 'string' ? payload.period : undefined;
+      if (recurringRuleId && recurringPeriod !== MONTH) { recordInboxFail(id, 'stale_period', 'finance'); notify('这条账单草稿已过期，请重新生成'); return; }
+      const transaction: Transaction = { id: uid('transaction'), kind: transactionKind, amount, accountAmount: amount, currency, merchant: String(payload.merchant || (isTransfer ? '信用卡还款' : '待补充商家')), category: isTransfer ? '信用卡还款' : transactionKind === 'income' ? '收入' : String(payload.category || '其他'), accountId, targetAccountId: isTransfer ? String(payload.targetAccountId || '') : undefined, targetAmount: isTransfer ? amount : undefined, targetCurrency: isTransfer ? currency : undefined, source: String(payload.paySource || inboxSourceLabel(item.source)), reimbursable, reimburseAccountId: claimId, reimbursed: false, recurringRuleId, createdAt: localStamp(), idempotencyKey: ledgerIdempotencyKeyForInboxItem(item) };
       const resolution = resolveInboxFinanceConfirmation(data.accounts, data.transactions, transaction);
       if (resolution.outcome === 'rejected') { recordInboxFail(id, 'ledger_rejected', 'finance'); notify('这笔账无法入账，请先检查账户'); return; }
       setData((current) => {
-        const next = withInboxEvent(current, { type: 'confirm', itemId: id, resultEntityId: resolution.transactionId, timestamp: localStamp(), id: uid('audit') });
-        if (resolution.outcome === 'reused') return { ...next, lastConfirmedInboxId: id };
-        const applied = postFinanceTransaction(next.accounts, next.transactions, { ...transaction, source: String(payload.paySource || inboxSourceLabel(item.source)) });
-        return { ...next, transactions: toTransactions(applied.transactions as Array<Partial<Transaction> & { id: string; kind: TransactionKind; accountId: string }>), accounts: toAccounts(applied.accounts as Account[]), lastConfirmedInboxId: id };
+        const currentResolution = resolveInboxFinanceConfirmation(current.accounts, current.transactions, transaction);
+        if (currentResolution.outcome === 'rejected' || !currentResolution.transactionId) return current;
+        const next = withInboxEvent(current, { type: 'confirm', itemId: id, resultEntityId: currentResolution.transactionId, timestamp: localStamp(), id: uid('audit') });
+        const lockRecurring = (rules: RecurringRule[]) => recurringRuleId
+          ? rules.map((rule) => rule.id === recurringRuleId ? { ...rule, lastRunPeriod: MONTH } : rule)
+          : rules;
+        return {
+          ...next,
+          transactions: toTransactions(currentResolution.transactions as Array<Partial<Transaction> & { id: string; kind: TransactionKind; accountId: string }>),
+          accounts: toAccounts(currentResolution.accounts as Account[]),
+          recurringRules: lockRecurring(next.recurringRules),
+          lastConfirmedInboxId: currentResolution.outcome === 'posted' ? id : null,
+        };
       });
       notify('已确认并记入账本');
       setEditingInboxId(null);
@@ -1062,12 +1071,17 @@ export default function Home() {
     const item = data.inboxItems.find((entry) => entry.id === data.lastConfirmedInboxId);
     if (!canUndoInboxConfirm(item) || !item?.resultEntityId) { notify('最近一次确认不能撤销'); return; }
     setData((current) => {
+      const deleted = current.transactions.find((transaction) => transaction.id === item.resultEntityId);
       const removed = removePostedTransaction(current.accounts, current.transactions, item.resultEntityId as string);
       const next = withInboxEvent(current, { type: 'undo', itemId: item.id, timestamp: localStamp(), id: uid('audit') });
+      const recurringRules = deleted
+        ? releaseRecurringConfirmation(current.recurringRules, removed.transactions, deleted)
+        : reconcileRecurringConfirmations(current.recurringRules, removed.transactions);
       return {
         ...next,
         accounts: removed.accounts,
         transactions: removed.transactions,
+        recurringRules,
         lastConfirmedInboxId: null,
       };
     });
@@ -1716,7 +1730,7 @@ function FinancePanel({ data, currency, selectedAccountId, selectedHoldingId, on
     </div>
     <section className="section-block account-section" role="tabpanel" hidden={financeSection !== '账户'}><div className="section-title"><div><span>ACCOUNTS</span><h2>我的账户</h2></div><button onClick={onNewAccount}>＋ 添加账户</button></div>{data.accounts.length ? <div className="account-grid">{data.accounts.map((account) => <article className={account.tone} key={account.id} role="button" tabIndex={0} onClick={() => onSelectAccount(account.id)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onSelectAccount(account.id); }}><span>{roleLabel(account.type)} · {account.currency}</span><button className="account-edit-button" onClick={(event) => { event.stopPropagation(); onEditAccount(account.id); }}>编辑</button><h3>{account.name}</h3><strong>{isDebtRole(accountRole(account.type)) ? '欠 ' : ''}{currencyMark(account.currency)} {money(normalizeAccountBalance(account.type, account.balance))}</strong><small className="account-open-hint">查看账单 ›</small></article>)}</div> : <div className="list-empty">还没有账户，净资产为 0</div>}</section>
     <section className="section-block investment-section" role="tabpanel" hidden={financeSection !== '投资'}><div className="section-title"><div><span>INVESTMENTS · {currency}</span><h2>理财与投资</h2></div><button onClick={onNewHolding}>＋ 添加产品</button></div><div className="investment-toolbar"><span>每天 18:00 用收盘价重算收益，账户现金由流水产生，持仓市值单独估值</span></div><InvestmentList items={data.investments.filter((item) => item.currency === currency)} onSelect={onSelectHolding} /><p className="automation-note">行情只覆盖今日价格点。历史流水和成本不变。</p></section>
-    <section className="section-block" role="tabpanel" hidden={financeSection !== '周期账单'}><div className="section-title"><div><span>MONTHLY BILLS</span><h2>每月账单</h2></div><button onClick={onNewRecurring}>＋ 添加账单</button></div><div className="recurring-list">{data.recurringRules.length ? data.recurringRules.map((rule) => { const future = rule.dueDay > Number(TODAY.slice(-2)); return <article key={rule.id} className={!rule.enabled ? 'disabled' : ''}><span className="rule-icon">{rule.kind === 'subscription' ? '订' : '还'}</span><div><strong>{rule.name}</strong><small>每月 {rule.dueDay} 日 · {data.accounts.find((account) => account.id === rule.accountId)?.name || '账户待补充'}</small><button disabled={!rule.enabled || rule.lastRunPeriod === MONTH || future} onClick={() => onRunRecurring(rule.id)}>{rule.lastRunPeriod === MONTH ? '本月已确认' : !rule.enabled ? '已暂停' : future ? `${rule.dueDay}日到期` : rule.kind === 'subscription' ? '确认已扣款' : '确认已还款'}</button></div><b>{currencyMark(rule.currency)}{money(rule.amount)}</b><div className="row-ops"><button type="button" className="edit" onClick={() => onEditRecurring(rule.id)}>编辑</button><button type="button" className="del" onClick={() => onDeleteRecurring(rule.id)}>删除</button></div></article>; }) : <div className="list-empty">还没有每月账单</div>}</div><p className="automation-note">只做本机到期提醒，不会替你扣款。你确认实际发生后，才会写入账本并改变余额。每条账单都可以单独编辑或删除。</p></section>
+    <section className="section-block" role="tabpanel" hidden={financeSection !== '周期账单'}><div className="section-title"><div><span>MONTHLY BILLS</span><h2>每月账单</h2></div><button onClick={onNewRecurring}>＋ 添加账单</button></div><div className="recurring-list">{data.recurringRules.length ? data.recurringRules.map((rule) => { const future = rule.dueDay > Number(TODAY.slice(-2)); return <article key={rule.id} className={!rule.enabled ? 'disabled' : ''}><span className="rule-icon">{rule.kind === 'subscription' ? '订' : '还'}</span><div><strong>{rule.name}</strong><small>每月 {rule.dueDay} 日 · {data.accounts.find((account) => account.id === rule.accountId)?.name || '账户待补充'}</small><button disabled={!rule.enabled || rule.lastRunPeriod === MONTH || future} onClick={() => onRunRecurring(rule.id)}>{rule.lastRunPeriod === MONTH ? '本月已确认' : !rule.enabled ? '已暂停' : future ? `${rule.dueDay}日到期` : rule.kind === 'subscription' ? '生成扣款草稿' : '生成还款草稿'}</button></div><b>{currencyMark(rule.currency)}{money(rule.amount)}</b><div className="row-ops"><button type="button" className="edit" onClick={() => onEditRecurring(rule.id)}>编辑</button><button type="button" className="del" onClick={() => onDeleteRecurring(rule.id)}>删除</button></div></article>; }) : <div className="list-empty">还没有每月账单</div>}</div><p className="automation-note">只做本机到期提醒，不会替你扣款。你确认实际发生后，才会写入账本并改变余额。每条账单都可以单独编辑或删除。</p></section>
     <section className="section-block" role="tabpanel" hidden={financeSection !== '流水'}><div className="section-title"><div><span>LEDGER · {currency}</span><h2>本月流水</h2></div></div><TransactionList items={monthItems} accounts={data.accounts} onEdit={onEditTransaction} onDelete={onDeleteTransaction} onSettle={onSettleReimbursement} /></section>
   </div>;
 }

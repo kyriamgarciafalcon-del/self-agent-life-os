@@ -611,6 +611,12 @@ describe('finance UI structure', () => {
     expect(page).not.toMatch(/if \(dest && accountRole\(dest\.type\) === 'receivable'\) return undefined/);
     expect(page).not.toContain('syncInvestmentBalances');
     expect(page).not.toContain('defaultCashId(data.accounts, \'CNY\') || data.accounts[0]');
+    const recurringStart = page.indexOf('function runRecurringRule');
+    const recurringEnd = page.indexOf('function organizeCapture', recurringStart);
+    const recurringBody = page.slice(recurringStart, recurringEnd);
+    expect(recurringBody).toContain('generateRecurringDrafts');
+    expect(recurringBody).toContain("type: 'enqueue'");
+    expect(recurringBody).not.toContain('postFinanceTransaction');
   });
 });
 

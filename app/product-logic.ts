@@ -1308,6 +1308,7 @@ export function auditReasonLabel(reason: string | undefined): string {
 }
 
 export function canUndoAuditEntry(_entry: AuditEntry | undefined | null): boolean {
+  void _entry;
   return false;
 }
 
@@ -1845,6 +1846,8 @@ export function consumeCallBudget(budget: CallBudget, tokens: number): { ok: boo
 }
 
 export function unusualRedirect(_from: string, _to: string): boolean {
+  void _from;
+  void _to;
   return true;
 }
 export {

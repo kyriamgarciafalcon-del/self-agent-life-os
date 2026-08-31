@@ -141,16 +141,6 @@ export function derivedAccountBalance(account: { id: string; openingBalance?: nu
   return opening + posted;
 }
 
-function withDerivedBalances<T extends LedgerAccount>(accounts: T[], transactions: Array<{ postings?: LedgerPosting[] }>): Array<T & { openingBalance: number }> {
-  return accounts.map((account) => {
-    const openingBalance = Number.isFinite((account as T & { openingBalance?: number }).openingBalance)
-      ? Number((account as T & { openingBalance?: number }).openingBalance)
-      : account.balance;
-    const balance = derivedAccountBalance({ ...account, openingBalance }, transactions);
-    return { ...account, openingBalance, balance };
-  });
-}
-
 export function migrateToPostingLedger<TA extends LedgerAccount, TT extends TransactionDraft>(
   accounts: TA[],
   transactions: TT[],

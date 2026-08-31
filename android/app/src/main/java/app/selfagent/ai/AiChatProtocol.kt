@@ -3,6 +3,7 @@ package app.selfagent.ai
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URI
+import java.net.InetAddress
 import java.util.Locale
 import java.util.regex.Pattern
 
@@ -58,6 +59,15 @@ object AiChatProtocol {
         }
         return false
     }
+
+    fun isPrivateOrLocalAddress(address: InetAddress): Boolean =
+        address.isAnyLocalAddress || address.isLoopbackAddress || address.isLinkLocalAddress ||
+            address.isSiteLocalAddress || address.isMulticastAddress
+
+    fun resolvesOnlyToPublicAddresses(host: String): Boolean = runCatching {
+        val addresses = InetAddress.getAllByName(host)
+        addresses.isNotEmpty() && addresses.none(::isPrivateOrLocalAddress)
+    }.getOrDefault(false)
 
     fun completionsUrl(baseUrl: String): String? {
         val normalized = normalizeBaseUrl(baseUrl)

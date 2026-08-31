@@ -4,9 +4,17 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import java.net.InetAddress
 import org.junit.Test
 
 class AiByokPolicyTest {
+    @Test
+    fun rejectsResolvedPrivateAndLoopbackAddresses() {
+        assertTrue(AiChatProtocol.isPrivateOrLocalAddress(InetAddress.getByName("127.0.0.1")))
+        assertTrue(AiChatProtocol.isPrivateOrLocalAddress(InetAddress.getByName("192.168.1.2")))
+        assertFalse(AiChatProtocol.isPrivateOrLocalAddress(InetAddress.getByName("8.8.8.8")))
+    }
+
     @Test
     fun rejectsLocalhostPrivateAndLinkLocalHttpsHosts() {
         assertNull(AiChatProtocol.completionsUrl("https://localhost/v1"))

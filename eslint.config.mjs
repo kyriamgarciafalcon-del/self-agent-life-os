@@ -13,6 +13,7 @@ const eslintConfig = defineConfig([
     'out/**',
     'build/**',
     'android/**/build/**',
+    'android/app/src/main/assets/www/**',
     'android/.gradle/**',
     'static-web/dist/**',
     'static-web/node_modules/**',

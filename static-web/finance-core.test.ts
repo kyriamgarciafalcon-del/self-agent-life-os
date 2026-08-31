@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   ACCOUNT_TYPES,
-  applyDailyPriceQuotes,
+
   applyLedger,
   buildReimbursementSettlement,
   canDeleteAccount,
@@ -64,7 +64,7 @@ describe('reimbursement persistence association', () => {
       accountId: 'bank',
       accountAmount: 100,
     };
-    const settled = settleReimbursementState(normalized.accounts, normalized.transactions, 'e1', credit);
+    const settled = settleReimbursementState(normalized.accounts, normalized.transactions as never, 'e1', credit as never);
     expect(wealthTotals(settled.accounts, settled.transactions)[0]).toMatchObject({
       assets: 210,
       receivable: 0,
@@ -130,7 +130,7 @@ describe('investment cash versus market value', () => {
       [{ id: 'h1', accountId: 'inv', quantity: 10, currentPrice: 4 }],
     );
     expect(migrated[0]).toMatchObject({ openingBalance: 0, balance: 0 });
-    expect(investmentAccountSnapshot(migrated[0], [{ id: 'h1', accountId: 'inv', quantity: 10, currentPrice: 4 }])).toEqual({
+    expect(investmentAccountSnapshot(migrated[0], [{ accountId: 'inv', quantity: 10, currentPrice: 4 }])).toEqual({
       cash: 0,
       marketValue: 40,
       total: 40,
@@ -256,7 +256,7 @@ describe('reimbursement settlement cashflow', () => {
     const settlement = buildReimbursementSettlement(original, { id: 's1', counterpartId: 'cash', amount: 40, currency: 'CNY' });
     expect(settlement.kind).toBe('settlement');
     expect(isMonthlyIncome(settlement)).toBe(false);
-    const settled = settleReimbursementState(accounts, [original], 'e1', settlement);
+    const settled = settleReimbursementState(accounts, [original], 'e1', settlement as never);
     expect(monthlyIncomeTotal(settled.transactions, 'CNY')).toBe(0);
     expect(settled.accounts.find((item) => item.id === 'claim')?.balance).toBe(0);
     expect(settled.accounts.find((item) => item.id === 'cash')?.balance).toBe(140);
@@ -282,7 +282,7 @@ describe('subscription migration and account deletion', () => {
       accountId: 'cash',
       accounts,
       transactions: [],
-      holdings: [{ id: 'h1', accountId: 'cash' }],
+      holdings: [{ accountId: 'cash' }],
       rules: [],
     }).ok).toBe(false);
     expect(canDeleteAccount({
@@ -290,7 +290,7 @@ describe('subscription migration and account deletion', () => {
       accounts,
       transactions: [],
       holdings: [],
-      rules: [{ id: 'r1', accountId: 'cash' }],
+      rules: [{ accountId: 'cash' }],
     }).ok).toBe(false);
   });
 });

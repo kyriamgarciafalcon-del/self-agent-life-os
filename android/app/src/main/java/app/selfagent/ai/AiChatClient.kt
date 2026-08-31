@@ -3,6 +3,7 @@ package app.selfagent.ai
 import android.content.Context
 import org.json.JSONObject
 import java.net.HttpURLConnection
+import java.net.URI
 import java.net.URL
 import java.util.concurrent.Executors
 
@@ -30,6 +31,10 @@ object AiChatClient {
     }
 
     private fun post(url: String, apiKey: String, body: String): String {
+        val host = URI(url).host.orEmpty()
+        if (host.isBlank() || !AiChatProtocol.resolvesOnlyToPublicAddresses(host)) {
+            throw IllegalStateException("invalid_target")
+        }
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 15_000
             readTimeout = 15_000
@@ -56,6 +61,7 @@ object AiChatClient {
         val message = error.message.orEmpty()
         if (message.contains("unconfigured")) return "unconfigured"
         if (message.contains("redirect")) return "redirect"
+        if (message.contains("invalid_target")) return "invalid_target"
         if (message.startsWith("http_")) return "http_error"
         if (message.contains("invalid")) return "invalid"
         return "offline"

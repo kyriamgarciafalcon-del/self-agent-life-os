@@ -266,11 +266,29 @@ export function monthlyIncomeTotal(transactions: Array<{ kind?: string; category
   return transactions.filter((item) => isMonthlyIncome(item) && (item.currency || 'CNY') === currency).reduce((sum, item) => sum + Math.abs(Number(item.accountAmount ?? item.amount ?? 0)), 0);
 }
 
-export function reimbursementOutstandingAmount(original: { amount?: number; accountAmount?: number; targetAmount?: number; currency?: string; targetCurrency?: string }): { amount: number; currency: string } {
+export function reimbursementClaimAmount(original: { amount?: number; accountAmount?: number; targetAmount?: number; currency?: string; targetCurrency?: string }): { amount: number; currency: string } {
   return {
     amount: moneyAmount(original.targetAmount, original.accountAmount, original.amount),
     currency: original.targetCurrency || original.currency || 'CNY',
   };
+}
+
+export function reimbursementSettledTotal(
+  originalId: string,
+  transactions: Array<{ id?: string; kind?: string; reimbursementForId?: string; accountAmount?: number; amount?: number; targetAmount?: number }> = [],
+): number {
+  return transactions
+    .filter((item) => item.kind === 'settlement' && item.reimbursementForId === originalId && item.id !== originalId)
+    .reduce((sum, item) => sum + moneyAmount(item.accountAmount, item.amount, item.targetAmount), 0);
+}
+
+export function reimbursementOutstandingAmount(
+  original: { id?: string; amount?: number; accountAmount?: number; targetAmount?: number; currency?: string; targetCurrency?: string },
+  transactions: Array<{ id?: string; reimbursementForId?: string; accountAmount?: number; amount?: number; targetAmount?: number }> = [],
+): { amount: number; currency: string } {
+  const claim = reimbursementClaimAmount(original);
+  const settled = original.id ? reimbursementSettledTotal(original.id, transactions) : 0;
+  return { amount: Math.max(0, claim.amount - settled), currency: claim.currency };
 }
 
 export function buildReimbursementSettlement(
@@ -452,14 +470,17 @@ export function removePostedTransaction<TA extends LedgerAccount, TT extends Pos
   let nextAccounts = applyPostings(accounts, postings, -1);
   let nextTransactions = transactions.filter((item) => item.id !== previous.id);
   if (previous.reimbursementForId) {
-    nextTransactions = nextTransactions.map((item) => item.id === previous.reimbursementForId
-      ? { ...item, reimbursed: false, reimbursementTransactionId: undefined }
-      : item);
+    nextTransactions = nextTransactions.map((item) => {
+      if (item.id !== previous.reimbursementForId) return item;
+      const outstanding = reimbursementOutstandingAmount(item, nextTransactions);
+      const remainingCredit = nextTransactions.find((row) => row.reimbursementForId === item.id);
+      return { ...item, reimbursed: outstanding.amount <= 0.0001, reimbursementTransactionId: remainingCredit?.id };
+    });
   }
-  if (previous.reimbursementTransactionId) {
-    const credit = transactions.find((item) => item.id === previous.reimbursementTransactionId);
-    if (credit) nextAccounts = applyPostings(nextAccounts, credit.postings?.length ? credit.postings : composeTransactionPostings(nextAccounts, credit), -1);
-    nextTransactions = nextTransactions.filter((item) => item.id !== previous.reimbursementTransactionId);
+  const linkedCredits = transactions.filter((item) => item.id !== previous.id && (item.reimbursementForId === previous.id || item.id === previous.reimbursementTransactionId));
+  for (const credit of linkedCredits) {
+    nextAccounts = applyPostings(nextAccounts, credit.postings?.length ? credit.postings : composeTransactionPostings(nextAccounts, credit), -1);
+    nextTransactions = nextTransactions.filter((item) => item.id !== credit.id);
   }
   return { accounts: nextAccounts, transactions: nextTransactions };
 }
@@ -473,6 +494,9 @@ export function settlePostedReimbursement<TA extends LedgerAccount, TT extends P
   const original = transactions.find((item) => item.id === originalId);
   if (!original?.reimbursable || original.reimbursed) return { accounts, transactions };
   const linked = { ...credit, reimbursementForId: original.id } as TT;
+  const settlementAmount = moneyAmount(linked.accountAmount, linked.amount, linked.targetAmount);
+  const outstandingBefore = reimbursementOutstandingAmount(original, transactions);
+  if (!(settlementAmount > 0) || settlementAmount - outstandingBefore.amount > 0.0001) return { accounts, transactions };
   const postings = linked.postings?.length ? linked.postings : composeTransactionPostings(accounts, linked);
   const claimId = original.reimburseAccountId;
   const touchesClaim = Boolean(claimId && (linked.accountId === claimId || linked.targetAccountId === claimId || postings.some((posting) => posting.accountId === claimId)));
@@ -480,11 +504,12 @@ export function settlePostedReimbursement<TA extends LedgerAccount, TT extends P
   if (claimId && !touchesClaim && (linked.kind === 'income') && canApplyLedger(nextAccounts, { kind: 'expense', accountId: claimId, accountAmount: original.accountAmount })) {
     nextAccounts = applyLedger(nextAccounts, { kind: 'expense', accountId: claimId, accountAmount: original.accountAmount }, 1);
   }
+  const nextTransactions: TT[] = [{ ...linked, postings }, ...transactions];
+  const outstanding = reimbursementOutstandingAmount(original, nextTransactions);
   return {
     accounts: nextAccounts,
-    transactions: [
-      { ...linked, postings },
-      ...transactions.map((item) => item.id === original.id ? { ...item, reimbursed: true, reimbursementTransactionId: linked.id } as TT : item),
-    ],
+    transactions: nextTransactions.map((item) => item.id === original.id
+      ? { ...item, reimbursed: outstanding.amount <= 0.0001, reimbursementTransactionId: linked.id } as TT
+      : item),
   };
 }

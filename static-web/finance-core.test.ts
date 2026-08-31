@@ -24,9 +24,12 @@ import {
   resolveTransferAmounts,
   reimbursementOutstandingAmount,
   runFinanceInvariantSequence,
+  settlePostedReimbursement,
   settleReimbursementState,
   wealthTotals,
+  removePostedTransaction,
 } from '../app/product-logic';
+import { reimbursementSettledTotal } from '../app/finance-core';
 
 describe('reimbursement persistence association', () => {
   it('keeps one receivable through save-normalize-settle-delete without duplicating wealth', () => {
@@ -260,6 +263,233 @@ describe('reimbursement settlement cashflow', () => {
     expect(monthlyIncomeTotal(settled.transactions, 'CNY')).toBe(0);
     expect(settled.accounts.find((item) => item.id === 'claim')?.balance).toBe(0);
     expect(settled.accounts.find((item) => item.id === 'cash')?.balance).toBe(140);
+  });
+
+  it('keeps 60 receivable after a 40 partial settlement of a reloaded 100 claim, then marks reimbursed only after the remaining 60', () => {
+    const seedAccounts = [
+      { id: 'wechat', name: '微信', type: '资金账户', currency: 'CNY', balance: 200 },
+      { id: 'claim', name: '待收回', type: '待收回', currency: 'CNY', balance: 0 },
+      { id: 'bank', name: '银行卡', type: '储蓄卡', currency: 'CNY', balance: 10 },
+    ];
+    const expense = {
+      id: 'e1',
+      kind: 'expense' as const,
+      accountId: 'wechat',
+      accountAmount: 100,
+      amount: 100,
+      currency: 'CNY',
+      reimbursable: true,
+      reimburseAccountId: 'claim',
+      reimbursed: false,
+    };
+
+    const posted = postFinanceTransaction(seedAccounts, [], expense);
+    const persisted = JSON.parse(JSON.stringify({ accounts: posted.accounts, transactions: posted.transactions }));
+    const normalized = normalizeFinanceRecords(persisted.accounts, persisted.transactions);
+    const original = { ...normalized.transactions.find((item) => item.id === 'e1')!, id: 'e1', accountAmount: 100 };
+    expect(original.reimbursed).toBe(false);
+    expect(normalized.accounts.find((item) => item.id === 'claim')?.balance).toBe(100);
+    expect(reimbursementOutstandingAmount(original, normalized.transactions)).toEqual({ amount: 100, currency: 'CNY' });
+
+    const firstSettlement = buildReimbursementSettlement(original, { id: 's1', counterpartId: 'bank', amount: 40, currency: 'CNY' });
+    expect(firstSettlement.kind).toBe('settlement');
+    expect(isMonthlyIncome(firstSettlement)).toBe(false);
+    const afterFirst = settlePostedReimbursement(
+      normalized.accounts,
+      normalized.transactions.map((item) => ({ ...item, id: String(item.id), accountAmount: Number(item.accountAmount ?? item.amount ?? 0) })),
+      'e1',
+      { ...firstSettlement, postings: firstSettlement.postings ?? [] } as never,
+    );
+    const originalAfterFirst = afterFirst.transactions.find((item) => item.id === 'e1')!;
+    expect(afterFirst.accounts.find((item) => item.id === 'claim')?.balance).toBe(60);
+    expect(wealthTotals(afterFirst.accounts, afterFirst.transactions)[0]).toMatchObject({ receivable: 60 });
+    expect(originalAfterFirst.reimbursed).toBe(false);
+    expect(reimbursementOutstandingAmount(originalAfterFirst, afterFirst.transactions)).toEqual({ amount: 60, currency: 'CNY' });
+    expect(monthlyIncomeTotal(afterFirst.transactions, 'CNY')).toBe(0);
+
+    const secondSettlement = buildReimbursementSettlement(originalAfterFirst, { id: 's2', counterpartId: 'bank', amount: 60, currency: 'CNY' });
+    const afterSecond = settlePostedReimbursement(afterFirst.accounts, afterFirst.transactions, 'e1', { ...secondSettlement, postings: secondSettlement.postings ?? [] } as never);
+    const originalAfterSecond = afterSecond.transactions.find((item) => item.id === 'e1')!;
+    expect(afterSecond.accounts.find((item) => item.id === 'claim')?.balance).toBe(0);
+    expect(wealthTotals(afterSecond.accounts, afterSecond.transactions)[0]).toMatchObject({ receivable: 0 });
+    expect(originalAfterSecond.reimbursed).toBe(true);
+    expect(reimbursementOutstandingAmount(originalAfterSecond, afterSecond.transactions)).toEqual({ amount: 0, currency: 'CNY' });
+    expect(monthlyIncomeTotal(afterSecond.transactions, 'CNY')).toBe(0);
+  });
+
+  it('rejects an 80 settlement against 60 outstanding and leaves balances and the transaction list unchanged', () => {
+    const seedAccounts = [
+      { id: 'wechat', name: '微信', type: '资金账户', currency: 'CNY', balance: 200 },
+      { id: 'claim', name: '待收回', type: '待收回', currency: 'CNY', balance: 0 },
+      { id: 'bank', name: '银行卡', type: '储蓄卡', currency: 'CNY', balance: 10 },
+    ];
+    const expense = {
+      id: 'e1',
+      kind: 'expense' as const,
+      accountId: 'wechat',
+      accountAmount: 100,
+      amount: 100,
+      currency: 'CNY',
+      reimbursable: true,
+      reimburseAccountId: 'claim',
+      reimbursed: false,
+    };
+
+    const posted = postFinanceTransaction(seedAccounts, [], expense);
+    const persisted = JSON.parse(JSON.stringify({ accounts: posted.accounts, transactions: posted.transactions }));
+    const normalized = normalizeFinanceRecords(persisted.accounts, persisted.transactions);
+    const original = { ...normalized.transactions.find((item) => item.id === 'e1')!, id: 'e1', accountAmount: 100 };
+    const firstSettlement = buildReimbursementSettlement(original, { id: 's1', counterpartId: 'bank', amount: 40, currency: 'CNY' });
+    const afterForty = settlePostedReimbursement(
+      normalized.accounts,
+      normalized.transactions.map((item) => ({ ...item, id: String(item.id), accountAmount: Number(item.accountAmount ?? item.amount ?? 0) })),
+      'e1',
+      { ...firstSettlement, postings: firstSettlement.postings ?? [] } as never,
+    );
+    const originalAfterForty = afterForty.transactions.find((item) => item.id === 'e1')!;
+    expect(afterForty.accounts.find((item) => item.id === 'claim')?.balance).toBe(60);
+    expect(reimbursementOutstandingAmount(originalAfterForty, afterForty.transactions)).toEqual({ amount: 60, currency: 'CNY' });
+
+    const overflow = buildReimbursementSettlement(originalAfterForty, { id: 's-overflow', counterpartId: 'bank', amount: 80, currency: 'CNY' });
+    const rejected = settlePostedReimbursement(afterForty.accounts, afterForty.transactions, 'e1', { ...overflow, postings: overflow.postings ?? [] } as never);
+    expect(rejected.accounts).toEqual(afterForty.accounts);
+    expect(rejected.transactions).toEqual(afterForty.transactions);
+    expect(rejected.accounts.find((item) => item.id === 'claim')?.balance).toBe(60);
+    expect(rejected.accounts.find((item) => item.id === 'bank')?.balance).toBe(50);
+    expect(rejected.accounts.find((item) => item.id === 'wechat')?.balance).toBe(100);
+  });
+
+  it('restores 100 receivable and reimbursed=false after deleting the first 40 settlement', () => {
+    const seedAccounts = [
+      { id: 'wechat', name: '微信', type: '资金账户', currency: 'CNY', balance: 200 },
+      { id: 'claim', name: '待收回', type: '待收回', currency: 'CNY', balance: 0 },
+      { id: 'bank', name: '银行卡', type: '储蓄卡', currency: 'CNY', balance: 10 },
+    ];
+    const expense = {
+      id: 'e1',
+      kind: 'expense' as const,
+      accountId: 'wechat',
+      accountAmount: 100,
+      amount: 100,
+      currency: 'CNY',
+      reimbursable: true,
+      reimburseAccountId: 'claim',
+      reimbursed: false,
+    };
+    const posted = postFinanceTransaction(seedAccounts, [], expense);
+    const original = { ...posted.transactions.find((item) => item.id === 'e1')!, id: 'e1', accountAmount: 100 };
+    const firstSettlement = buildReimbursementSettlement(original, { id: 's1', counterpartId: 'bank', amount: 40, currency: 'CNY' });
+    const afterForty = settlePostedReimbursement(posted.accounts, posted.transactions, 'e1', { ...firstSettlement, postings: firstSettlement.postings ?? [] } as never);
+    const deleted = removePostedTransaction(afterForty.accounts, afterForty.transactions, 's1');
+    const originalAfterDelete = deleted.transactions.find((item) => item.id === 'e1')!;
+    expect(deleted.transactions.find((item) => item.id === 's1')).toBeUndefined();
+    expect(deleted.accounts.find((item) => item.id === 'claim')?.balance).toBe(100);
+    expect(deleted.accounts.find((item) => item.id === 'bank')?.balance).toBe(10);
+    expect(originalAfterDelete.reimbursed).toBe(false);
+    expect(reimbursementOutstandingAmount(originalAfterDelete, deleted.transactions)).toEqual({ amount: 100, currency: 'CNY' });
+  });
+
+  it('deleting the original after 40+60 settlements reverses both receipts and removes the linked settlements', () => {
+    const seedAccounts = [
+      { id: 'wechat', name: '微信', type: '资金账户', currency: 'CNY', balance: 200 },
+      { id: 'claim', name: '待收回', type: '待收回', currency: 'CNY', balance: 0 },
+      { id: 'bank', name: '银行卡', type: '储蓄卡', currency: 'CNY', balance: 10 },
+    ];
+    const expense = {
+      id: 'e1',
+      kind: 'expense' as const,
+      accountId: 'wechat',
+      accountAmount: 100,
+      amount: 100,
+      currency: 'CNY',
+      reimbursable: true,
+      reimburseAccountId: 'claim',
+      reimbursed: false,
+    };
+    const posted = postFinanceTransaction(seedAccounts, [], expense);
+    const original = { ...posted.transactions.find((item) => item.id === 'e1')!, id: 'e1', accountAmount: 100 };
+    const firstSettlement = buildReimbursementSettlement(original, { id: 's1', counterpartId: 'bank', amount: 40, currency: 'CNY' });
+    const afterForty = settlePostedReimbursement(posted.accounts, posted.transactions, 'e1', { ...firstSettlement, postings: firstSettlement.postings ?? [] } as never);
+    const originalAfterForty = afterForty.transactions.find((item) => item.id === 'e1')!;
+    const secondSettlement = buildReimbursementSettlement(originalAfterForty, { id: 's2', counterpartId: 'bank', amount: 60, currency: 'CNY' });
+    const afterFull = settlePostedReimbursement(afterForty.accounts, afterForty.transactions, 'e1', { ...secondSettlement, postings: secondSettlement.postings ?? [] } as never);
+    expect(afterFull.accounts.find((item) => item.id === 'claim')?.balance).toBe(0);
+    expect(afterFull.accounts.find((item) => item.id === 'bank')?.balance).toBe(110);
+
+    const deleted = removePostedTransaction(afterFull.accounts, afterFull.transactions, 'e1');
+    expect(deleted.transactions.find((item) => item.id === 'e1')).toBeUndefined();
+    expect(deleted.transactions.find((item) => item.id === 's1')).toBeUndefined();
+    expect(deleted.transactions.find((item) => item.id === 's2')).toBeUndefined();
+    expect(deleted.accounts.find((item) => item.id === 'claim')?.balance).toBe(0);
+    expect(deleted.accounts.find((item) => item.id === 'bank')?.balance).toBe(10);
+    expect(deleted.accounts.find((item) => item.id === 'wechat')?.balance).toBe(200);
+  });
+
+  it('counts only legal settlements in reimbursementSettledTotal and ignores arbitrary linked records', () => {
+    const seedAccounts = [
+      { id: 'wechat', name: '微信', type: '资金账户', currency: 'CNY', balance: 200 },
+      { id: 'claim', name: '待收回', type: '待收回', currency: 'CNY', balance: 0 },
+      { id: 'bank', name: '银行卡', type: '储蓄卡', currency: 'CNY', balance: 10 },
+    ];
+    const expense = {
+      id: 'e1',
+      kind: 'expense' as const,
+      accountId: 'wechat',
+      accountAmount: 100,
+      amount: 100,
+      currency: 'CNY',
+      reimbursable: true,
+      reimburseAccountId: 'claim',
+      reimbursed: false,
+    };
+    const posted = postFinanceTransaction(seedAccounts, [], expense);
+    const original = { ...posted.transactions.find((item) => item.id === 'e1')!, id: 'e1', accountAmount: 100 };
+    const firstSettlement = buildReimbursementSettlement(original, { id: 's1', counterpartId: 'bank', amount: 40, currency: 'CNY' });
+    const afterForty = settlePostedReimbursement(posted.accounts, posted.transactions, 'e1', { ...firstSettlement, postings: firstSettlement.postings ?? [] } as never);
+    const originalAfterForty = afterForty.transactions.find((item) => item.id === 'e1')!;
+    const withJunk = [
+      ...afterForty.transactions,
+      { id: 'junk', kind: 'income' as const, reimbursementForId: 'e1', accountAmount: 999, amount: 999, currency: 'CNY' },
+    ];
+    expect(reimbursementSettledTotal('e1', withJunk)).toBe(40);
+    expect(reimbursementOutstandingAmount(originalAfterForty, withJunk)).toEqual({ amount: 60, currency: 'CNY' });
+  });
+
+  it('rejects a non-positive settlement and unknown or already-completed claims without mutating state', () => {
+    const seedAccounts = [
+      { id: 'wechat', name: '微信', type: '资金账户', currency: 'CNY', balance: 200 },
+      { id: 'claim', name: '待收回', type: '待收回', currency: 'CNY', balance: 0 },
+      { id: 'bank', name: '银行卡', type: '储蓄卡', currency: 'CNY', balance: 10 },
+    ];
+    const expense = {
+      id: 'e1',
+      kind: 'expense' as const,
+      accountId: 'wechat',
+      accountAmount: 100,
+      amount: 100,
+      currency: 'CNY',
+      reimbursable: true,
+      reimburseAccountId: 'claim',
+      reimbursed: false,
+    };
+    const posted = postFinanceTransaction(seedAccounts, [], expense);
+    const original = { ...posted.transactions.find((item) => item.id === 'e1')!, id: 'e1', accountAmount: 100 };
+    const zero = buildReimbursementSettlement(original, { id: 's0', counterpartId: 'bank', amount: 0, currency: 'CNY' });
+    const rejectedZero = settlePostedReimbursement(posted.accounts, posted.transactions, 'e1', { ...zero, postings: zero.postings ?? [] } as never);
+    expect(rejectedZero.accounts).toEqual(posted.accounts);
+    expect(rejectedZero.transactions).toEqual(posted.transactions);
+
+    const unknown = settlePostedReimbursement(posted.accounts, posted.transactions, 'missing', { ...buildReimbursementSettlement(original, { id: 'sx', counterpartId: 'bank', amount: 40, currency: 'CNY' }), postings: [] } as never);
+    expect(unknown.accounts).toEqual(posted.accounts);
+    expect(unknown.transactions).toEqual(posted.transactions);
+
+    const firstSettlement = buildReimbursementSettlement(original, { id: 's1', counterpartId: 'bank', amount: 100, currency: 'CNY' });
+    const completed = settlePostedReimbursement(posted.accounts, posted.transactions, 'e1', { ...firstSettlement, postings: firstSettlement.postings ?? [] } as never);
+    expect(completed.transactions.find((item) => item.id === 'e1')?.reimbursed).toBe(true);
+    const extra = buildReimbursementSettlement(completed.transactions.find((item) => item.id === 'e1')!, { id: 's2', counterpartId: 'bank', amount: 10, currency: 'CNY' });
+    const rejectedCompleted = settlePostedReimbursement(completed.accounts, completed.transactions, 'e1', { ...extra, postings: extra.postings ?? [] } as never);
+    expect(rejectedCompleted.accounts).toEqual(completed.accounts);
+    expect(rejectedCompleted.transactions).toEqual(completed.transactions);
   });
 });
 

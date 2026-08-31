@@ -47,6 +47,19 @@ object AiChatProtocol {
     fun isPrivateOrLocalHost(host: String): Boolean {
         val h = host.trim().trim('[', ']').lowercase(Locale.US)
         if (h.isBlank() || h == "localhost" || h.endsWith(".localhost") || h == "::1") return true
+        if (h.startsWith("::ffff:")) {
+            val mapped = h.removePrefix("::ffff:")
+            if (mapped.contains('.')) return isPrivateOrLocalHost(mapped)
+            val hextets = mapped.split(':')
+            if (hextets.size == 2) {
+                val high = hextets[0].toIntOrNull(16)
+                val low = hextets[1].toIntOrNull(16)
+                if (high != null && low != null) {
+                    return isPrivateOrLocalHost("${high shr 8}.${high and 0xff}.${low shr 8}.${low and 0xff}")
+                }
+            }
+            return true
+        }
         if (h.contains(":") && (h.startsWith("fe80:") || h.startsWith("fc") || h.startsWith("fd"))) return true
         val parts = h.split('.')
         if (parts.size == 4 && parts.all { it.toIntOrNull() != null }) {
@@ -110,7 +123,9 @@ object AiChatProtocol {
             val item = messages.optJSONObject(index) ?: continue
             val role = item.optString("role")
             if (role !in setOf("system", "user", "assistant")) continue
-            val content = redactSensitive(item.optString("content")).take(32_000)
+            val rawContent = item.optString("content")
+            val content = redactSensitive(rawContent).take(32_000)
+            if (content != rawContent.take(32_000)) throw IllegalArgumentException("sensitive")
             if (content.isBlank()) continue
             cleaned.put(
                 JSONObject()

@@ -11,5 +11,5 @@
     "allowImportingTsExtensions": true,
     "isolatedModules": true
   },
-  "include": ["./**/*.ts", "../app/product-logic.ts"]
+  "include": ["./**/*.ts", "../app/product-logic.ts", "../app/finance-core.ts"]
 }

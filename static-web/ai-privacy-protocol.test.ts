@@ -8,6 +8,7 @@ import {
   createCallBudget,
   dialogShouldDismiss,
   inboxItemFromAiTool,
+  inboxConfirmBlockReason,
   migratePrivacySettings,
   normalizeMemory,
   parseAiProviderResponse,
@@ -203,6 +204,28 @@ describe('provider-neutral AI tools', () => {
       ],
     }));
     expect(parsed.tools).toEqual([]);
+  });
+
+  it('blocks inbox confirm until expense account currency and reimbursable are explicit', () => {
+    const draft = inboxItemFromAiTool({
+      id: 'ai-e2',
+      createdAt: '2026-08-30T10:00:00',
+      tool: {
+        name: 'draft_expense',
+        arguments: { amount: 12, merchant: '咖啡', accountId: '', currency: '', date: '', reimbursable: null },
+      },
+    });
+    expect(draft).toBeTruthy();
+    expect(inboxConfirmBlockReason(draft!, [{ id: 'cash' }])).toMatchObject({ reason: 'missing_account', dataScope: 'finance' });
+    const filled = inboxItemFromAiTool({
+      id: 'ai-e3',
+      createdAt: '2026-08-30T10:00:00',
+      tool: {
+        name: 'draft_expense',
+        arguments: { amount: 12, merchant: '咖啡', accountId: 'cash', currency: 'CNY', date: '2026-08-30', reimbursable: false },
+      },
+    });
+    expect(inboxConfirmBlockReason(filled!, [{ id: 'cash' }])).toBeNull();
   });
 
   it('never silently defaults expense account currency date or reimbursable', () => {

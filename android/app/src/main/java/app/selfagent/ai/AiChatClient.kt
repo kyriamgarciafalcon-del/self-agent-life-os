@@ -62,6 +62,7 @@ object AiChatClient {
         if (message.contains("unconfigured")) return "unconfigured"
         if (message.contains("redirect")) return "redirect"
         if (message.contains("invalid_target")) return "invalid_target"
+        if (message.contains("sensitive")) return "sensitive"
         if (message.startsWith("http_")) return "http_error"
         if (message.contains("invalid")) return "invalid"
         return "offline"

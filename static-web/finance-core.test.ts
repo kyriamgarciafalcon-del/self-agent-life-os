@@ -336,9 +336,16 @@ describe('finance UI structure', () => {
     expect(page).toContain('postBalanceAdjustment');
     expect(page).toContain('investmentAccountSnapshot');
     expect(page).toContain('financeTransactionFields');
+    expect(page).toContain('inboxConfirmBlockReason');
+    expect(page).toContain('data.investments');
+    expect(page).toContain('现金');
+    expect(page).toContain('市值');
+    expect(page).toContain('账户现金由流水产生，持仓市值单独估值');
+    expect(page).not.toContain('账户余额按持仓计算');
     expect(page).not.toContain("'订阅账户'");
     expect(page).not.toMatch(/if \(dest && accountRole\(dest\.type\) === 'receivable'\) return undefined/);
     expect(page).not.toContain('syncInvestmentBalances');
+    expect(page).not.toContain('defaultCashId(data.accounts, \'CNY\') || data.accounts[0]');
   });
 });
 

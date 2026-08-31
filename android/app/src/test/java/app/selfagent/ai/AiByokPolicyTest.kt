@@ -25,6 +25,8 @@ class AiByokPolicyTest {
         assertNull(AiChatProtocol.completionsUrl("https://169.254.10.10/v1"))
         assertNull(AiChatProtocol.completionsUrl("https://[::1]/v1"))
         assertNull(AiChatProtocol.completionsUrl("https://[fe80::1]/v1"))
+        assertNull(AiChatProtocol.completionsUrl("https://[::ffff:127.0.0.1]/v1"))
+        assertNull(AiChatProtocol.completionsUrl("https://[::ffff:c0a8:1]/v1"))
         assertEquals(
             "https://api.openai.com/v1/chat/completions",
             AiChatProtocol.completionsUrl("https://api.openai.com/v1"),
@@ -46,17 +48,15 @@ class AiByokPolicyTest {
         assertFalse(AiChatProtocol.connectionTest("https://127.0.0.1/v1", "127.0.0.1").ok)
     }
 
-    @Test
-    fun requestJsonCapsTokensAndDropsSecretsFromModelBoundFields() {
+    @Test(expected = IllegalArgumentException::class)
+    fun requestJsonRejectsTheWholeRequestWhenModelBoundFieldsContainSecrets() {
         val incoming = org.json.JSONObject()
             .put("model", "gpt-4o-mini")
             .put("max_tokens", 99999)
             .put("messages", org.json.JSONArray().put(
                 org.json.JSONObject().put("role", "user").put("content", "password: hunter2"),
             ))
-        val body = AiChatProtocol.requestJson(incoming)
-        assertTrue(body.getInt("max_tokens") <= 1024)
-        assertFalse(body.toString().contains("hunter2"))
+        AiChatProtocol.requestJson(incoming)
     }
 
     @Test

@@ -274,11 +274,13 @@ export function reimbursementOutstandingAmount(original: { amount?: number; acco
 }
 
 export function buildReimbursementSettlement(
-  original: { id: string; reimburseAccountId?: string; accountAmount?: number; amount?: number; currency?: string },
+  original: { id: string; reimburseAccountId?: string; accountAmount?: number; amount?: number; currency?: string; targetAmount?: number; targetCurrency?: string },
   input: { id: string; counterpartId: string; amount: number; currency: string },
 ): PostedTransaction {
   const claimId = original.reimburseAccountId || '';
+  const outstanding = reimbursementOutstandingAmount(original);
   const amount = Math.abs(input.amount);
+  const currency = outstanding.currency;
   return {
     id: input.id,
     kind: 'settlement',
@@ -286,11 +288,13 @@ export function buildReimbursementSettlement(
     targetAccountId: input.counterpartId,
     accountAmount: amount,
     amount,
-    currency: input.currency,
+    currency,
+    targetAmount: amount,
+    targetCurrency: currency,
     reimbursable: false,
     reimbursementForId: original.id,
     postings: [
-      { accountId: claimId, amount: -amount, currency: input.currency },
+      { accountId: claimId, amount: -amount, currency },
       { accountId: input.counterpartId, amount, currency: input.currency },
     ],
   };

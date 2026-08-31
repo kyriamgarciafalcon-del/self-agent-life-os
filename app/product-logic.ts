@@ -1377,12 +1377,18 @@ export function filterAuditLog(entries: AuditEntry[], filters: { outcome?: strin
   });
 }
 
-export function inboxConfirmBlockReason(item: InboxItem, accounts: { id: string }[]): { reason: string; dataScope?: string } | null {
+export function inboxConfirmBlockReason(item: InboxItem, accounts: { id: string; currency?: string }[]): { reason: string; dataScope?: string } | null {
   if (item.proposedAction === 'create_expense' || item.proposedAction === 'create_income') {
     const amount = Math.abs(Number(item.payload.amount ?? 0));
     if (!amount) return { reason: 'missing_amount', dataScope: 'finance' };
-    const accountId = String(item.payload.accountId || accounts[0]?.id || '');
-    if (!accountId || !accounts.some((account) => account.id === accountId)) return { reason: 'missing_account', dataScope: 'finance' };
+    const accountId = String(item.payload.accountId || '');
+    const account = accounts.find((entry) => entry.id === accountId);
+    if (!accountId || !account) return { reason: 'missing_account', dataScope: 'finance' };
+    const currency = String(item.payload.currency || '');
+    if (!currency || (account.currency && account.currency !== currency)) return { reason: 'missing_currency', dataScope: 'finance' };
+    if (item.proposedAction === 'create_expense' && typeof item.payload.reimbursable !== 'boolean') {
+      return { reason: 'missing_reimbursable', dataScope: 'finance' };
+    }
     return null;
   }
   if (item.proposedAction === 'create_health') {

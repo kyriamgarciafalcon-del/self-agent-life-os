@@ -156,9 +156,14 @@ class GadgetbridgeImportActivity : Activity() {
 
         private fun parse(context: Context, uri: android.net.Uri, kind: String) {
             var lastError: Exception? = null
+            HealthImportDiagnostics.append(context, JSONObject()
+                .put("stage", "import-start")
+                .put("source", "gadgetbridge-direct")
+                .put("kind", kind))
             repeat(3) { attempt ->
                 try {
                     val records = if (kind == KIND_ZIP) parseZip(context, uri) else parseSqliteUri(context, uri)
+                    HealthImportDiagnostics.appendRecords(context, "gadgetbridge-direct", records)
                     HealthBus.post(JSONObject().put("records", records).put("source", "gadgetbridge-direct"))
                     android.os.Handler(android.os.Looper.getMainLooper()).post {
                         Toast.makeText(context, "Gadgetbridge 数据库或 ZIP（含 v6 睡眠）已导入", Toast.LENGTH_SHORT).show()
@@ -166,6 +171,12 @@ class GadgetbridgeImportActivity : Activity() {
                     return
                 } catch (error: Exception) {
                     lastError = error
+                    HealthImportDiagnostics.append(context, JSONObject()
+                        .put("stage", "import-error")
+                        .put("source", "gadgetbridge-direct")
+                        .put("kind", kind)
+                        .put("attempt", attempt + 1)
+                        .put("errorClass", error.javaClass.simpleName))
                     if (attempt < 2) Thread.sleep(600)
                 }
             }
@@ -181,7 +192,7 @@ class GadgetbridgeImportActivity : Activity() {
                     requireNotNull(input) { "无法读取导出文件" }
                     copyCapped(input, file, MAX_DB_BYTES)
                 }
-                return openAndParse(file, emptyList())
+                return openAndParse(context, file, emptyList())
             } finally {
                 file.delete()
             }
@@ -218,27 +229,46 @@ class GadgetbridgeImportActivity : Activity() {
                     }
                 }
                 require(hasDb) { "zip missing Gadgetbridge database" }
-                return openAndParse(dbFile, sleeps)
+                return openAndParse(context, dbFile, sleeps)
             } finally {
                 dbFile.delete()
             }
         }
 
-        private fun openAndParse(file: File, sleeps: List<XiaomiSleepV6Summary>): JSONArray {
+        private fun openAndParse(context: Context, file: File, sleeps: List<XiaomiSleepV6Summary>): JSONArray {
             val db = SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READONLY)
             try {
                 val days = linkedMapOf<String, JSONObject>()
-                fillFromDatabase(db, days)
-                sleeps.forEach { mergeSleep(days, it) }
+                fillFromDatabase(context, db, days)
+                sleeps.forEach {
+                    HealthImportDiagnostics.append(context, JSONObject()
+                        .put("stage", "v6-sleep-summary")
+                        .put("source", "gadgetbridge-direct")
+                        .put("bedEpochSeconds", it.bedEpochSeconds)
+                        .put("wakeEpochSeconds", it.wakeEpochSeconds)
+                        .put("totalMinutes", it.totalMinutes)
+                        .put("wakeMinutes", it.wakeMinutes)
+                        .put("lightMinutes", it.lightMinutes)
+                        .put("deepMinutes", it.deepMinutes)
+                        .put("remMinutes", it.remMinutes))
+                    mergeSleep(days, it)
+                }
                 return toRecords(days)
             } finally {
                 db.close()
             }
         }
 
-        private fun fillFromDatabase(db: SQLiteDatabase, days: MutableMap<String, JSONObject>) {
+        private fun fillFromDatabase(context: Context, db: SQLiteDatabase, days: MutableMap<String, JSONObject>) {
             val tables = mutableListOf<String>()
             db.rawQuery("SELECT name FROM sqlite_master WHERE type='table'", null).use { c -> while (c.moveToNext()) tables += c.getString(0) }
+            tables.filter {
+                val name = it.uppercase(Locale.ROOT)
+                name.contains("PAI") || name.contains("STRESS") || name.contains("ACTIVITY") ||
+                    name.contains("DAILY_SUMMARY") || name == "USER_ATTRIBUTES"
+            }.forEach { table ->
+                HealthImportDiagnostics.appendSchema(context, "gadgetbridge-direct", table, columns(db, table))
+            }
             tables.filter { it.uppercase(Locale.ROOT).contains("PAI") }.forEach { table ->
                 val cols = columns(db, table); val time = pick(cols, "TIMESTAMP", "TIME") ?: return@forEach
                 val pai = pick(cols, "PAI_TODAY", "PAI_TOTAL") ?: return@forEach

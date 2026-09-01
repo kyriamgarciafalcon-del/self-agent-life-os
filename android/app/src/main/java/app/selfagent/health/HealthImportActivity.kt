@@ -71,6 +71,10 @@ class HealthImportActivity : ComponentActivity() {
     private fun readAndFinish() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                HealthImportDiagnostics.append(this@HealthImportActivity, JSONObject()
+                    .put("stage", "import-start")
+                    .put("source", "health-connect")
+                    .put("kind", "last-7-days"))
                 val client = HealthConnectClient.getOrCreate(this@HealthImportActivity)
                 val end = Instant.now()
                 val start = end.minus(7, ChronoUnit.DAYS)
@@ -135,8 +139,13 @@ class HealthImportActivity : ComponentActivity() {
                     row.remove("heartSum")
                     records.put(row)
                 }
+                HealthImportDiagnostics.appendRecords(this@HealthImportActivity, "health-connect", records)
                 HealthBus.post(JSONObject().put("records", records).put("source", "health-connect"))
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                HealthImportDiagnostics.append(this@HealthImportActivity, JSONObject()
+                    .put("stage", "import-error")
+                    .put("source", "health-connect")
+                    .put("errorClass", error.javaClass.simpleName))
                 runOnUiThread {
                     Toast.makeText(this@HealthImportActivity, "读取健康平台失败，请先在运动健康中打开 Health Connect", Toast.LENGTH_LONG).show()
                 }

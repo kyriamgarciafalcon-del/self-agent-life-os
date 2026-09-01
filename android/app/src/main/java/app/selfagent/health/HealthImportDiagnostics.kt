@@ -72,6 +72,7 @@ object HealthImportDiagnostics {
         return JSONObject()
             .put("schemaVersion", 1)
             .put("appVersion", appVersion.take(64))
+            .put("retentionMaxEvents", limit)
             .put("privacy", "仅含健康导入选择证据；不含 URI、路径、MAC、设备名、密钥、密码或原始数据库内容")
             .put("events", JSONArray(kept))
     }

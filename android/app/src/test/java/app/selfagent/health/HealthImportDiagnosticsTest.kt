@@ -52,6 +52,7 @@ class HealthImportDiagnosticsTest {
 
         assertEquals(1, report.getInt("schemaVersion"))
         assertEquals("1.1.64", report.getString("appVersion"))
+        assertEquals(200, report.getInt("retentionMaxEvents"))
         assertTrue(report.getString("privacy").contains("不含 URI、路径、MAC、设备名、密钥"))
         assertEquals(200, rows.length())
         assertEquals(61.0, rows.getJSONObject(0).getDouble("value"), 0.001)

@@ -410,16 +410,23 @@ class MainActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQUEST_EXPORT_HEALTH_DIAGNOSTICS) {
             if (resultCode == RESULT_OK && data?.data != null) {
-                runCatching {
-                    contentResolver.openOutputStream(data.data!!, "wt").use { output ->
-                        requireNotNull(output) { "无法创建诊断日志" }
-                        output.bufferedWriter().use { it.write(HealthImportDiagnostics.exportJson(this)) }
+                val target = data.data!!
+                Thread {
+                    runCatching {
+                        contentResolver.openOutputStream(target, "wt").use { output ->
+                            requireNotNull(output) { "无法创建诊断日志" }
+                            output.bufferedWriter().use { it.write(HealthImportDiagnostics.exportJson(this)) }
+                        }
+                    }.onSuccess {
+                        runOnUiThread {
+                            android.widget.Toast.makeText(this, "健康诊断日志已导出", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }.onFailure {
+                        runOnUiThread {
+                            android.widget.Toast.makeText(this, "健康诊断日志导出失败", android.widget.Toast.LENGTH_LONG).show()
+                        }
                     }
-                }.onSuccess {
-                    android.widget.Toast.makeText(this, "健康诊断日志已导出", android.widget.Toast.LENGTH_SHORT).show()
-                }.onFailure {
-                    android.widget.Toast.makeText(this, "健康诊断日志导出失败", android.widget.Toast.LENGTH_LONG).show()
-                }
+                }.start()
             }
             return
         }

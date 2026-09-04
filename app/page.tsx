@@ -3,7 +3,7 @@
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { getConvertedNetWorth, getMonthlyReport, getNetWorth, transactionOccurredAt, transactionsInPeriod } from './finance-query';
 import { migrateToSchemaV4, createSchemaV4MigrationBackup, applySchemaV4Migration, SCHEMA_V3_BACKUP_KEY } from './finance-schema';
-import { accountRole, addDaysKey, applyDailyFxRates, applyDailyPriceQuotes, applyInboxLifecycle, AI_CONFIG_EVENT, AI_CONFIG_STORAGE_KEY, AI_REPLY_EVENT, AUDIT_OUTCOMES, auditOutcomeLabel, auditReasonLabel, buildButlerSystemPrompt, buildHealthBriefing, buildAiSendPreview, canUndoInboxConfirm, cnyWealthTotal, confirmByokHost, consumeCallBudget, createCallBudget, defaultCashId, describeButlerDataScope, detectLegacyDemoData, dialogShouldDismiss, dismissPermissionOnboarding, filterAuditLog, generateRecurringDrafts, healthRecordsFromSnapshots, inboxConfidenceLabel, inboxConfirmBlockReason, inboxItemFromAiTool, inboxItemFromButlerAction, inboxItemFromNaturalCapture, inboxItemFromPayment, inboxItemFromTravelNotice, inboxSourceLabel, ledgerIdempotencyKeyForInboxItem, INBOX_ACTION_LABELS, isBackupPayload, isDebtRole, latestHealthByKind, loadBrowserAiConfig, localDateKey, markPermissionSettingsOpened, migrateAuditLog, migrateInboxStore, migrateLegacyAiLocalStorage, migratePrivacySettings, normalizeAccountBalance, normalizeMemory, normalizePermissionOnboarding, parseAiProviderResponse, parseButlerModelOutput, parseCapabilityStatus, parseNaturalCapture, pendingInboxItems, persistBrowserAiConfig, permissionOnboardingProgress, planAccountSettlement, prepareOutboundAiPayload, reconcileRecurringConfirmations, releaseRecurringConfirmation, resolveInboxFinanceConfirmation, resolvePaymentAccountId, shouldShowPermissionOnboarding, summarizeHealth, TOAST_ARIA_LIVE, updateInboxItemPayload, upsertByExternalKey, validateByokTarget, weekDates, ACCOUNT_TYPES, buildReimbursementSettlement, canDeleteAccount, FINANCE_TABS, financeTransactionFields, investmentAccountSnapshot, normalizeFinanceRecords, postBalanceAdjustment, postFinanceTransaction, refreshHoldingsValuation, reimbursementOutstandingAmount, removePostedTransaction, settlePostedReimbursement, resolveTransferAmounts, type AuditEntry, type ButlerAction, type CapabilityStatusSnapshot, type HealthMetric, type InboxItem, type InboxLifecycleEvent, type InboxSource, type PermissionCardId, type PermissionOnboardingState, type TravelKind } from './product-logic';
+import { accountRole, addDaysKey, applyDailyFxRates, applyDailyPriceQuotes, applyInboxLifecycle, AI_CONFIG_EVENT, AI_CONFIG_STORAGE_KEY, AI_REPLY_EVENT, AUDIT_OUTCOMES, auditOutcomeLabel, auditReasonLabel, buildButlerSystemPrompt, buildHealthBriefing, buildAiSendPreview, canUndoInboxConfirm, cnyWealthTotal, confirmByokHost, consumeCallBudget, createCallBudget, defaultCashId, describeButlerDataScope, detectLegacyDemoData, dialogShouldDismiss, dismissPermissionOnboarding, filterAuditLog, generateRecurringDrafts, healthRecordsFromSnapshots, inboxConfidenceLabel, inboxConfirmBlockReason, inboxItemFromAiTool, inboxItemFromButlerAction, inboxItemFromNaturalCapture, inboxItemFromPayment, inboxItemFromTravelNotice, inboxSourceLabel, ledgerIdempotencyKeyForInboxItem, INBOX_ACTION_LABELS, isBackupPayload, isDebtRole, latestHealthByKind, loadBrowserAiConfig, localDateKey, markPermissionSettingsOpened, migrateAuditLog, migrateInboxStore, migrateLegacyAiLocalStorage, migratePrivacySettings, normalizeAccountBalance, normalizeMemory, normalizePermissionOnboarding, parseAiProviderResponse, parseButlerModelOutput, parseCapabilityStatus, parseNaturalCapture, pendingInboxItems, persistBrowserAiConfig, permissionOnboardingProgress, planAccountSettlement, planInvestmentMigrations, confirmInvestmentMigration, prepareOutboundAiPayload, reconcileRecurringConfirmations, releaseRecurringConfirmation, resolveInboxFinanceConfirmation, resolvePaymentAccountId, shouldShowPermissionOnboarding, summarizeHealth, TOAST_ARIA_LIVE, updateInboxItemPayload, upsertByExternalKey, validateByokTarget, weekDates, ACCOUNT_TYPES, buildReimbursementSettlement, canDeleteAccount, FINANCE_TABS, financeTransactionFields, investmentAccountSnapshot, normalizeFinanceRecords, postBalanceAdjustment, postFinanceTransaction, refreshHoldingsValuation, reimbursementOutstandingAmount, removePostedTransaction, settlePostedReimbursement, resolveTransferAmounts, type AuditEntry, type ButlerAction, type CapabilityStatusSnapshot, type HealthMetric, type InboxItem, type InboxLifecycleEvent, type InboxSource, type PermissionCardId, type PermissionOnboardingState, type TravelKind } from './product-logic';
 
 type Tab = 'home' | 'schedule' | 'capture' | 'finance' | 'profile' | 'life' | 'health' | 'travel' | 'data' | 'butler' | 'privacy' | 'memory' | 'vault' | 'audit';
 type ScheduleColor = 'blue' | 'green' | 'orange';
@@ -209,7 +209,11 @@ function localStamp(date = new Date()) {
 function investmentValue(item: InvestmentHolding) { return item.quantity * item.currentPrice; }
 function investmentProfit(item: InvestmentHolding) { return investmentValue(item) - item.quantity * item.averageCost; }
 function toAccounts(accounts: Account[]): Account[] {
-  return accounts.map((account) => ({ ...account, openingBalance: Number.isFinite(account.openingBalance) ? Number(account.openingBalance) : account.balance }));
+  return accounts.map((account) => (
+    /理财账户/.test(account.type) && !Number.isFinite(account.openingBalance)
+      ? account
+      : { ...account, openingBalance: Number.isFinite(account.openingBalance) ? Number(account.openingBalance) : account.balance }
+  ));
 }
 function toTransactions(transactions: Array<Partial<Transaction> & { id: string; kind: TransactionKind; accountId: string }>): Transaction[] {
   return transactions.map((item) => ({
@@ -648,6 +652,7 @@ export default function Home() {
   const selectedSchedules = useMemo(() => data.schedules.filter((item) => item.date === selectedDate).sort((a, b) => a.time.localeCompare(b.time)), [data.schedules, selectedDate]);
   const editingSchedule = editingScheduleId ? data.schedules.find((item) => item.id === editingScheduleId) : undefined;
   const todaySpend = useMemo(() => transactionsInPeriod(data.transactions, TODAY).filter((item) => item.kind === 'expense' && item.currency === 'CNY').reduce((sum, item) => sum + item.amount, 0), [data.transactions]);
+  const investmentPlans = useMemo(() => planInvestmentMigrations(data.accounts, data.investments), [data.accounts, data.investments]);
   const totalBalanceLabel = useMemo(() => formatCnyWealthSummary(data.accounts, data.transactions, data.exchangeRates, data.investments), [data.accounts, data.transactions, data.exchangeRates, data.investments]);
   const hasBusinessData = data.schedules.length + data.accounts.length + data.transactions.length + data.healthRecords.length + data.travels.length > 0;
   const nextSchedule = useMemo(() => data.schedules.filter((item) => item.date === TODAY && !item.done).sort((left, right) => left.time.localeCompare(right.time))[0], [data.schedules]);
@@ -663,6 +668,10 @@ export default function Home() {
   const settlingReimbursement = settlingTransaction ? reimbursementOutstandingAmount(settlingTransaction, data.transactions) : undefined;
 
   function notify(message: string) { setToast(message); window.setTimeout(() => setToast(''), 2200); }
+  function confirmInvestmentMeaning(accountId: string, choice: 'cash' | 'market' | 'total') {
+    setData((current) => ({ ...current, accounts: confirmInvestmentMigration(current.accounts, current.investments, accountId, choice) as Account[] }));
+    notify('已按你的选择拆分理财现金');
+  }
   function toggleSchedule(id: string) { setData((current) => ({ ...current, schedules: current.schedules.map((item) => item.id === id ? { ...item, done: !item.done } : item) })); }
   function addSchedule(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = new FormData(event.currentTarget);
@@ -1317,6 +1326,7 @@ export default function Home() {
 
   return <main className={`phone-app ${data.theme === 'dark' ? 'dark' : ''}`}>
     {permissionOnboardingOpen && <PermissionOnboardingPanel caps={caps} nativeOn={nativeOn} onOpen={openPermissionSettings} onLater={finishPermissionOnboarding} />}
+    {investmentPlans[0] && <div className="overlay" role="dialog" aria-modal="true" aria-label="理财余额确认"><form className="sheet" onSubmit={(event) => event.preventDefault()}><div className="handle" /><header><div><span>INVESTMENT MIGRATION</span><h2>旧余额代表什么</h2></div></header><p className="form-tip">{data.accounts.find((item) => item.id === investmentPlans[0].accountId)?.name || '理财账户'} 旧余额 {currencyMark(investmentPlans[0].currency as Currency)}{money(investmentPlans[0].oldBalance)} · 持仓市值 {currencyMark(investmentPlans[0].currency as Currency)}{money(investmentPlans[0].marketValue)} · 差额 {currencyMark(investmentPlans[0].currency as Currency)}{money(investmentPlans[0].inferredDelta)}</p><div className="native-actions"><button type="button" onClick={() => confirmInvestmentMeaning(investmentPlans[0].accountId, 'cash')}>是现金</button><button type="button" onClick={() => confirmInvestmentMeaning(investmentPlans[0].accountId, 'market')}>是持仓市值</button><button type="button" onClick={() => confirmInvestmentMeaning(investmentPlans[0].accountId, 'total')}>是现金加市值</button></div></form></div>}
     <header className="app-header"><button className="round" aria-label="返回" onClick={() => { if (!goBack()) notify('已经在首页'); }}>‹</button><div><span>SELF AGENT · 本机优先</span><h1>{pageTitle()}</h1></div><button className="round status-dot" aria-label="打开设置" onClick={() => navigate('profile')}><i />设</button></header>
 
     {tab === 'home' && <div className="page home-page">

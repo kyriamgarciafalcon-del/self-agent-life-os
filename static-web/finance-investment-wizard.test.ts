@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   confirmInvestmentMigration,
@@ -32,5 +33,12 @@ describe('investment migration wizard', () => {
       confirmInvestmentMigration([account], holdings, 'inv', 'market')[0],
       holdings,
     )).toEqual({ cash: 0, marketValue: 40, total: 40 });
+  });
+
+  it('asks in the shipped finance page instead of guessing', () => {
+    const page = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8');
+    expect(page).toContain('planInvestmentMigrations');
+    expect(page).toContain('confirmInvestmentMigration');
+    expect(page).toContain('旧余额代表');
   });
 });

@@ -1967,6 +1967,8 @@ export {
   investmentAccountSnapshot,
   isMonthlyIncome,
   migrateInvestmentCash,
+  planInvestmentMigrations,
+  confirmInvestmentMigration,
   migrateSubscriptionAccounts,
   migrateToPostingLedger,
   monthlyFinanceSummary,

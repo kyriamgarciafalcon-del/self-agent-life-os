@@ -451,7 +451,7 @@ describe('reimbursement settlement cashflow', () => {
     const afterForty = settlePostedReimbursement(posted.accounts, posted.transactions, 'e1', { ...firstSettlement, postings: firstSettlement.postings ?? [] } as never);
     const deleted = removePostedTransaction(afterForty.accounts, afterForty.transactions, 's1');
     const originalAfterDelete = deleted.transactions.find((item) => item.id === 'e1')!;
-    expect(deleted.transactions.find((item) => item.id === 's1')).toBeUndefined();
+    expect((deleted.transactions.find((item) => item.id === 's1') as { status?: string } | undefined)?.status).toBe('reversed');
     expect(deleted.accounts.find((item) => item.id === 'claim')?.balance).toBe(100);
     expect(deleted.accounts.find((item) => item.id === 'bank')?.balance).toBe(10);
     expect(originalAfterDelete.reimbursed).toBe(false);
@@ -486,9 +486,9 @@ describe('reimbursement settlement cashflow', () => {
     expect(afterFull.accounts.find((item) => item.id === 'bank')?.balance).toBe(110);
 
     const deleted = removePostedTransaction(afterFull.accounts, afterFull.transactions, 'e1');
-    expect(deleted.transactions.find((item) => item.id === 'e1')).toBeUndefined();
-    expect(deleted.transactions.find((item) => item.id === 's1')).toBeUndefined();
-    expect(deleted.transactions.find((item) => item.id === 's2')).toBeUndefined();
+    expect((deleted.transactions.find((item) => item.id === 'e1') as { status?: string } | undefined)?.status).toBe('reversed');
+    expect((deleted.transactions.find((item) => item.id === 's1') as { status?: string } | undefined)?.status).toBe('reversed');
+    expect((deleted.transactions.find((item) => item.id === 's2') as { status?: string } | undefined)?.status).toBe('reversed');
     expect(deleted.accounts.find((item) => item.id === 'claim')?.balance).toBe(0);
     expect(deleted.accounts.find((item) => item.id === 'bank')?.balance).toBe(10);
     expect(deleted.accounts.find((item) => item.id === 'wechat')?.balance).toBe(200);

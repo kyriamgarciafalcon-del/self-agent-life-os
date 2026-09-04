@@ -1977,6 +1977,7 @@ export {
   refreshHoldingsValuation,
   reimbursementOutstandingAmount,
   removePostedTransaction,
+  reverseTransaction,
   resolveInboxFinanceConfirmation,
   resolveTransferAmounts,
   runFinanceInvariantSequence,

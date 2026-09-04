@@ -19,7 +19,12 @@ export type PostedTransaction = LinkedLedgerTxn & {
   category?: string;
   source?: string;
   createdAt?: string;
+  occurredAt?: string;
   idempotencyKey?: string;
+  status?: 'draft' | 'confirmed' | 'reversed' | 'superseded';
+  reversedBy?: string;
+  reversesId?: string;
+  supersededBy?: string;
   kind: LinkedLedgerTxn['kind'] | 'adjustment' | 'settlement';
 };
 
@@ -38,11 +43,17 @@ export type TransactionDraft = {
   reimbursed?: boolean;
   source?: string;
   createdAt?: string;
+  occurredAt?: string;
+  status?: PostedTransaction['status'];
   merchant?: string;
   category?: string;
   postings?: LedgerPosting[];
   idempotencyKey?: string;
 };
+
+function isActivePosted(item: { status?: string; reversesId?: string }): boolean {
+  return item.status !== 'reversed' && item.status !== 'superseded' && !item.reversesId;
+}
 
 function moneyAmount(...values: Array<number | undefined>): number {
   for (const value of values) {
@@ -213,7 +224,7 @@ export function postFinanceTransaction<TA extends LedgerAccount, TT extends Tran
   if (!canApplyPostings(current.accounts, postings)) {
     return current;
   }
-  const transaction = { ...draft, postings, accountAmount: moneyAmount(draft.accountAmount, draft.amount), kind: draft.kind, ...(idempotencyKey ? { idempotencyKey } : {}) } as TT & { postings: LedgerPosting[] };
+  const transaction = { ...draft, postings, accountAmount: moneyAmount(draft.accountAmount, draft.amount), kind: draft.kind, status: draft.status || 'confirmed', occurredAt: draft.createdAt || draft.occurredAt, ...(idempotencyKey ? { idempotencyKey } : {}) } as TT & { postings: LedgerPosting[] };
   const nextTransactions = [transaction, ...current.transactions];
   return {
     accounts: applyPostings(current.accounts, postings, 1).map((account) => ({
@@ -311,10 +322,12 @@ export type MonthlyFinanceTransaction = {
   currency?: string;
   amount?: number;
   accountAmount?: number;
+  status?: 'draft' | 'confirmed' | 'reversed' | 'superseded';
+  reversesId?: string;
 };
 
 export function monthlyFinanceSummary(transactions: MonthlyFinanceTransaction[], currency: string): { income: number; expense: number; balance: number } {
-  const selected = transactions.filter((item) => (item.currency || 'CNY') === currency);
+  const selected = transactions.filter((item) => (item.currency || 'CNY') === currency && isActivePosted(item));
   const total = (items: MonthlyFinanceTransaction[]) => moneyToMajor(moneySum(
     currency,
     items.map((item) => moneyAmount(item.accountAmount, item.amount)),
@@ -337,10 +350,10 @@ export function reimbursementClaimAmount(original: { amount?: number; accountAmo
 
 export function reimbursementSettledTotal(
   originalId: string,
-  transactions: Array<{ id?: string; kind?: string; reimbursementForId?: string; accountAmount?: number; amount?: number; targetAmount?: number }> = [],
+  transactions: Array<{ id?: string; kind?: string; reimbursementForId?: string; accountAmount?: number; amount?: number; targetAmount?: number; status?: string; reversesId?: string }> = [],
 ): number {
   return transactions
-    .filter((item) => item.kind === 'settlement' && item.reimbursementForId === originalId && item.id !== originalId)
+    .filter((item) => item.kind === 'settlement' && item.reimbursementForId === originalId && item.id !== originalId && isActivePosted(item))
     .reduce((sum, item) => sum + moneyAmount(item.accountAmount, item.amount, item.targetAmount), 0);
 }
 
@@ -446,7 +459,7 @@ export function runFinanceInvariantSequence(seed: number, steps: number): { ok: 
       if (Math.abs(derived - account.balance) > 0.001) violations.push(`${label}: ${account.id} derived ${derived} != balance ${account.balance}`);
     }
     const claim = migrated.accounts.find((item) => item.id === 'claim');
-    const openClaims = migrated.transactions.filter((item) => item.kind === 'expense' && item.reimbursable && !item.reimbursed && item.reimburseAccountId === 'claim');
+    const openClaims = migrated.transactions.filter((item) => item.kind === 'expense' && item.reimbursable && !item.reimbursed && item.reimburseAccountId === 'claim' && isActivePosted(item));
     const claimed = openClaims.reduce((sum, item) => sum + moneyAmount(item.accountAmount, item.amount), 0);
     if (Math.abs((claim?.balance ?? 0) - claimed) > 0.001) violations.push(`${label}: receivable ${claim?.balance} != open claims ${claimed}`);
     const snapshot = investmentAccountSnapshot(migrated.accounts.find((item) => item.id === 'inv')!, holdings);
@@ -486,7 +499,7 @@ export function runFinanceInvariantSequence(seed: number, steps: number): { ok: 
       accounts = posted.accounts;
       transactions = posted.transactions;
     } else if (roll < 0.58) {
-      const open = transactions.find((item) => item.kind === 'expense' && item.reimbursable && !item.reimbursed);
+      const open = transactions.find((item) => item.kind === 'expense' && item.reimbursable && !item.reimbursed && isActivePosted(item));
       if (open) {
         const settlement = buildReimbursementSettlement(open, { id: `s-${index}`, counterpartId: 'cash', amount: moneyAmount(open.accountAmount, open.amount), currency: 'CNY' });
         const nextAccounts = applyPostings(accounts, settlement.postings ?? [], 1);
@@ -521,30 +534,68 @@ export function runFinanceInvariantSequence(seed: number, steps: number): { ok: 
   return { ok: violations.length === 0, violations };
 }
 
-export function removePostedTransaction<TA extends LedgerAccount, TT extends PostedTransaction>(
+export function reverseTransaction<TA extends LedgerAccount, TT extends PostedTransaction>(
   accounts: TA[],
   transactions: TT[],
   id: string,
 ): { accounts: TA[]; transactions: TT[] } {
   const previous = transactions.find((item) => item.id === id);
   if (!previous) return { accounts, transactions };
+  let nextAccounts = accounts;
+  let nextTransactions = transactions;
+  const linked = nextTransactions.filter((item) => (
+    item.id !== previous.id
+    && isActivePosted(item)
+    && (item.reimbursementForId === previous.id || item.id === previous.reimbursementTransactionId)
+  ));
+  for (const credit of linked) {
+    const inner = reverseOne(nextAccounts, nextTransactions, credit.id);
+    nextAccounts = inner.accounts;
+    nextTransactions = inner.transactions;
+  }
+  return reverseOne(nextAccounts, nextTransactions, id);
+}
+
+function reverseOne<TA extends LedgerAccount, TT extends PostedTransaction>(
+  accounts: TA[],
+  transactions: TT[],
+  id: string,
+): { accounts: TA[]; transactions: TT[] } {
+  const previous = transactions.find((item) => item.id === id);
+  if (!previous || previous.status === 'reversed' || previous.reversesId) return { accounts, transactions };
   const postings = previous.postings?.length ? previous.postings : composeTransactionPostings(accounts, previous);
-  let nextAccounts = applyPostings(accounts, postings, -1);
-  let nextTransactions = transactions.filter((item) => item.id !== previous.id);
+  const reversePostings = postings.map((posting) => ({ ...posting, amount: -posting.amount }));
+  const reverseId = `rev-${previous.id}`;
+  const reverseTxn = {
+    ...previous,
+    id: reverseId,
+    postings: reversePostings,
+    reversesId: previous.id,
+    status: 'confirmed',
+    reversedBy: undefined,
+    reimbursementForId: previous.reimbursementForId,
+  } as TT;
+  let nextTransactions = transactions.map((item) => (
+    item.id === previous.id ? { ...item, status: 'reversed', reversedBy: reverseId } as TT : item
+  ));
+  nextTransactions = [reverseTxn, ...nextTransactions];
+  const nextAccounts = applyPostings(accounts, reversePostings, 1);
   if (previous.reimbursementForId) {
     nextTransactions = nextTransactions.map((item) => {
       if (item.id !== previous.reimbursementForId) return item;
       const outstanding = reimbursementOutstandingAmount(item, nextTransactions);
-      const remainingCredit = nextTransactions.find((row) => row.reimbursementForId === item.id);
-      return { ...item, reimbursed: outstanding.amount <= 0.0001, reimbursementTransactionId: remainingCredit?.id };
+      return { ...item, reimbursed: outstanding.amount <= 0.0001 } as TT;
     });
   }
-  const linkedCredits = transactions.filter((item) => item.id !== previous.id && (item.reimbursementForId === previous.id || item.id === previous.reimbursementTransactionId));
-  for (const credit of linkedCredits) {
-    nextAccounts = applyPostings(nextAccounts, credit.postings?.length ? credit.postings : composeTransactionPostings(nextAccounts, credit), -1);
-    nextTransactions = nextTransactions.filter((item) => item.id !== credit.id);
-  }
   return { accounts: nextAccounts, transactions: nextTransactions };
+}
+
+export function removePostedTransaction<TA extends LedgerAccount, TT extends PostedTransaction>(
+  accounts: TA[],
+  transactions: TT[],
+  id: string,
+): { accounts: TA[]; transactions: TT[] } {
+  return reverseTransaction(accounts, transactions, id);
 }
 
 export function settlePostedReimbursement<TA extends LedgerAccount, TT extends PostedTransaction>(

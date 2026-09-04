@@ -142,7 +142,7 @@ type ScopedSummaryInput = {
   month: string;
   privacy: Partial<PrivacyFlags>;
   schedules: { date: string; done: boolean; title: string }[];
-  transactions: { createdAt: string }[];
+  transactions: { createdAt: string; occurredAt?: string }[];
   healthRecords: HealthMetricRecord[];
   memories: { active: boolean; title: string; note: string; sendAllowed?: boolean; source?: string; purpose?: string; updatedAt?: string }[];
 };
@@ -222,7 +222,7 @@ export function buildScopedSummary(input: ScopedSummaryInput): string {
     ? `日程未完成=${input.schedules.filter((item) => item.date === input.today && !item.done).map((item) => item.title).join('、') || '无'}`
     : '日程权限关闭';
   const finance = privacy.finance
-    ? `本月流水 ${input.transactions.filter((item) => item.createdAt.startsWith(input.month)).length} 笔`
+    ? `本月流水 ${input.transactions.filter((item) => (item.occurredAt || item.createdAt).startsWith(input.month)).length} 笔`
     : '财务权限关闭';
   const health = privacy.health ? summarizeHealth(input.healthRecords) : '健康权限关闭';
   const memories = privacy.memory

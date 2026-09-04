@@ -22,6 +22,14 @@ export function getMonthlyReport(transactions: MonthlyFinanceTransaction[], curr
   return monthlyFinanceSummary(transactions, currency);
 }
 
+export function transactionOccurredAt(item: { occurredAt?: string; createdAt?: string }): string {
+  return item.occurredAt || item.createdAt || '';
+}
+
+export function transactionsInPeriod<T extends { occurredAt?: string; createdAt?: string }>(items: T[], period: string): T[] {
+  return items.filter((item) => transactionOccurredAt(item).startsWith(period));
+}
+
 export function getReceivables(
   accounts: WealthAccount[],
   transactions: WealthTxn[] = [],

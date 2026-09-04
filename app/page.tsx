@@ -1,7 +1,7 @@
 'use client';
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { getConvertedNetWorth, getMonthlyReport, getNetWorth } from './finance-query';
+import { getConvertedNetWorth, getMonthlyReport, getNetWorth, transactionOccurredAt, transactionsInPeriod } from './finance-query';
 import { accountRole, addDaysKey, applyDailyFxRates, applyDailyPriceQuotes, applyInboxLifecycle, AI_CONFIG_EVENT, AI_CONFIG_STORAGE_KEY, AI_REPLY_EVENT, AUDIT_OUTCOMES, auditOutcomeLabel, auditReasonLabel, buildButlerSystemPrompt, buildHealthBriefing, buildAiSendPreview, canUndoInboxConfirm, cnyWealthTotal, confirmByokHost, consumeCallBudget, createCallBudget, defaultCashId, describeButlerDataScope, detectLegacyDemoData, dialogShouldDismiss, dismissPermissionOnboarding, filterAuditLog, generateRecurringDrafts, healthRecordsFromSnapshots, inboxConfidenceLabel, inboxConfirmBlockReason, inboxItemFromAiTool, inboxItemFromButlerAction, inboxItemFromNaturalCapture, inboxItemFromPayment, inboxItemFromTravelNotice, inboxSourceLabel, ledgerIdempotencyKeyForInboxItem, INBOX_ACTION_LABELS, isBackupPayload, isDebtRole, latestHealthByKind, loadBrowserAiConfig, localDateKey, markPermissionSettingsOpened, migrateAuditLog, migrateInboxStore, migrateLegacyAiLocalStorage, migratePrivacySettings, normalizeAccountBalance, normalizeMemory, normalizePermissionOnboarding, parseAiProviderResponse, parseButlerModelOutput, parseCapabilityStatus, parseNaturalCapture, pendingInboxItems, persistBrowserAiConfig, permissionOnboardingProgress, planAccountSettlement, prepareOutboundAiPayload, reconcileRecurringConfirmations, releaseRecurringConfirmation, resolveInboxFinanceConfirmation, resolvePaymentAccountId, shouldShowPermissionOnboarding, summarizeHealth, TOAST_ARIA_LIVE, updateInboxItemPayload, upsertByExternalKey, validateByokTarget, weekDates, ACCOUNT_TYPES, buildReimbursementSettlement, canDeleteAccount, FINANCE_TABS, financeTransactionFields, investmentAccountSnapshot, normalizeFinanceRecords, postBalanceAdjustment, postFinanceTransaction, refreshHoldingsValuation, reimbursementOutstandingAmount, removePostedTransaction, settlePostedReimbursement, resolveTransferAmounts, type AuditEntry, type ButlerAction, type CapabilityStatusSnapshot, type HealthMetric, type InboxItem, type InboxLifecycleEvent, type InboxSource, type PermissionCardId, type PermissionOnboardingState, type TravelKind } from './product-logic';
 
 type Tab = 'home' | 'schedule' | 'capture' | 'finance' | 'profile' | 'life' | 'health' | 'travel' | 'data' | 'butler' | 'privacy' | 'memory' | 'vault' | 'audit';
@@ -620,7 +620,7 @@ export default function Home() {
   }, [dateOptions]);
   const selectedSchedules = useMemo(() => data.schedules.filter((item) => item.date === selectedDate).sort((a, b) => a.time.localeCompare(b.time)), [data.schedules, selectedDate]);
   const editingSchedule = editingScheduleId ? data.schedules.find((item) => item.id === editingScheduleId) : undefined;
-  const todaySpend = useMemo(() => data.transactions.filter((item) => item.kind === 'expense' && item.currency === 'CNY' && item.createdAt.startsWith(TODAY)).reduce((sum, item) => sum + item.amount, 0), [data.transactions]);
+  const todaySpend = useMemo(() => transactionsInPeriod(data.transactions, TODAY).filter((item) => item.kind === 'expense' && item.currency === 'CNY').reduce((sum, item) => sum + item.amount, 0), [data.transactions]);
   const totalBalanceLabel = useMemo(() => formatCnyWealthSummary(data.accounts, data.transactions, data.exchangeRates, data.investments), [data.accounts, data.transactions, data.exchangeRates, data.investments]);
   const hasBusinessData = data.schedules.length + data.accounts.length + data.transactions.length + data.healthRecords.length + data.travels.length > 0;
   const nextSchedule = useMemo(() => data.schedules.filter((item) => item.date === TODAY && !item.done).sort((left, right) => left.time.localeCompare(right.time))[0], [data.schedules]);
@@ -1478,7 +1478,7 @@ function TravelPanel({ items, onSync, onAdd, onDelete }: { items: TravelItem[]; 
 }
 
 function DataPanel({ data }: { data: AppData }) {
-  const month = data.transactions.filter((item) => item.createdAt.startsWith(MONTH) && item.currency === 'CNY');
+  const month = transactionsInPeriod(data.transactions, MONTH).filter((item) => item.currency === 'CNY');
   const monthReport = getMonthlyReport(month, 'CNY');
   const income = monthReport.income;
   const expense = monthReport.expense;
@@ -1531,7 +1531,7 @@ function ButlerPanel({ data, ai, onQueueActions, onQueueTools }: { data: AppData
     }
     if (/财务|花|钱|结余/.test(text)) {
       if (!data.privacy.finance) return '财务摘要权限已关闭。你可以在隐私与权限中重新开启。';
-      const monthReport = getMonthlyReport(data.transactions.filter((item) => item.createdAt.startsWith(MONTH)), 'CNY');
+      const monthReport = getMonthlyReport(transactionsInPeriod(data.transactions, MONTH), 'CNY');
       return `本月已确认收入 ${money(monthReport.income)} 元、支出 ${money(monthReport.expense)} 元，结余 ${money(monthReport.balance)} 元。未读取订单号或密码。财务不是投资建议。`;
     }
     if (/记忆/.test(text)) {
@@ -1715,14 +1715,14 @@ function FinancePanel({ data, currency, selectedAccountId, selectedHoldingId, on
     const investSnap = selectedAccount.type === '理财账户' ? investmentAccountSnapshot(selectedAccount, data.investments) : null;
     return <div className="page finance-page account-detail-page"><button className="inline-back" onClick={onBackAccount}>‹ 返回全部账户</button><section className={`account-hero ${selectedAccount.tone}`}><span>{roleLabel(selectedAccount.type)} · {selectedAccount.currency}</span><h2>{selectedAccount.name}</h2><strong>{isDebtRole(accountRole(selectedAccount.type)) ? '欠 ' : ''}{currencyMark(selectedAccount.currency)} {money(investSnap ? investSnap.total : normalizeAccountBalance(selectedAccount.type, selectedAccount.balance))}</strong>{investSnap && <p className="form-tip">现金 {currencyMark(selectedAccount.currency)}{money(investSnap.cash)} · 市值 {currencyMark(selectedAccount.currency)}{money(investSnap.marketValue)}</p>}<div className="account-hero-ops"><button type="button" onClick={() => onEditAccount(selectedAccount.id)}>编辑</button>{accountRole(selectedAccount.type) === 'receivable' && selectedAccount.balance > 0 && <button type="button" onClick={() => onSettleAccount(selectedAccount.id)}>收回</button>}{isDebtRole(accountRole(selectedAccount.type)) && selectedAccount.balance > 0 && <button type="button" onClick={() => onSettleAccount(selectedAccount.id)}>还款</button>}</div></section><section className="account-stats"><article><span>流入</span><strong>+{currencyMark(selectedAccount.currency)}{money(income)}</strong></article><article><span>流出</span><strong>−{currencyMark(selectedAccount.currency)}{money(expense)}</strong></article><article><span>账目</span><strong>{accountItems.length} 笔</strong></article></section>{selectedAccount.type === '理财账户' && <section className="section-block"><div className="section-title"><div><span>HOLDINGS</span><h2>该账户持仓</h2></div><button onClick={onNewHolding}>＋ 添加产品</button></div><InvestmentList items={accountHoldings} onSelect={onSelectHolding} /></section>}<section className="section-block"><div className="section-title"><div><span>ACCOUNT LEDGER</span><h2>该账户全部账单</h2></div><button onClick={onNewTransaction}>＋ 记一笔</button></div><TransactionList items={accountItems} accounts={data.accounts} onEdit={onEditTransaction} onDelete={onDeleteTransaction} onSettle={onSettleReimbursement} /></section></div>;
   }
-  const monthItems = data.transactions.filter((item) => item.currency === currency && item.createdAt.startsWith(MONTH));
+  const monthItems = transactionsInPeriod(data.transactions, MONTH).filter((item) => item.currency === currency);
   const monthSummary = getMonthlyReport(monthItems, currency);
   const monthIncome = monthSummary.income;
   const monthExpense = monthSummary.expense;
-  const todayExpense = monthItems.filter((item) => item.kind === 'expense' && item.createdAt.startsWith(TODAY)).reduce((sum, item) => sum + item.amount, 0);
+  const todayExpense = getMonthlyReport(transactionsInPeriod(monthItems, TODAY), currency).expense;
   const reimburse = monthItems.filter((item) => item.kind === 'expense' && item.reimbursable && !item.reimbursed).reduce((sum, item) => sum + item.amount, 0);
   const currentDay = Number(TODAY.slice(-2));
-  const chartDays = Array.from({ length: Math.min(6, currentDay) }, (_, index) => Math.max(1, currentDay - 5) + index).map((day) => ({ day, amount: monthItems.filter((item) => item.kind === 'expense' && Number(item.createdAt.slice(8, 10)) === day).reduce((sum, item) => sum + item.amount, 0) }));
+  const chartDays = Array.from({ length: Math.min(6, currentDay) }, (_, index) => Math.max(1, currentDay - 5) + index).map((day) => ({ day, amount: monthItems.filter((item) => item.kind === 'expense' && Number(transactionOccurredAt(item).slice(8, 10)) === day).reduce((sum, item) => sum + item.amount, 0) }));
   const maxDay = Math.max(...chartDays.map((item) => item.amount), 1);
   const mark = currencyMark(currency);
   const wealth = getNetWorth(data.accounts, data.transactions, data.investments);

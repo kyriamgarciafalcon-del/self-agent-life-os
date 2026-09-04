@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   AI_SUPPORTED_TOOLS,
@@ -18,6 +19,7 @@ import {
   TOAST_ARIA_LIVE,
   validateByokTarget,
   classifyAiProviderError,
+  interpretAiConnectionTest,
 } from '../app/product-logic';
 
 describe('independent memory-data permission', () => {
@@ -287,5 +289,14 @@ describe('AI provider error classes', () => {
     expect(classifyAiProviderError({ status: 429 })).toEqual({ code: 'quota', action: '等待或调整限制' });
     expect(classifyAiProviderError({ message: 'offline' })).toEqual({ code: 'offline', action: '继续使用本地规则' });
     expect(JSON.stringify(classifyAiProviderError({ status: 401, message: 'sk-secret' }))).not.toContain('sk-secret');
+  });
+
+  it('turns a connection probe into a short status without sending user data', () => {
+    expect(interpretAiConnectionTest({ ok: true })).toEqual({ ok: true, code: 'ready', label: '连接正常' });
+    expect(interpretAiConnectionTest({ ok: false, status: 401 })).toMatchObject({ ok: false, code: 'auth', label: '重新输入密钥' });
+    expect(interpretAiConnectionTest({ ok: false, error: 'timeout' }).code).toBe('timeout');
+    const page = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8');
+    expect(page).toContain('测试连接');
+    expect(page).toContain('interpretAiConnectionTest');
   });
 });

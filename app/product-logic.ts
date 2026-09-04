@@ -1954,6 +1954,12 @@ export function classifyAiProviderError(input: { status?: number; message?: stri
   return { code: 'offline', action: '继续使用本地规则' };
 }
 
+export function interpretAiConnectionTest(input: { ok?: boolean; status?: number; error?: string }): { ok: boolean; code: string; label: string } {
+  if (input.ok) return { ok: true, code: 'ready', label: '连接正常' };
+  const classified = classifyAiProviderError({ status: input.status, message: input.error });
+  return { ok: false, code: classified.code, label: classified.action };
+}
+
 export type CallBudget = { maxCalls: number; maxTokens: number; timeoutMs: number; remainingCalls: number; remainingTokens: number };
 
 export function createCallBudget(input: { maxCalls: number; maxTokens: number; timeoutMs: number }): CallBudget {

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { migrateToSchemaV4 } from '../app/finance-schema';
+import { migrateToSchemaV4, createSchemaV4MigrationBackup } from '../app/finance-schema';
 
 describe('schema v3 to v4', () => {
   const v3 = {
@@ -37,5 +37,30 @@ describe('schema v3 to v4', () => {
     const page = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8');
     expect(page).toContain('migrateToSchemaV4');
     expect(page).toContain('schemaVersion: 4');
+    expect(page).toContain('createSchemaV4MigrationBackup');
+    expect(page).toContain('SCHEMA_V3_BACKUP_KEY');
+  });
+});
+
+describe('schema v4 pre-migration backup', () => {
+  const v3 = {
+    schemaVersion: 3 as const,
+    transactions: [{ id: 'e1', createdAt: '2026-08-31T12:00:00+08:00', amount: 40 }],
+  };
+
+  it('freezes the v3 snapshot with a checksum before upgrade', () => {
+    const backup = createSchemaV4MigrationBackup(v3, null);
+    expect(backup?.fromVersion).toBe(3);
+    expect(backup?.toVersion).toBe(4);
+    expect(backup?.checksum).toMatch(/^[0-9a-f]{8}$/);
+    expect(backup?.payload).toEqual(v3);
+    expect(backup?.payload).not.toBe(v3);
+  });
+
+  it('does not overwrite an existing backup or snapshot already on v4', () => {
+    const first = createSchemaV4MigrationBackup(v3, null)!;
+    const mutated = { ...v3, transactions: [] };
+    expect(createSchemaV4MigrationBackup(mutated, first)).toEqual(first);
+    expect(createSchemaV4MigrationBackup({ schemaVersion: 4, transactions: [] }, null)).toBeNull();
   });
 });

@@ -2,7 +2,7 @@
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { getConvertedNetWorth, getMonthlyReport, getNetWorth, transactionOccurredAt, transactionsInPeriod } from './finance-query';
-import { migrateToSchemaV4 } from './finance-schema';
+import { migrateToSchemaV4, createSchemaV4MigrationBackup, SCHEMA_V3_BACKUP_KEY } from './finance-schema';
 import { accountRole, addDaysKey, applyDailyFxRates, applyDailyPriceQuotes, applyInboxLifecycle, AI_CONFIG_EVENT, AI_CONFIG_STORAGE_KEY, AI_REPLY_EVENT, AUDIT_OUTCOMES, auditOutcomeLabel, auditReasonLabel, buildButlerSystemPrompt, buildHealthBriefing, buildAiSendPreview, canUndoInboxConfirm, cnyWealthTotal, confirmByokHost, consumeCallBudget, createCallBudget, defaultCashId, describeButlerDataScope, detectLegacyDemoData, dialogShouldDismiss, dismissPermissionOnboarding, filterAuditLog, generateRecurringDrafts, healthRecordsFromSnapshots, inboxConfidenceLabel, inboxConfirmBlockReason, inboxItemFromAiTool, inboxItemFromButlerAction, inboxItemFromNaturalCapture, inboxItemFromPayment, inboxItemFromTravelNotice, inboxSourceLabel, ledgerIdempotencyKeyForInboxItem, INBOX_ACTION_LABELS, isBackupPayload, isDebtRole, latestHealthByKind, loadBrowserAiConfig, localDateKey, markPermissionSettingsOpened, migrateAuditLog, migrateInboxStore, migrateLegacyAiLocalStorage, migratePrivacySettings, normalizeAccountBalance, normalizeMemory, normalizePermissionOnboarding, parseAiProviderResponse, parseButlerModelOutput, parseCapabilityStatus, parseNaturalCapture, pendingInboxItems, persistBrowserAiConfig, permissionOnboardingProgress, planAccountSettlement, prepareOutboundAiPayload, reconcileRecurringConfirmations, releaseRecurringConfirmation, resolveInboxFinanceConfirmation, resolvePaymentAccountId, shouldShowPermissionOnboarding, summarizeHealth, TOAST_ARIA_LIVE, updateInboxItemPayload, upsertByExternalKey, validateByokTarget, weekDates, ACCOUNT_TYPES, buildReimbursementSettlement, canDeleteAccount, FINANCE_TABS, financeTransactionFields, investmentAccountSnapshot, normalizeFinanceRecords, postBalanceAdjustment, postFinanceTransaction, refreshHoldingsValuation, reimbursementOutstandingAmount, removePostedTransaction, settlePostedReimbursement, resolveTransferAmounts, type AuditEntry, type ButlerAction, type CapabilityStatusSnapshot, type HealthMetric, type InboxItem, type InboxLifecycleEvent, type InboxSource, type PermissionCardId, type PermissionOnboardingState, type TravelKind } from './product-logic';
 
 type Tab = 'home' | 'schedule' | 'capture' | 'finance' | 'profile' | 'life' | 'health' | 'travel' | 'data' | 'butler' | 'privacy' | 'memory' | 'vault' | 'audit';
@@ -412,7 +412,19 @@ export default function Home() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       try {
-        const saved = window.localStorage.getItem(STORAGE_KEY); if (saved) setData(normalizeData(JSON.parse(saved) as Partial<AppData>));
+        const saved = window.localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved) as Partial<AppData>;
+          try {
+            const existingRaw = window.localStorage.getItem(SCHEMA_V3_BACKUP_KEY);
+            const existing = existingRaw ? JSON.parse(existingRaw) as { checksum?: string; fromVersion?: number; toVersion?: number; payload?: unknown } : null;
+            const backup = createSchemaV4MigrationBackup(parsed, existing?.checksum ? existing as { fromVersion: number; toVersion: 4; checksum: string; payload: unknown } : null);
+            if (backup && !existingRaw) window.localStorage.setItem(SCHEMA_V3_BACKUP_KEY, JSON.stringify(backup));
+          } catch {
+            /* keep hydrate even if backup cannot be written */
+          }
+          setData(normalizeData(parsed));
+        }
         const leftover = migrateLegacyAiLocalStorage(window.localStorage);
         const native = (window as Window & { SelfAgentNative?: NativeAiBridge }).SelfAgentNative;
         if (native?.nativeReady?.()) {

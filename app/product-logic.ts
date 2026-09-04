@@ -1937,6 +1937,23 @@ export function validateByokTarget(raw: string): { ok: boolean; host: string; re
   }
 }
 
+export function classifyAiProviderError(input: { status?: number; message?: string }): { code: 'auth' | 'model' | 'timeout' | 'quota' | 'offline'; action: string } {
+  const message = String(input.message || '').toLowerCase();
+  if (input.status === 401 || input.status === 403 || message.includes('token_expired') || message.includes('unauthorized')) {
+    return { code: 'auth', action: '重新输入密钥' };
+  }
+  if (input.status === 404 || message.includes('model_not_found') || message.includes('model not found')) {
+    return { code: 'model', action: '选择已发现模型' };
+  }
+  if (input.status === 429 || message.includes('quota') || message.includes('rate limit')) {
+    return { code: 'quota', action: '等待或调整限制' };
+  }
+  if (message.includes('timeout')) {
+    return { code: 'timeout', action: '继续使用本地规则' };
+  }
+  return { code: 'offline', action: '继续使用本地规则' };
+}
+
 export type CallBudget = { maxCalls: number; maxTokens: number; timeoutMs: number; remainingCalls: number; remainingTokens: number };
 
 export function createCallBudget(input: { maxCalls: number; maxTokens: number; timeoutMs: number }): CallBudget {

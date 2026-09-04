@@ -17,6 +17,7 @@ import {
   sanitizeModelBoundFields,
   TOAST_ARIA_LIVE,
   validateByokTarget,
+  classifyAiProviderError,
 } from '../app/product-logic';
 
 describe('independent memory-data permission', () => {
@@ -275,5 +276,16 @@ describe('accessibility helpers', () => {
     expect(TOAST_ARIA_LIVE).toBe('polite');
     expect(dialogShouldDismiss('Escape')).toBe(true);
     expect(dialogShouldDismiss('Enter')).toBe(false);
+  });
+});
+
+describe('AI provider error classes', () => {
+  it('maps auth, missing model, timeout, quota and offline to user actions without leaking secrets', () => {
+    expect(classifyAiProviderError({ status: 401, message: 'token_expired' })).toEqual({ code: 'auth', action: '重新输入密钥' });
+    expect(classifyAiProviderError({ status: 404, message: 'model_not_found' })).toEqual({ code: 'model', action: '选择已发现模型' });
+    expect(classifyAiProviderError({ message: 'timeout' })).toEqual({ code: 'timeout', action: '继续使用本地规则' });
+    expect(classifyAiProviderError({ status: 429 })).toEqual({ code: 'quota', action: '等待或调整限制' });
+    expect(classifyAiProviderError({ message: 'offline' })).toEqual({ code: 'offline', action: '继续使用本地规则' });
+    expect(JSON.stringify(classifyAiProviderError({ status: 401, message: 'sk-secret' }))).not.toContain('sk-secret');
   });
 });

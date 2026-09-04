@@ -1,4 +1,5 @@
 import { accountRole, applyDailyPriceQuotes, applyLedger, canApplyLedger, isDebtRole, migrateLegacyReimbursementAccounts, type DailyPriceQuote, type LedgerAccount, type LinkedLedgerTxn, type WealthAccount } from './product-logic';
+import { moneySum, moneyToMajor } from './money';
 
 export const ACCOUNT_TYPES = ['资金账户', '储蓄卡', '现金', '信用卡', '理财账户', '储值账户', '待收回', '欠款', '物品资产'] as const;
 export const FINANCE_TABS = ['总览', '账户', '流水', '投资', '周期账单'] as const;
@@ -314,10 +315,10 @@ export type MonthlyFinanceTransaction = {
 
 export function monthlyFinanceSummary(transactions: MonthlyFinanceTransaction[], currency: string): { income: number; expense: number; balance: number } {
   const selected = transactions.filter((item) => (item.currency || 'CNY') === currency);
-  const total = (items: MonthlyFinanceTransaction[]) => items.reduce(
-    (sum, item) => sum + moneyAmount(item.accountAmount, item.amount),
-    0,
-  );
+  const total = (items: MonthlyFinanceTransaction[]) => moneyToMajor(moneySum(
+    currency,
+    items.map((item) => moneyAmount(item.accountAmount, item.amount)),
+  ));
   const income = total(selected.filter(isMonthlyIncome));
   const expense = total(selected.filter((item) => item.kind === 'expense'));
   return { income, expense, balance: income - expense };

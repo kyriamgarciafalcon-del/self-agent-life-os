@@ -17,6 +17,7 @@
     "../app/page.tsx",
     "../app/product-logic.ts",
     "../app/finance-core.ts",
-    "../app/finance-query.ts"
+    "../app/finance-query.ts",
+    "../app/money.ts"
   ]
 }

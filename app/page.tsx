@@ -2,6 +2,7 @@
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { getConvertedNetWorth, getMonthlyReport, getNetWorth, transactionOccurredAt, transactionsInPeriod } from './finance-query';
+import { migrateToSchemaV4 } from './finance-schema';
 import { accountRole, addDaysKey, applyDailyFxRates, applyDailyPriceQuotes, applyInboxLifecycle, AI_CONFIG_EVENT, AI_CONFIG_STORAGE_KEY, AI_REPLY_EVENT, AUDIT_OUTCOMES, auditOutcomeLabel, auditReasonLabel, buildButlerSystemPrompt, buildHealthBriefing, buildAiSendPreview, canUndoInboxConfirm, cnyWealthTotal, confirmByokHost, consumeCallBudget, createCallBudget, defaultCashId, describeButlerDataScope, detectLegacyDemoData, dialogShouldDismiss, dismissPermissionOnboarding, filterAuditLog, generateRecurringDrafts, healthRecordsFromSnapshots, inboxConfidenceLabel, inboxConfirmBlockReason, inboxItemFromAiTool, inboxItemFromButlerAction, inboxItemFromNaturalCapture, inboxItemFromPayment, inboxItemFromTravelNotice, inboxSourceLabel, ledgerIdempotencyKeyForInboxItem, INBOX_ACTION_LABELS, isBackupPayload, isDebtRole, latestHealthByKind, loadBrowserAiConfig, localDateKey, markPermissionSettingsOpened, migrateAuditLog, migrateInboxStore, migrateLegacyAiLocalStorage, migratePrivacySettings, normalizeAccountBalance, normalizeMemory, normalizePermissionOnboarding, parseAiProviderResponse, parseButlerModelOutput, parseCapabilityStatus, parseNaturalCapture, pendingInboxItems, persistBrowserAiConfig, permissionOnboardingProgress, planAccountSettlement, prepareOutboundAiPayload, reconcileRecurringConfirmations, releaseRecurringConfirmation, resolveInboxFinanceConfirmation, resolvePaymentAccountId, shouldShowPermissionOnboarding, summarizeHealth, TOAST_ARIA_LIVE, updateInboxItemPayload, upsertByExternalKey, validateByokTarget, weekDates, ACCOUNT_TYPES, buildReimbursementSettlement, canDeleteAccount, FINANCE_TABS, financeTransactionFields, investmentAccountSnapshot, normalizeFinanceRecords, postBalanceAdjustment, postFinanceTransaction, refreshHoldingsValuation, reimbursementOutstandingAmount, removePostedTransaction, settlePostedReimbursement, resolveTransferAmounts, type AuditEntry, type ButlerAction, type CapabilityStatusSnapshot, type HealthMetric, type InboxItem, type InboxLifecycleEvent, type InboxSource, type PermissionCardId, type PermissionOnboardingState, type TravelKind } from './product-logic';
 
 type Tab = 'home' | 'schedule' | 'capture' | 'finance' | 'profile' | 'life' | 'health' | 'travel' | 'data' | 'butler' | 'privacy' | 'memory' | 'vault' | 'audit';
@@ -21,7 +22,7 @@ type ScheduleItem = {
 
 type Account = { id: string; name: string; type: string; balance: number; currency: Currency; tone: 'forest' | 'clay' | 'ink'; openingBalance?: number };
 type LedgerPosting = { accountId: string; amount: number; currency: string };
-type Transaction = { id: string; kind: TransactionKind; amount: number; accountAmount: number; currency: Currency; merchant: string; category: string; accountId: string; targetAccountId?: string; targetAmount?: number; targetCurrency?: Currency; exchangeRate?: number; source: string; reimbursable: boolean; reimburseAccountId?: string; reimbursed?: boolean; reimbursementForId?: string; reimbursementTransactionId?: string; recurringRuleId?: string; createdAt: string; occurredAt?: string; postings?: LedgerPosting[]; idempotencyKey?: string; status?: 'draft' | 'confirmed' | 'reversed' | 'superseded'; reversesId?: string; reversedBy?: string };
+type Transaction = { id: string; kind: TransactionKind; amount: number; accountAmount: number; currency: Currency; merchant: string; category: string; accountId: string; targetAccountId?: string; targetAmount?: number; targetCurrency?: Currency; exchangeRate?: number; source: string; reimbursable: boolean; reimburseAccountId?: string; reimbursed?: boolean; reimbursementForId?: string; reimbursementTransactionId?: string; recurringRuleId?: string; createdAt: string; occurredAt?: string; occurredAtEstimated?: boolean; postings?: LedgerPosting[]; idempotencyKey?: string; status?: 'draft' | 'confirmed' | 'reversed' | 'superseded'; reversesId?: string; reversedBy?: string };
 type RecurringRule = { id: string; name: string; kind: 'subscription' | 'credit-card'; amount: number; currency: Currency; accountId: string; targetAccountId?: string; dueDay: number; enabled: boolean; lastRunPeriod?: string };
 type HealthRecord = { id: string; kind: 'sleep' | 'meal' | 'exercise' | 'steps' | 'height' | 'weight' | 'heartRate' | 'stress' | 'pai'; value: number; note: string; createdAt: string; externalKey?: string };
 type MemoryItem = { id: string; kind: '目标' | '偏好' | '观察'; title: string; note: string; active: boolean; sendAllowed: boolean; source: string; purpose: string; updatedAt: string };
@@ -32,7 +33,7 @@ type InvestmentKind = 'fund' | 'stock' | 'crypto' | 'meme';
 type PricePoint = { date: string; price: number };
 type InvestmentHolding = { id: string; accountId: string; kind: InvestmentKind; name: string; code: string; contract: string; network: string; quantity: number; averageCost: number; currentPrice: number; currency: Currency; updatedAt: string; quoteStatus: 'sample' | 'manual' | 'live'; history: PricePoint[] };
 type ExchangeRate = { currency: string; cnyRate: number; asOf: string; source: 'manual' | 'daily'; updatedAt: string };
-type AppData = { schemaVersion: 3; demoMode: boolean; schedules: ScheduleItem[]; accounts: Account[]; transactions: Transaction[]; recurringRules: RecurringRule[]; healthRecords: HealthRecord[]; travels: TravelItem[]; investments: InvestmentHolding[]; exchangeRates: ExchangeRate[]; memories: MemoryItem[]; privacy: PrivacySettings; vaultItems: VaultItem[]; inboxItems: InboxItem[]; lastConfirmedInboxId: string | null; auditLog: AuditEntry[]; theme: 'light' | 'dark'; permissionOnboarding: PermissionOnboardingState };
+type AppData = { schemaVersion: 3 | 4; demoMode: boolean; schedules: ScheduleItem[]; accounts: Account[]; transactions: Transaction[]; recurringRules: RecurringRule[]; healthRecords: HealthRecord[]; travels: TravelItem[]; investments: InvestmentHolding[]; exchangeRates: ExchangeRate[]; memories: MemoryItem[]; privacy: PrivacySettings; vaultItems: VaultItem[]; inboxItems: InboxItem[]; lastConfirmedInboxId: string | null; auditLog: AuditEntry[]; theme: 'light' | 'dark'; permissionOnboarding: PermissionOnboardingState };
 type ExpenseDraft = { kind: 'expense'; amount: number; merchant: string; category: string; accountId: string; source: string; currency: Currency; reimbursable: boolean };
 type ScheduleDraft = { kind: 'schedule'; title: string; date: string; time: string };
 type TravelDraft = { kind: 'travel'; travelKind: TravelKind; number: string; from: string; to: string; date: string; departTime: string; arriveTime?: string };
@@ -68,7 +69,7 @@ function canHoldMoney(account: Account | undefined) {
 }
 
 const demoData: AppData = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   demoMode: true,
   schedules: [
     { id: 's1', date: TODAY, time: '09:30', title: '项目周会', detail: '线上会议 · 45 分钟', color: 'blue', done: true },
@@ -128,7 +129,7 @@ const demoData: AppData = {
 };
 
 const emptyData: AppData = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   demoMode: false,
   schedules: [],
   accounts: [],
@@ -232,6 +233,11 @@ function toTransactions(transactions: Array<Partial<Transaction> & { id: string;
     reimbursementTransactionId: item.reimbursementTransactionId,
     recurringRuleId: item.recurringRuleId,
     createdAt: item.createdAt ?? localStamp(),
+    occurredAt: item.occurredAt ?? item.createdAt,
+    occurredAtEstimated: item.occurredAtEstimated,
+    status: item.status,
+    reversesId: item.reversesId,
+    reversedBy: item.reversedBy,
     postings: item.postings,
     idempotencyKey: item.idempotencyKey,
   }));
@@ -246,13 +252,14 @@ function normalizeData(raw: Partial<AppData>): AppData {
     reimbursable: item.reimbursable ?? false,
     reimbursed: item.reimbursed ?? false,
   }));
-  const finance = normalizeFinanceRecords(rawAccounts, rawTransactions, investments);
+  const migrated = migrateToSchemaV4({ schemaVersion: raw.schemaVersion, transactions: rawTransactions });
+  const finance = normalizeFinanceRecords(rawAccounts, migrated.transactions, investments);
   const accounts = toAccounts(finance.accounts as Account[]);
   const transactions = toTransactions(finance.transactions as Array<Partial<Transaction> & { id: string; kind: TransactionKind; accountId: string }>);
   const inbox = migrateInboxStore(raw);
   const auditLog = migrateAuditLog(raw);
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     demoMode: raw.demoMode ?? detectLegacyDemoData(raw),
     schedules: raw.schedules ?? [],
     accounts,

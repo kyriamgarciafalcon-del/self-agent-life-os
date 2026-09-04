@@ -1,5 +1,8 @@
 package app.selfagent.health
 
+import java.time.Instant
+import java.time.ZoneId
+
 data class XiaomiSleepV6Summary(
     val bedEpochSeconds: Long,
     val wakeEpochSeconds: Long,
@@ -9,6 +12,16 @@ data class XiaomiSleepV6Summary(
     val remMinutes: Int,
     val deepMinutes: Int,
 )
+
+internal fun selectPrimarySleepByBedDate(
+    summaries: List<XiaomiSleepV6Summary>,
+    zoneId: ZoneId = ZoneId.systemDefault(),
+): List<XiaomiSleepV6Summary> = summaries
+    .filter { it.totalMinutes > 0 && it.bedEpochSeconds > 0L }
+    .groupBy { Instant.ofEpochSecond(it.bedEpochSeconds).atZone(zoneId).toLocalDate() }
+    .values
+    .mapNotNull { sessions -> sessions.maxWithOrNull(compareBy<XiaomiSleepV6Summary> { it.totalMinutes }.thenBy { it.wakeEpochSeconds }) }
+    .sortedBy { it.bedEpochSeconds }
 
 class XiaomiSleepV6Parser {
     fun parse(bytes: ByteArray): XiaomiSleepV6Summary? {

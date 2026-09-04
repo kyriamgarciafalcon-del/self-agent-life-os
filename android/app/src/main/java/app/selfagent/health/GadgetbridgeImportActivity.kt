@@ -251,8 +251,8 @@ class GadgetbridgeImportActivity : Activity() {
                         .put("lightMinutes", it.lightMinutes)
                         .put("deepMinutes", it.deepMinutes)
                         .put("remMinutes", it.remMinutes))
-                    mergeSleep(days, it)
                 }
+                selectPrimarySleepByBedDate(sleeps).forEach { mergeSleep(days, it) }
                 return toRecords(days)
             } finally {
                 db.close()

@@ -64,6 +64,35 @@ class XiaomiSleepV6ParserTest {
     }
 
     @Test
+    fun selectPrimarySleepKeepsLongestSessionWhenNapAppearsLaterOnSameDay() {
+        val zone = ZoneId.of("Asia/Shanghai")
+        val main = XiaomiSleepV6Summary(
+            bedEpochSeconds = 1_788_451_740L,
+            wakeEpochSeconds = 1_788_475_380L,
+            totalMinutes = 394,
+            wakeMinutes = 0,
+            lightMinutes = 271,
+            remMinutes = 89,
+            deepMinutes = 34,
+        )
+        val nap = XiaomiSleepV6Summary(
+            bedEpochSeconds = 1_788_498_480L,
+            wakeEpochSeconds = 1_788_500_880L,
+            totalMinutes = 40,
+            wakeMinutes = 0,
+            lightMinutes = 0,
+            remMinutes = 0,
+            deepMinutes = 0,
+        )
+
+        val selected = selectPrimarySleepByBedDate(listOf(main, nap), zone)
+
+        assertEquals(1, selected.size)
+        assertEquals(394, selected.single().totalMinutes)
+        assertEquals(main.bedEpochSeconds, selected.single().bedEpochSeconds)
+    }
+
+    @Test
     fun parseReturnsNullForTruncatedOrInvalidFiles() {
         assertNull(parser.parse(ByteArray(0)))
         assertNull(parser.parse(ByteArray(19)))

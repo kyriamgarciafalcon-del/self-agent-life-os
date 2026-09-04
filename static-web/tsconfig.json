@@ -15,6 +15,7 @@
     "./**/*.ts",
     "./**/*.tsx",
     "../app/page.tsx",
+    "../app/health-dashboard.ts",
     "../app/product-logic.ts",
     "../app/finance-core.ts",
     "../app/finance-query.ts",

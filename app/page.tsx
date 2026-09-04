@@ -4,6 +4,7 @@ import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 're
 import { getConvertedNetWorth, getMonthlyReport, getNetWorth, transactionOccurredAt, transactionsInPeriod } from './finance-query';
 import { migrateToSchemaV4, createSchemaV4MigrationBackup, applySchemaV4Migration, SCHEMA_V3_BACKUP_KEY } from './finance-schema';
 import { LargeTitle, GroupedList } from './ui';
+import { buildHealthMetricSeries, type HealthCoreKind, type HealthMetricSeries } from './health-dashboard';
 import { accountRole, addDaysKey, applyDailyFxRates, applyDailyPriceQuotes, applyInboxLifecycle, AI_CONFIG_EVENT, AI_CONFIG_STORAGE_KEY, AI_REPLY_EVENT, AUDIT_OUTCOMES, auditOutcomeLabel, auditReasonLabel, buildButlerSystemPrompt, buildHealthBriefing, buildAiSendPreview, canUndoInboxConfirm, cnyWealthTotal, confirmByokHost, classifyAiProviderError, interpretAiConnectionTest, consumeCallBudget, createCallBudget, defaultCashId, describeButlerDataScope, detectLegacyDemoData, dialogShouldDismiss, dismissPermissionOnboarding, filterAuditLog, generateRecurringDrafts, healthRecordsFromSnapshots, inboxConfidenceLabel, inboxConfirmBlockReason, inboxAccountsForCurrency, inboxItemFromAiTool, inboxItemFromButlerAction, inboxItemFromNaturalCapture, inboxItemFromPayment, inboxItemFromTravelNotice, inboxSourceLabel, ledgerIdempotencyKeyForInboxItem, INBOX_ACTION_LABELS, isBackupPayload, isDebtRole, latestHealthByKind, loadBrowserAiConfig, localDateKey, markPermissionSettingsOpened, migrateAuditLog, migrateInboxStore, migrateLegacyAiLocalStorage, migratePrivacySettings, normalizeAccountBalance, normalizeMemory, normalizePermissionOnboarding, parseAiProviderResponse, parseButlerModelOutput, parseCapabilityStatus, parseNaturalCapture, pendingInboxItems, persistBrowserAiConfig, permissionOnboardingProgress, planAccountSettlement, planInvestmentMigrations, confirmInvestmentMigration, prepareOutboundAiPayload, reconcileRecurringConfirmations, releaseRecurringConfirmation, resolveInboxFinanceConfirmation, resolvePaymentAccountId, shouldShowPermissionOnboarding, summarizeHealth, TOAST_ARIA_LIVE, updateInboxItemPayload, upsertByExternalKey, validateByokTarget, weekDates, ACCOUNT_TYPES, buildReimbursementSettlement, canDeleteAccount, FINANCE_TABS, financeTransactionFields, transactionFormPhases, previewPostedImpact, investmentAccountSnapshot, normalizeFinanceRecords, postBalanceAdjustment, postFinanceTransaction, refreshHoldingsValuation, reimbursementOutstandingAmount, removePostedTransaction, settlePostedReimbursement, resolveTransferAmounts, type AuditEntry, type ButlerAction, type CapabilityStatusSnapshot, type HealthMetric, type InboxItem, type InboxLifecycleEvent, type InboxSource, type PermissionCardId, type PermissionOnboardingState, type TravelKind } from './product-logic';
 
 type Tab = 'home' | 'schedule' | 'capture' | 'finance' | 'profile' | 'life' | 'health' | 'travel' | 'data' | 'butler' | 'privacy' | 'memory' | 'vault' | 'audit';
@@ -1211,10 +1212,15 @@ export default function Home() {
     native.refreshQuotes();
     notify('正在拉取今日参考汇率和收盘价');
   }
-  function importHealth() {
+  function importGadgetbridgeHealth() {
     const native = (window as Window & { SelfAgentNative?: { importGadgetbridge?: () => void } }).SelfAgentNative;
     if (native?.importGadgetbridge) native.importGadgetbridge();
     else notify('请在 Android App 中连接 Gadgetbridge 数据库或 ZIP');
+  }
+  function importHealthConnect() {
+    const native = (window as Window & { SelfAgentNative?: { importHealthConnect?: () => void } }).SelfAgentNative;
+    if (native?.importHealthConnect) native.importHealthConnect();
+    else notify('请在 Android App 中授权并同步 Health Connect');
   }
   function chooseGadgetbridgeExport() {
     const native = (window as Window & { SelfAgentNative?: { chooseGadgetbridgeExport?: () => void } }).SelfAgentNative;
@@ -1379,7 +1385,7 @@ export default function Home() {
     {tab === 'profile' && <div className="page profile-page"><section className="profile-heading"><div>SA</div><span>SELF AGENT</span><h2>数据留在你的设备上</h2><p>界面和记录都在手机里运行，不依赖服务器。敏感能力由系统权限授权。</p></section><GroupedList><section className="profile-menu"><button onClick={() => setPermissionOnboardingOpen(true)}><span>权</span><div><strong>系统权限引导</strong><small>查看真实授权状态与用途说明</small></div><b>›</b></button><button onClick={() => navigate('audit')}><span>史</span><div><strong>操作历史</strong><small>收件箱确认、忽略、撤销与失败记录</small></div><b>›</b></button><button onClick={chooseGadgetbridgeExport}><span>链</span><div><strong>选择 ZIP 所在文件夹</strong><small>请选择 Download/health，自动跟踪新生成的 Gadgetbridge.zip</small></div><b>›</b></button><button onClick={() => navigate('memory')}><span>忆</span><div><strong>AI 记忆管理</strong><small>查看、暂停或删除管家记忆</small></div><b>›</b></button><button onClick={() => navigate('privacy')}><span>盾</span><div><strong>隐私与权限</strong><small>分别控制健康、财务和日程摘要</small></div><b>›</b></button><button onClick={() => navigate('vault')}><span>钥</span><div><strong>密码库</strong><small>不在网页保存密码明文</small></div><b>›</b></button><button onClick={() => navigate('data')}><span>数</span><div><strong>数据中心</strong><small>健康、财务与行动统一摘要</small></div><b>›</b></button></section></GroupedList><form className="ai-box" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const next = { baseUrl: String(form.get('baseUrl')).trim().replace(/\/$/, ''), model: String(form.get('model')).trim() || 'gpt-4o-mini', apiKey: String(form.get('apiKey')).trim() }; const native = (window as Window & { SelfAgentNative?: NativeAiBridge }).SelfAgentNative; if (native?.nativeReady?.() && native.saveAiConfig) { native.saveAiConfig(JSON.stringify(next)); setAiConfig({ baseUrl: next.baseUrl, model: next.model, apiKey: '', configured: Boolean(next.baseUrl && (next.apiKey || aiConfig.configured)) }); notify(next.apiKey ? 'AI 密钥已加密保存到 Android Keystore' : 'AI 接口设置已更新，原密钥保持不变'); } else { const published = persistBrowserAiConfig(window.sessionStorage, window.localStorage, next); setAiConfig({ ...published, apiKey: next.apiKey, configured: Boolean(next.baseUrl && next.apiKey) }); notify('网页版密钥只保留到当前页面会话，关闭后自动清除'); } }}><strong>AI 接口</strong><p>兼容 OpenAI Chat Completions。密钥只存在本机，提问时不会发送密码。</p><label>接口地址<input name="baseUrl" placeholder="https://api.openai.com/v1" defaultValue={aiConfig.baseUrl} /></label><label>模型<input name="model" defaultValue={aiConfig.model} /></label><label>API Key<input name="apiKey" type="password" autoComplete="off" defaultValue={aiConfig.apiKey} /></label><button className="save" type="submit" style={{ marginTop: 12 }}>保存接口</button><button type="button" className="secondary-button" onClick={() => void testAiConnection()}>测试连接</button></form>{nativeOn && <div className="native-actions"><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openAccessibilitySettings?: () => void } }).SelfAgentNative?.openAccessibilitySettings?.()}>第1步：打开无障碍（自动记账）</button><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openNotificationAccess?: () => void } }).SelfAgentNative?.openNotificationAccess?.()}>第2步：打开通知使用权</button><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openAutofillSettings?: () => void } }).SelfAgentNative?.openAutofillSettings?.()}>第3步：设为自动填充服务</button></div>}<HowToNative /><section className="profile-actions"><button onClick={toggleTheme}>{data.theme === 'dark' ? '切换浅色模式' : '切换深色模式'}</button><button onClick={exportLocalData}>导出全部数据</button><label className="file-action">从备份恢复<input hidden type="file" accept="application/json,.json" onChange={importLocalData} /></label><button onClick={loadDemoData}>加载演示数据</button><button className="danger-text" onClick={clearLocalData}>清空本机数据</button></section><p className="privacy-note">Android 通知记账需系统授权；确认前不会改余额。密码只进入 Keystore，不会发给 AI。</p></div>}
 
     {tab === 'life' && <div className="page feature-page"><LargeTitle kicker="生活" title="健康、出行和记忆"><p>完整记录进入二级页面，首页只保留摘要。</p></LargeTitle><div className="feature-grid"><button onClick={() => navigate('schedule')}><span>日</span><strong>日程</strong><small>今天的安排</small></button><button onClick={() => navigate('health')}><span>健</span><strong>健康</strong><small>身高体重心率</small></button><button onClick={() => navigate('travel')}><span>行</span><strong>出行</strong><small>火车与航班</small></button><button onClick={() => navigate('memory')}><span>忆</span><strong>记忆</strong><small>管家记住什么</small></button><button onClick={() => navigate('butler')}><span>管</span><strong>管家</strong><small>本机摘要问答</small></button></div></div>}
-    {tab === 'health' && <HealthPanel records={data.healthRecords} onAdd={() => setSheet('health')} onImport={importHealth} onSelectExport={chooseGadgetbridgeExport} onExportDiagnostics={exportHealthDiagnostics} onSaveBody={saveBodyMetrics} />}
+    {tab === 'health' && <HealthPanel records={data.healthRecords} onAdd={() => setSheet('health')} onImportHealthConnect={importHealthConnect} onImportGadgetbridge={importGadgetbridgeHealth} onSelectExport={chooseGadgetbridgeExport} onExportDiagnostics={exportHealthDiagnostics} onSaveBody={saveBodyMetrics} />}
     {tab === 'travel' && <TravelPanel items={data.travels} onSync={requestTravelSync} onAdd={() => setSheet('travel')} onDelete={(id) => { setData((current) => ({ ...current, travels: current.travels.filter((item) => item.id !== id) })); notify('行程已删除'); }} />}
     {tab === 'data' && <DataPanel data={data} />}
     {tab === 'butler' && <ButlerPanel data={data} ai={aiConfig} onQueueActions={queueButlerActions} onQueueTools={queueAiTools} />}
@@ -1477,18 +1483,37 @@ function SwipeScheduleRow({ item, onToggle, onEdit, onDelete }: { item: Schedule
   );
 }
 
-function HealthPanel({ records, onAdd, onImport, onSelectExport, onExportDiagnostics, onSaveBody }: { records: HealthRecord[]; onAdd: () => void; onImport: () => void; onSelectExport: () => void; onExportDiagnostics: () => void; onSaveBody: (height: number, weight: number) => void }) {
-  const cards: { kind: HealthRecord['kind']; mark: string; name: string; unit: string }[] = [
-    { kind: 'height', mark: '高', name: '身高', unit: 'cm' },
-    { kind: 'weight', mark: '重', name: '体重', unit: 'kg' },
-    { kind: 'heartRate', mark: '心', name: '心率', unit: '次/分' },
-    { kind: 'stress', mark: '压', name: '压力', unit: '' },
-    { kind: 'sleep', mark: '睡', name: '睡眠', unit: '小时' },
-    { kind: 'pai', mark: 'P', name: 'PAI', unit: '' },
-    { kind: 'steps', mark: '步', name: '步数', unit: '步' },
-  ];
+function HealthTrendBars({ series }: { series: HealthMetricSeries }) {
+  if (!series.points.length) return <div className="health-trend-empty">暂无趋势数据。同步或手动添加记录后，这里会显示真实日期。</div>;
+  const values = series.points.map((point) => point.value);
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+  const span = max - min;
+  return <div className="health-trend-bars" role="img" aria-label={`${series.label}最近 7 个有记录日期的趋势`}>
+    {series.points.map((point) => {
+      const height = span === 0 ? 58 : 28 + ((point.value - min) / span) * 58;
+      return <div className="health-trend-point" key={point.date}>
+        <strong>{point.value}</strong>
+        <i style={{ height: `${height}%` }} />
+        <small>{point.date.slice(5).replace('-', '/')}</small>
+      </div>;
+    })}
+  </div>;
+}
+
+function HealthPanel({ records, onAdd, onImportHealthConnect, onImportGadgetbridge, onSelectExport, onExportDiagnostics, onSaveBody }: { records: HealthRecord[]; onAdd: () => void; onImportHealthConnect: () => void; onImportGadgetbridge: () => void; onSelectExport: () => void; onExportDiagnostics: () => void; onSaveBody: (height: number, weight: number) => void }) {
+  const kinds: HealthCoreKind[] = ['steps', 'sleep', 'heartRate', 'stress', 'pai'];
   const marks: Record<string, string> = { height: '高', weight: '重', heartRate: '心', stress: '压', sleep: '睡', pai: 'P', steps: '步', exercise: '动', meal: '食' };
-  function format(kind: string, value: number) {
+  const series = kinds.map((kind) => buildHealthMetricSeries(records, kind));
+  const [selectedKind, setSelectedKind] = useState<HealthCoreKind>('steps');
+  const selected = series.find((item) => item.kind === selectedKind) ?? series[0];
+  const currentHeight = latestHealthByKind(records, 'height');
+  const currentWeight = latestHealthByKind(records, 'weight');
+  const [editingBody, setEditingBody] = useState(false);
+  const history = [...records].filter((item) => Number.isFinite(item.value)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 8);
+  const latestDate = series.map((item) => item.latest?.date || '').sort().at(-1) || '';
+
+  function formatRecord(kind: string, value: number) {
     if (kind === 'height') return `${value} cm`;
     if (kind === 'weight') return `${value} kg`;
     if (kind === 'heartRate') return `${value} 次/分`;
@@ -1496,13 +1521,78 @@ function HealthPanel({ records, onAdd, onImport, onSelectExport, onExportDiagnos
     if (kind === 'exercise') return `${value} 分钟`;
     if (kind === 'meal') return `${value} 餐`;
     if (kind === 'steps') return `${value} 步`;
+    if (kind === 'stress' || kind === 'pai') return `${value} 原始分`;
     return String(value);
   }
-  const currentHeight = latestHealthByKind(records, 'height');
-  const currentWeight = latestHealthByKind(records, 'weight');
-  const [editingBody, setEditingBody] = useState(false);
-  function submitBody(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = new FormData(event.currentTarget); const height = Number(form.get('height')); const weight = Number(form.get('weight')); if (!(height > 0) || !(weight > 0)) return; onSaveBody(height, weight); }
-  return <div className="page feature-page"><section className="health-hero"><span>本机健康记录</span><strong>{records.length || '—'}</strong><div><h2>{records.length ? summarizeHealth(records) : '还没有健康记录'}</h2><p>身高、体重、心率、压力、睡眠和 PAI 会给本机管家做分析。不是诊断。可导入 Gadgetbridge 数据库或 ZIP（含 v6 睡眠）。压力和 PAI 多数手环不会写入健康平台，可手动补。</p></div></section><section className="feature-section"><div className="feature-title"><div><span>BODY PROFILE</span><h2>身体资料</h2></div></div>{currentHeight != null && currentWeight != null && !editingBody ? <div className="body-profile-summary"><strong>{currentHeight} cm</strong><strong>{currentWeight} kg</strong><button type="button" onClick={() => setEditingBody(true)}>修改</button></div> : <form className="body-profile-form" onSubmit={(event) => { submitBody(event); setEditingBody(false); }}><label>身高（cm）<input required name="height" type="number" min="50" max="250" step="0.1" defaultValue={currentHeight ?? ''} /></label><label>体重（kg）<input required name="weight" type="number" min="10" max="400" step="0.1" defaultValue={currentWeight ?? ''} /></label><button className="save" type="submit">保存身高体重</button></form>}</section><section className="feature-section"><div className="feature-title"><div><span>HEALTH</span><h2>健康项目</h2></div><div className="health-actions"><button type="button" onClick={onSelectExport}>选择 ZIP 文件夹</button><button type="button" onClick={onImport}>同步</button><button type="button" onClick={onExportDiagnostics}>导出诊断日志</button><button onClick={onAdd}>＋ 添加</button></div></div><div className="health-grid">{cards.map((card) => { const value = latestHealthByKind(records, card.kind); return <article key={card.kind}><span>{card.mark}</span><div><strong>{card.name}</strong><small>最近一次</small></div><b>{value == null ? '待记录' : format(card.kind, value)}</b></article>; })}</div></section><section className="feature-section"><div className="feature-title"><div><span>HISTORY</span><h2>最近记录</h2></div></div><div className="plain-list">{records.map((item) => <article key={item.id}><span>{marks[item.kind] || '健'}</span><div><strong>{item.note}</strong><small>{format(item.kind, item.value)}</small></div></article>)}</div></section><section className="howto"><h3>Gadgetbridge 直连导入</h3><ol><li>在 Gadgetbridge 开启自动导出数据库或完整 ZIP</li><li>在设置或健康页点 <b>选择 ZIP 文件夹</b>，选择 Download/health 并授权读取</li><li>以后每次导出成功后，本应用会自动读取步数、压力、PAI、心率和 v6 睡眠</li></ol><p>这是直接解析 Gadgetbridge 导出的 SQLite 数据库或完整 ZIP（含 Xiaomi v6 睡眠），不经过 Health Connect。</p></section></div>;
+  function dateLabel(value: string) {
+    if (!value) return '暂无记录';
+    if (value === TODAY) return '今天';
+    return `${Number(value.slice(5, 7))}月${Number(value.slice(8, 10))}日`;
+  }
+  function submitBody(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const height = Number(form.get('height'));
+    const weight = Number(form.get('weight'));
+    if (!(height > 0) || !(weight > 0)) return;
+    onSaveBody(height, weight);
+    setEditingBody(false);
+  }
+
+  return <div className="page feature-page health-page">
+    <header className="health-heading">
+      <span>健康总览</span>
+      <h1>今日状态</h1>
+      <p>{latestDate ? `最近数据更新于 ${dateLabel(latestDate)}` : '暂无今日记录，先同步设备或添加一条记录。'}</p>
+    </header>
+
+    <section className="health-status" aria-label="今日健康状态">
+      {series.slice(0, 3).map((item) => <article key={item.kind}>
+        <span aria-hidden="true">{marks[item.kind]}</span>
+        <div><small>{item.label}</small><strong>{item.displayValue}</strong><em>{item.latest ? `${item.unit ? `${item.unit} · ` : ''}${dateLabel(item.latest.date)}` : '待记录'}</em></div>
+      </article>)}
+    </section>
+
+    <section className="health-panel health-trend-section">
+      <div className="health-section-title"><div><span>真实记录</span><h2>7 日趋势</h2></div><small>仅显示有记录的日期</small></div>
+      <div className="health-metric-tabs" role="tablist" aria-label="选择趋势指标">
+        {series.map((item) => <button key={item.kind} type="button" role="tab" aria-selected={selectedKind === item.kind} aria-controls="health-trend-panel" className={selectedKind === item.kind ? 'active' : ''} onClick={() => setSelectedKind(item.kind)}>{item.label}</button>)}
+      </div>
+      <div id="health-trend-panel" role="tabpanel"><div className="health-trend-summary"><div><strong>{selected.displayValue}</strong><span>{selected.latest ? selected.unit : ''}</span></div><small>{selected.latest ? `最近一次 · ${dateLabel(selected.latest.date)} · ${selected.latest.source} · 本机保存` : '暂无数据，不会补零或推测'}</small></div>
+        <HealthTrendBars series={selected} />
+      </div>
+    </section>
+
+    <section className="health-panel">
+      <div className="health-section-title"><div><span>设备指标</span><h2>核心指标</h2></div></div>
+      <div className="health-core-grid">{series.map((item) => <button type="button" key={item.kind} onClick={() => setSelectedKind(item.kind)} aria-label={`查看${item.label}趋势`}>
+        <span aria-hidden="true">{marks[item.kind]}</span><small>{item.label}</small><strong>{item.displayValue}</strong><em>{item.latest ? `${item.unit ? `${item.unit} · ` : ''}${dateLabel(item.latest.date)}` : '待记录'}</em>{(item.kind === 'stress' || item.kind === 'pai') && <b>手环原始分 · 无医学单位</b>}
+      </button>)}</div>
+    </section>
+
+    <section className="health-panel">
+      <div className="health-section-title"><div><span>时间线</span><h2>最近记录</h2></div></div>
+      <div className="health-history">{history.length ? history.map((item) => <article key={item.id}><span aria-hidden="true">{marks[item.kind] || '健'}</span><div><strong>{item.note || '健康记录'}</strong><small>{dateLabel(item.createdAt.slice(0, 10))} · {item.createdAt.slice(11, 16) || '全天'}</small></div><b>{formatRecord(item.kind, item.value)}</b></article>) : <div className="health-empty"><strong>还没有健康记录</strong><p>可从 Health Connect、Gadgetbridge 导入，或手动添加。</p></div>}</div>
+    </section>
+
+    <section className="health-panel health-data-management">
+      <div className="health-section-title"><div><span>来源与同步</span><h2>数据管理</h2></div></div>
+      <div className="health-source-actions">
+        <button type="button" onClick={onImportHealthConnect}><span>H</span><div><strong>Health Connect</strong><small>同步身高、体重、心率、睡眠和步数</small></div><b>同步</b></button>
+        <button type="button" onClick={onImportGadgetbridge}><span>G</span><div><strong>Gadgetbridge</strong><small>读取已授权的数据库或完整 ZIP</small></div><b>导入</b></button>
+        <button type="button" onClick={onSelectExport}><span>夹</span><div><strong>选择 ZIP 文件夹</strong><small>跟踪新生成的 Gadgetbridge.zip</small></div><b>选择</b></button>
+        <button type="button" onClick={onExportDiagnostics}><span>查</span><div><strong>导出导入排障</strong><small>仅排查导入，不是医疗诊断</small></div><b>导出</b></button>
+      </div>
+      <button type="button" className="health-manual-add" onClick={onAdd}>＋ 手动添加健康记录</button>
+    </section>
+
+    <section className="health-panel health-body-panel">
+      <div className="health-section-title"><div><span>个人基础数据</span><h2>身体资料</h2></div></div>
+      {currentHeight != null && currentWeight != null && !editingBody ? <div className="body-profile-summary"><div><small>身高</small><strong>{currentHeight} cm</strong></div><div><small>体重</small><strong>{currentWeight} kg</strong></div><button type="button" onClick={() => setEditingBody(true)}>修改</button></div> : <form className="body-profile-form" onSubmit={submitBody}><label>身高（cm）<input required name="height" type="number" min="50" max="250" step="0.1" defaultValue={currentHeight ?? ''} /></label><label>体重（kg）<input required name="weight" type="number" min="10" max="400" step="0.1" defaultValue={currentWeight ?? ''} /></label><button className="save" type="submit">保存身体资料</button></form>}
+    </section>
+
+    <aside className="health-privacy-note"><strong>本机健康记录</strong><p>这些数据不是诊断，不能替代医疗意见。只有在“健康摘要”隐私权限开启时，管家才可读取摘要；密码和原始数据库不会发送给 AI。</p></aside>
+  </div>;
 }
 
 function parseTravelText(text: string): TravelItem | null {

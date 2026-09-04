@@ -1195,6 +1195,11 @@ export function confirmInboxItem(items: InboxItem[], id: string, resultEntityId?
     : item);
 }
 
+export function inboxAccountsForCurrency<T extends { currency?: string }>(accounts: T[], currency: string): T[] {
+  const normalized = currency.trim().toUpperCase();
+  return normalized ? accounts.filter((account) => String(account.currency || '').toUpperCase() === normalized) : accounts;
+}
+
 export function updateInboxItemPayload(items: InboxItem[], id: string, payload: Record<string, unknown>): InboxItem[] {
   return items.map((item) => {
     if (item.id !== id || item.status !== 'pending') return item;

@@ -65,6 +65,20 @@ body{font-size:14px;line-height:1.45}
 .transaction-list small,.settings-list small,.privacy-note,.howto li,.demo-banner span,.onboarding-card p{font-size:12px;line-height:1.5}
 .row-ops button{min-height:44px}
 .grouped-list{border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden}
+.inbox-list{display:grid;gap:12px;margin-top:16px}
+.inbox-card{padding:16px;border:1px solid var(--line);border-radius:16px;background:var(--surface);box-shadow:0 8px 24px rgba(31,55,45,.06)}
+.inbox-card header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.inbox-card header h3{margin:7px 0 0;font-size:16px}
+.inbox-card header>small{flex:0 0 auto;padding:5px 8px;border-radius:999px;background:var(--green-soft);color:var(--accent);font-size:11px;font-weight:700}
+.inbox-card-source{display:block;color:var(--muted);font-size:12px;font-weight:600}
+.inbox-card-amount{display:block;margin-top:16px;font-size:28px;line-height:1.1;letter-spacing:-.02em}
+.inbox-card-preview{margin:7px 0 0;color:var(--muted);font-size:13px}
+.inbox-ops{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:16px}
+.inbox-ops button{min-height:44px;border:1px solid var(--line);border-radius:12px;background:#fff;font-weight:700}
+.inbox-ops .confirm-button{width:auto;margin:0;border-color:var(--accent);background:var(--accent);color:#fff}
+.bottom-nav.inbox-editing{visibility:hidden;pointer-events:none}
+.draft-fields{grid-template-columns:1fr;margin:16px 0 4px;padding:14px;border-radius:14px;background:var(--page-bg)}
+@media(min-width:420px){.draft-fields{grid-template-columns:1fr 1fr}}
 .large-title{padding:8px 4px 18px}
 .large-title span{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}
 .large-title h2{font-size:28px;line-height:1.2;margin:0 0 8px;font-weight:700}

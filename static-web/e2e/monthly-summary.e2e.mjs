@@ -63,3 +63,47 @@ test('monthly summary excludes reimbursements and account transfers', async ({ p
   await expect(balance).toContainText('+¥8,620.00');
   await expect(summary).not.toContainText('NaN');
 });
+
+const inboxLedger = {
+  schemaVersion: 4,
+  demoMode: false,
+  accounts: [
+    { id: 'cny', name: '微信余额', type: '资金账户', currency: 'CNY', balance: 500, openingBalance: 500, tone: 'forest' },
+    { id: 'usd', name: '美元卡', type: '储蓄卡', currency: 'USD', balance: 100, openingBalance: 100, tone: 'ink' },
+  ],
+  transactions: [], recurringRules: [], schedules: [], healthRecords: [], travels: [], investments: [], exchangeRates: [], memories: [],
+  privacy: { health: false, finance: false, schedule: false, memory: false },
+  vaultItems: [], auditLog: [], lastConfirmedInboxId: null, theme: 'light',
+  permissionOnboarding: { version: 2, dismissed: true, completedAt: null, settingsOpened: false },
+  inboxItems: [{
+    id: 'pay-1', source: 'payment', confidence: 0.94, proposedAction: 'create_expense', status: 'pending', createdAt: currentStamp(12),
+    payload: { amount: 36.8, merchant: '微信支付', category: '餐饮', currency: 'CNY', accountId: 'cny', reimbursable: false },
+    preview: '微信支付 · 36.8',
+  }],
+};
+
+test('inbox currency change clears incompatible account and filters options', async ({ page }) => {
+  await page.addInitScript(({ key, value }) => window.localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: inboxLedger });
+  await page.goto('/');
+  await page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: /收件箱$/ }).click();
+
+  const card = page.locator('.inbox-card');
+  await expect(card.locator('.inbox-card-amount')).toHaveText('CNY 36.80');
+  await card.getByRole('button', { name: '修改' }).click();
+  await expect(page.locator('.bottom-nav')).toHaveCSS('visibility', 'hidden');
+  const currency = card.getByRole('combobox', { name: '币种' });
+  const account = card.getByRole('combobox', { name: '账户' });
+  await expect(account).toHaveValue('cny');
+  await currency.selectOption('USD');
+  await expect(account).toHaveValue('');
+  await expect(account.locator('option')).toHaveCount(2);
+  await expect(account.locator('option').nth(1)).toHaveText('美元卡 · USD');
+  await expect(card).toHaveCSS('border-radius', '16px');
+  await account.selectOption('usd');
+  await card.getByRole('button', { name: '确认' }).click();
+  await expect(card).toHaveCount(0);
+  await expect.poll(async () => page.evaluate((key) => {
+    const saved = JSON.parse(window.localStorage.getItem(key) || '{}');
+    return saved.transactions?.some((item) => item.currency === 'USD' && item.accountId === 'usd' && item.amount === 36.8);
+  }, STORAGE_KEY)).toBe(true);
+});

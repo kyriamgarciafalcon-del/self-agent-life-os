@@ -1981,6 +1981,8 @@ export {
   composeTransactionPostings,
   derivedAccountBalance,
   financeTransactionFields,
+  transactionFormPhases,
+  previewPostedImpact,
   investmentAccountSnapshot,
   isMonthlyIncome,
   migrateInvestmentCash,

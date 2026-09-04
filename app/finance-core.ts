@@ -474,6 +474,31 @@ export function financeTransactionFields(kind: 'expense' | 'income' | 'transfer'
   return ['kind', 'amount', 'currency', 'merchant', 'accountId'];
 }
 
+export function transactionFormPhases(
+  kind: 'expense' | 'income' | 'transfer',
+  flags: { reimbursable?: boolean; sameCurrency?: boolean } = {},
+): string[][] {
+  if (kind === 'income') return [['kind', 'amount'], ['accountId', 'merchant', 'currency'], ['preview']];
+  if (kind === 'transfer') {
+    const details = ['accountId', 'targetAccountId', 'merchant'];
+    if (flags.sameCurrency === false) details.push('rate', 'targetAmount');
+    return [['kind', 'amount'], details, ['preview']];
+  }
+  return [
+    ['kind', 'amount'],
+    ['accountId', 'merchant', 'category', 'currency'],
+    flags.reimbursable ? ['reimbursable', 'reimburseAccountId'] : ['reimbursable'],
+    ['preview'],
+  ];
+}
+
+export function previewPostedImpact(input: { kind: string; amount: number; accountName: string; reimbursable?: boolean; targetName?: string }): string {
+  if (input.kind === 'transfer') return `转账 ${input.amount} 将从${input.accountName}转到${input.targetName || '对方账户'}，不计入本月收入或支出。`;
+  if (input.kind === 'income') return `收入 ${input.amount} 将记入${input.accountName}。`;
+  if (input.reimbursable) return `支出 ${input.amount} 将从${input.accountName}扣除，待收回同时增加。`;
+  return `支出 ${input.amount} 将从${input.accountName}扣除。`;
+}
+
 function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => {

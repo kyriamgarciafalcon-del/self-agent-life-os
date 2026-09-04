@@ -48,3 +48,22 @@
 .profile-actions .file-action{width:100%}
 .trip-ops{display:flex;gap:8px;margin-top:8px}
 .trip-ops button{min-height:36px;border:0;border-radius:10px;background:#f3f6f3;color:var(--green);font-size:12px;font-weight:700;padding:0 10px}
+
+:root{--page-bg:#F2F2F7;--surface:#FFFFFF;--accent:#2F6F57;--ink:#1C1C1E;--muted:#6E6E73;--line:#E5E5EA;--green:var(--accent);--paper:var(--page-bg);--white:var(--surface)}
+html,body{background:var(--page-bg);color:var(--ink)}
+body{font-size:14px;line-height:1.45}
+.phone-app{background:var(--page-bg)}
+.app-header{background:rgba(255,255,255,.92)}
+.app-header span{font-size:12px;letter-spacing:.04em}
+.app-header h1{font-size:22px;font-weight:700;font-family:"PingFang SC","Microsoft YaHei",sans-serif}
+.bottom-nav{background:var(--surface);height:auto;min-height:74px}
+.bottom-nav button{min-height:44px;min-width:44px;font-size:12px;gap:2px}
+.hero-card,.balance-card{background:var(--surface);color:var(--ink);box-shadow:none;border:1px solid var(--line)}
+.hero-card span,.hero-card p,.balance-card>span,.balance-card small{color:var(--muted)}
+.hero-card h2,.balance-card h2{color:var(--ink)}
+.transaction-list strong,.settings-list strong,.schedule-card strong{font-size:14px}
+.transaction-list small,.settings-list small,.privacy-note,.howto li,.demo-banner span,.onboarding-card p{font-size:12px;line-height:1.5}
+.row-ops button{min-height:44px}
+.grouped-list{border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+

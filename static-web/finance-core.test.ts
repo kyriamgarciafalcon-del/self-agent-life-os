@@ -641,7 +641,7 @@ describe('finance UI structure', () => {
     expect(page).toContain('postBalanceAdjustment');
     expect(page).toContain('investmentAccountSnapshot');
     expect(page).toContain('financeTransactionFields');
-    expect(page).toContain('monthlyFinanceSummary');
+    expect(page).toContain('getMonthlyReport');
     expect(page).not.toContain("const monthExpense = monthItems.filter((item) => item.kind === 'expense')");
     expect(page).toContain('inboxConfirmBlockReason');
     expect(page).toContain('data.investments');

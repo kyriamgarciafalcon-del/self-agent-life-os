@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { migrateToSchemaV4, createSchemaV4MigrationBackup } from '../app/finance-schema';
+import { migrateToSchemaV4, createSchemaV4MigrationBackup, applySchemaV4Migration } from '../app/finance-schema';
 
 describe('schema v3 to v4', () => {
   const v3 = {
@@ -39,6 +39,8 @@ describe('schema v3 to v4', () => {
     expect(page).toContain('schemaVersion: 4');
     expect(page).toContain('createSchemaV4MigrationBackup');
     expect(page).toContain('SCHEMA_V3_BACKUP_KEY');
+    expect(page).toContain('applySchemaV4Migration');
+    expect(page).toContain('schemaFrozen');
   });
 });
 
@@ -62,5 +64,38 @@ describe('schema v4 pre-migration backup', () => {
     const mutated = { ...v3, transactions: [] };
     expect(createSchemaV4MigrationBackup(mutated, first)).toEqual(first);
     expect(createSchemaV4MigrationBackup({ schemaVersion: 4, transactions: [] }, null)).toBeNull();
+  });
+});
+
+describe('schema v4 rollback', () => {
+  const v3 = {
+    schemaVersion: 3 as const,
+    transactions: [{ id: 'e1', createdAt: '2026-08-31T12:00:00+08:00', amount: 40 }],
+  };
+
+  it('keeps a valid upgrade persistable', () => {
+    const backup = createSchemaV4MigrationBackup(v3, null);
+    const result = applySchemaV4Migration(v3, backup);
+    expect(result.persist).toBe(true);
+    expect(result.data).toMatchObject({ schemaVersion: 4 });
+  });
+
+  it('restores the checksummed backup and refuses to persist when occurredAt cannot be recovered', () => {
+    const broken = { schemaVersion: 3 as const, transactions: [{ id: 'gap' }] };
+    const backup = createSchemaV4MigrationBackup(v3, null);
+    const result = applySchemaV4Migration(broken, backup);
+    expect(result.persist).toBe(false);
+    expect(result.data).toEqual(v3);
+    expect(result.reason).toBe('occurredAt');
+  });
+
+  it('does not restore a backup whose checksum no longer matches', () => {
+    const backup = createSchemaV4MigrationBackup(v3, null)!;
+    const tampered = { ...backup, payload: { schemaVersion: 3, transactions: [] } };
+    const broken = { schemaVersion: 3 as const, transactions: [{ id: 'gap' }] };
+    const result = applySchemaV4Migration(broken, tampered);
+    expect(result.persist).toBe(false);
+    expect(result.data).toEqual(broken);
+    expect(result.reason).toBe('occurredAt');
   });
 });

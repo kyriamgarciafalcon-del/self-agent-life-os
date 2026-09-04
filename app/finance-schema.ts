@@ -1,4 +1,5 @@
 export type SchemaV4Transaction = {
+  id?: string;
   createdAt?: string;
   occurredAt?: string;
   occurredAtEstimated?: boolean;
@@ -56,4 +57,38 @@ export function createSchemaV4MigrationBackup<T extends { schemaVersion?: number
     checksum: snapshotChecksum(raw),
     payload: JSON.parse(JSON.stringify(raw)) as unknown,
   };
+}
+
+export function restoreSchemaBackup(backup: SchemaMigrationBackup | null): { ok: true; payload: unknown } | { ok: false; reason: string } {
+  if (!backup) return { ok: false, reason: 'missing' };
+  if (snapshotChecksum(backup.payload) !== backup.checksum) return { ok: false, reason: 'checksum' };
+  return { ok: true, payload: backup.payload };
+}
+
+export function verifySchemaV4(data: { schemaVersion?: number; transactions?: SchemaV4Transaction[] }): { ok: boolean; reason?: string } {
+  if (Number(data.schemaVersion) !== 4) return { ok: false, reason: 'schema' };
+  for (const item of data.transactions ?? []) {
+    if (!item.occurredAt) return { ok: false, reason: 'occurredAt' };
+  }
+  return { ok: true };
+}
+
+export function applySchemaV4Migration<T extends { schemaVersion?: number; transactions?: SchemaV4Transaction[] }>(
+  raw: T,
+  backup: SchemaMigrationBackup | null,
+): { persist: boolean; data: unknown; reason?: string } {
+  try {
+    const migrated = migrateToSchemaV4(raw);
+    const check = verifySchemaV4(migrated);
+    if (check.ok) return { persist: true, data: migrated };
+    const restored = restoreSchemaBackup(backup);
+    return restored.ok
+      ? { persist: false, data: restored.payload, reason: check.reason }
+      : { persist: false, data: raw, reason: check.reason };
+  } catch {
+    const restored = restoreSchemaBackup(backup);
+    return restored.ok
+      ? { persist: false, data: restored.payload, reason: 'migrate' }
+      : { persist: false, data: raw, reason: 'migrate' };
+  }
 }

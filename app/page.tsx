@@ -2,7 +2,7 @@
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { getConvertedNetWorth, getMonthlyReport, getNetWorth, transactionOccurredAt, transactionsInPeriod } from './finance-query';
-import { migrateToSchemaV4, createSchemaV4MigrationBackup, SCHEMA_V3_BACKUP_KEY } from './finance-schema';
+import { migrateToSchemaV4, createSchemaV4MigrationBackup, applySchemaV4Migration, SCHEMA_V3_BACKUP_KEY } from './finance-schema';
 import { accountRole, addDaysKey, applyDailyFxRates, applyDailyPriceQuotes, applyInboxLifecycle, AI_CONFIG_EVENT, AI_CONFIG_STORAGE_KEY, AI_REPLY_EVENT, AUDIT_OUTCOMES, auditOutcomeLabel, auditReasonLabel, buildButlerSystemPrompt, buildHealthBriefing, buildAiSendPreview, canUndoInboxConfirm, cnyWealthTotal, confirmByokHost, consumeCallBudget, createCallBudget, defaultCashId, describeButlerDataScope, detectLegacyDemoData, dialogShouldDismiss, dismissPermissionOnboarding, filterAuditLog, generateRecurringDrafts, healthRecordsFromSnapshots, inboxConfidenceLabel, inboxConfirmBlockReason, inboxItemFromAiTool, inboxItemFromButlerAction, inboxItemFromNaturalCapture, inboxItemFromPayment, inboxItemFromTravelNotice, inboxSourceLabel, ledgerIdempotencyKeyForInboxItem, INBOX_ACTION_LABELS, isBackupPayload, isDebtRole, latestHealthByKind, loadBrowserAiConfig, localDateKey, markPermissionSettingsOpened, migrateAuditLog, migrateInboxStore, migrateLegacyAiLocalStorage, migratePrivacySettings, normalizeAccountBalance, normalizeMemory, normalizePermissionOnboarding, parseAiProviderResponse, parseButlerModelOutput, parseCapabilityStatus, parseNaturalCapture, pendingInboxItems, persistBrowserAiConfig, permissionOnboardingProgress, planAccountSettlement, prepareOutboundAiPayload, reconcileRecurringConfirmations, releaseRecurringConfirmation, resolveInboxFinanceConfirmation, resolvePaymentAccountId, shouldShowPermissionOnboarding, summarizeHealth, TOAST_ARIA_LIVE, updateInboxItemPayload, upsertByExternalKey, validateByokTarget, weekDates, ACCOUNT_TYPES, buildReimbursementSettlement, canDeleteAccount, FINANCE_TABS, financeTransactionFields, investmentAccountSnapshot, normalizeFinanceRecords, postBalanceAdjustment, postFinanceTransaction, refreshHoldingsValuation, reimbursementOutstandingAmount, removePostedTransaction, settlePostedReimbursement, resolveTransferAmounts, type AuditEntry, type ButlerAction, type CapabilityStatusSnapshot, type HealthMetric, type InboxItem, type InboxLifecycleEvent, type InboxSource, type PermissionCardId, type PermissionOnboardingState, type TravelKind } from './product-logic';
 
 type Tab = 'home' | 'schedule' | 'capture' | 'finance' | 'profile' | 'life' | 'health' | 'travel' | 'data' | 'butler' | 'privacy' | 'memory' | 'vault' | 'audit';
@@ -340,6 +340,7 @@ function TransactionComposer({ accounts, currency, editing, onClose, onSubmit, o
 export default function Home() {
   const [data, setData] = useState<AppData>(emptyData);
   const [hydrated, setHydrated] = useState(false);
+  const [schemaFrozen, setSchemaFrozen] = useState(false);
   const [tab, setTabState] = useState<Tab>('home');
   const [history, setHistory] = useState<Tab[]>([]);
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
@@ -420,10 +421,17 @@ export default function Home() {
             const existing = existingRaw ? JSON.parse(existingRaw) as { checksum?: string; fromVersion?: number; toVersion?: number; payload?: unknown } : null;
             const backup = createSchemaV4MigrationBackup(parsed, existing?.checksum ? existing as { fromVersion: number; toVersion: 4; checksum: string; payload: unknown } : null);
             if (backup && !existingRaw) window.localStorage.setItem(SCHEMA_V3_BACKUP_KEY, JSON.stringify(backup));
+            const decision = applySchemaV4Migration(parsed, backup);
+            if (!decision.persist) {
+              setSchemaFrozen(true);
+              window.localStorage.setItem(STORAGE_KEY, JSON.stringify(decision.data));
+              setData(normalizeData(decision.data as Partial<AppData>));
+            } else {
+              setData(normalizeData(parsed));
+            }
           } catch {
-            /* keep hydrate even if backup cannot be written */
+            setData(normalizeData(parsed));
           }
-          setData(normalizeData(parsed));
         }
         const leftover = migrateLegacyAiLocalStorage(window.localStorage);
         const native = (window as Window & { SelfAgentNative?: NativeAiBridge }).SelfAgentNative;
@@ -523,7 +531,7 @@ export default function Home() {
     const timer = window.setInterval(refreshClock, 60_000);
     return () => { document.removeEventListener('visibilitychange', refreshClock); window.clearInterval(timer); };
   }, []);
-  useEffect(() => { if (hydrated) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }, [data, hydrated]);
+  useEffect(() => { if (hydrated && !schemaFrozen) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }, [data, hydrated, schemaFrozen]);
   useEffect(() => {
     if (!hydrated || !nativeOn) return;
     const native = window as Window & { SelfAgentNative?: { syncReminders?: (json: string) => void } };

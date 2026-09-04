@@ -270,14 +270,59 @@ export function investmentAccountSnapshot(
 
 export function migrateInvestmentCash<TA extends LedgerAccount>(
   accounts: TA[],
-  holdings: Array<{ id?: string; accountId: string; quantity: number; currentPrice: number }>,
+  holdings: Array<{ id?: string; accountId: string; quantity: number; currentPrice: number }> = [],
 ): Array<TA & { openingBalance?: number }> {
+  void holdings;
   return accounts.map((account) => {
     if (!/理财账户/.test(account.type)) return account;
     const existingOpening = (account as TA & { openingBalance?: number }).openingBalance;
     if (Number.isFinite(existingOpening)) return { ...account, openingBalance: Number(existingOpening) };
-    const market = holdings.filter((item) => item.accountId === account.id).reduce((sum, item) => sum + item.quantity * item.currentPrice, 0);
-    const cash = Math.abs(account.balance - market) < 0.01 ? 0 : account.balance - market;
+    return account;
+  });
+}
+
+export type InvestmentMigrationChoice = 'cash' | 'market' | 'total';
+
+export type InvestmentMigrationPlan = {
+  accountId: string;
+  currency: string;
+  oldBalance: number;
+  marketValue: number;
+  inferredDelta: number;
+  choices: InvestmentMigrationChoice[];
+};
+
+export function planInvestmentMigrations<TA extends LedgerAccount>(
+  accounts: TA[],
+  holdings: Array<{ accountId: string; quantity: number; currentPrice: number }>,
+): InvestmentMigrationPlan[] {
+  return accounts.flatMap((account) => {
+    if (!/理财账户/.test(account.type)) return [];
+    if (Number.isFinite((account as TA & { openingBalance?: number }).openingBalance)) return [];
+    const oldBalance = moneyAmount(account.balance);
+    const marketValue = holdings.filter((item) => item.accountId === account.id).reduce((sum, item) => sum + item.quantity * item.currentPrice, 0);
+    return [{
+      accountId: account.id,
+      currency: account.currency,
+      oldBalance,
+      marketValue,
+      inferredDelta: oldBalance - marketValue,
+      choices: ['cash', 'market', 'total'],
+    }];
+  });
+}
+
+export function confirmInvestmentMigration<TA extends LedgerAccount>(
+  accounts: TA[],
+  holdings: Array<{ accountId: string; quantity: number; currentPrice: number }>,
+  accountId: string,
+  choice: InvestmentMigrationChoice,
+): Array<TA & { openingBalance: number; balance: number }> {
+  return accounts.map((account) => {
+    if (account.id !== accountId) return account as TA & { openingBalance: number; balance: number };
+    const oldBalance = moneyAmount(account.balance);
+    const marketValue = holdings.filter((item) => item.accountId === account.id).reduce((sum, item) => sum + item.quantity * item.currentPrice, 0);
+    const cash = choice === 'market' ? 0 : choice === 'total' ? oldBalance - marketValue : oldBalance;
     return { ...account, openingBalance: cash, balance: cash };
   });
 }

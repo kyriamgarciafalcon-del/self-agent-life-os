@@ -128,17 +128,13 @@ describe('investment cash versus market value', () => {
     expect(investmentAccountSnapshot(account, holdings)).toEqual({ cash: 500, marketValue: 40, total: 540 });
   });
 
-  it('treats a legacy 理财账户 whose stored balance equals market value as cash 0', () => {
+  it('does not treat a legacy 理财账户 as cash 0 until the user confirms the old balance meaning', () => {
     const migrated = migrateInvestmentCash(
       [{ id: 'inv', type: '理财账户', currency: 'CNY', balance: 40 }],
       [{ id: 'h1', accountId: 'inv', quantity: 10, currentPrice: 4 }],
     );
-    expect(migrated[0]).toMatchObject({ openingBalance: 0, balance: 0 });
-    expect(investmentAccountSnapshot(migrated[0], [{ accountId: 'inv', quantity: 10, currentPrice: 4 }])).toEqual({
-      cash: 0,
-      marketValue: 40,
-      total: 40,
-    });
+    expect(migrated[0]?.openingBalance).toBeUndefined();
+    expect(migrated[0]?.balance).toBe(40);
   });
 
   it('refreshes quotes as valuation only without touching investment cash', () => {

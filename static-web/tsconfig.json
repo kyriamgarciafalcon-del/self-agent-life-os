@@ -19,6 +19,7 @@
     "../app/finance-core.ts",
     "../app/finance-query.ts",
     "../app/finance-schema.ts",
-    "../app/money.ts"
+    "../app/money.ts",
+    "../app/ui.tsx"
   ]
 }

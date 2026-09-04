@@ -65,5 +65,10 @@ body{font-size:14px;line-height:1.45}
 .transaction-list small,.settings-list small,.privacy-note,.howto li,.demo-banner span,.onboarding-card p{font-size:12px;line-height:1.5}
 .row-ops button{min-height:44px}
 .grouped-list{border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden}
+.large-title{padding:8px 4px 18px}
+.large-title span{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}
+.large-title h2{font-size:28px;line-height:1.2;margin:0 0 8px;font-weight:700}
+.large-title p{margin:0;font-size:14px;color:var(--muted);line-height:1.5}
+.status-pill{display:inline-block;min-height:24px;padding:4px 8px;border-radius:8px;background:var(--green-soft);color:var(--accent);font-size:12px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 

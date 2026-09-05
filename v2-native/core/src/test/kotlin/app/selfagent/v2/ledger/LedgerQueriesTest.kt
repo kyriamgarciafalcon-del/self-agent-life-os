@@ -13,9 +13,9 @@ class LedgerQueriesTest {
     @Test
     fun `consumption cashflow and net worth share one query layer`() {
         val store = LedgerStore.open(dir.resolve("ledger.sqlite"))
-        store.createLedgerAccount("cash", role = AccountRole.CASH)
-        store.createLedgerAccount("expense", role = AccountRole.EXPENSE)
-        store.createLedgerAccount("income", role = AccountRole.INCOME)
+        store.createLedgerAccount("cash", Currency.CNY, AccountRole.CASH)
+        store.createLedgerAccount("expense", Currency.CNY, AccountRole.EXPENSE)
+        store.createLedgerAccount("income", Currency.CNY, AccountRole.INCOME)
         PostJournal(store).execute(
             JournalCommand(
                 commandId = "wage",

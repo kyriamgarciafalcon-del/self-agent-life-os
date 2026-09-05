@@ -14,9 +14,9 @@ class ClaimTest {
     @Test
     fun `partial settle then reject overpay`() {
         val store = LedgerStore.open(dir.resolve("ledger.sqlite"))
-        store.createLedgerAccount("cash", role = AccountRole.CASH)
-        store.createLedgerAccount("receivable", role = AccountRole.RECEIVABLE)
-        store.createLedgerAccount("expense", role = AccountRole.EXPENSE)
+        store.createLedgerAccount("cash", Currency.CNY, AccountRole.CASH)
+        store.createLedgerAccount("receivable", Currency.CNY, AccountRole.RECEIVABLE)
+        store.createLedgerAccount("expense", Currency.CNY, AccountRole.EXPENSE)
         PostJournal(store).execute(
             JournalCommand(
                 commandId = "pad",

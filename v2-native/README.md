@@ -4,7 +4,7 @@ Self Agent V2 的阶段 0 工作区。目标是建立 Android 原生、本机优
 
 ## 当前阶段
 
-**当前：JVM 财务核心 + Compose 空壳 APK。** 旧版 `android/` WebView 仍是正式 1.1.x。V2 内测包名 `app.selfagent.v2`，不能记账。
+**当前：JVM 财务核心 + Compose 可记账内测。** 旧版 `android/` WebView 仍是正式 1.1.x。V2 包名 `app.selfagent.v2`，默认 CNY。
 
 ## 不变量
 

@@ -91,7 +91,7 @@ data class ClaimRecord(
     val outstanding: Long,
 )
 
-class LedgerQueries(private val store: LedgerStore) {
+class LedgerQueries(private val store: LedgerBooks) {
     fun personalConsumption(currency: Currency): Long = store.sumByRoles(currency, setOf(AccountRole.EXPENSE))
     fun cashFlow(currency: Currency): Long = store.sumByRoles(currency, setOf(AccountRole.CASH))
     fun netWorth(currency: Currency): Long =

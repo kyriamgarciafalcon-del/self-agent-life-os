@@ -26,8 +26,8 @@ data class JournalDraft(
     val payloadHash: String = "",
 )
 
-class LedgerStore private constructor(private val path: Path, private var connection: Connection) {
-    fun createLedgerAccount(id: String, currency: Currency = Currency.CNY, role: AccountRole = AccountRole.OTHER) {
+class LedgerStore private constructor(private val path: Path, private var connection: Connection) : LedgerBooks {
+    override fun createLedgerAccount(id: String, currency: Currency, role: AccountRole) {
         connection.prepareStatement("INSERT INTO ledger_account(id, currency, role) VALUES (?, ?, ?)").use { statement ->
             statement.setString(1, id)
             statement.setString(2, currency.name)
@@ -36,7 +36,28 @@ class LedgerStore private constructor(private val path: Path, private var connec
         }
     }
 
-    fun commitJournal(draft: JournalDraft) {
+    override fun ensureCashAndExpenseAccounts() {
+        if (!accountExists("cash")) createLedgerAccount("cash", Currency.CNY, AccountRole.CASH)
+        if (!accountExists("expense")) createLedgerAccount("expense", Currency.CNY, AccountRole.EXPENSE)
+    }
+
+    override fun recentExpenseMinors(): List<Long> =
+        connection.prepareStatement(
+            """
+            SELECT p.signed_minor FROM posting p
+            JOIN ledger_account a ON a.id = p.ledger_account_id
+            WHERE a.role = ? ORDER BY p.rowid DESC
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, AccountRole.EXPENSE.name)
+            statement.executeQuery().use { rows ->
+                val items = mutableListOf<Long>()
+                while (rows.next()) items += rows.getLong(1)
+                items
+            }
+        }
+
+    override fun commitJournal(draft: JournalDraft) {
         if (draft.id.isBlank() || draft.commandId.isBlank() || draft.postings.isEmpty()) {
             throw LedgerException(LedgerError.INVALID)
         }
@@ -84,7 +105,7 @@ class LedgerStore private constructor(private val path: Path, private var connec
         }
     }
 
-    fun journalCount(): Int =
+    override fun journalCount(): Int =
         connection.createStatement().use { statement ->
             statement.executeQuery("SELECT COUNT(*) FROM journal_entry").use { rows ->
                 rows.next()
@@ -92,7 +113,7 @@ class LedgerStore private constructor(private val path: Path, private var connec
             }
         }
 
-    fun balance(ledgerAccountId: String, currency: Currency): Long =
+    override fun balance(ledgerAccountId: String, currency: Currency): Long =
         connection.prepareStatement(
             "SELECT COALESCE(SUM(signed_minor), 0) FROM posting WHERE ledger_account_id = ? AND currency = ?",
         ).use { statement ->
@@ -205,7 +226,7 @@ class LedgerStore private constructor(private val path: Path, private var connec
         }
     }
 
-    fun sumByRoles(currency: Currency, roles: Set<AccountRole>): Long {
+    override fun sumByRoles(currency: Currency, roles: Set<AccountRole>): Long {
         if (roles.isEmpty()) return 0
         val placeholders = roles.joinToString(",") { "?" }
         return connection.prepareStatement(
@@ -251,7 +272,7 @@ class LedgerStore private constructor(private val path: Path, private var connec
             }
         }
 
-    fun receiptFor(commandId: String): CommandReceipt? =
+    override fun receiptFor(commandId: String): CommandReceipt? =
         connection.prepareStatement(
             "SELECT command_id, id, payload_hash FROM journal_entry WHERE command_id = ?",
         ).use { statement ->

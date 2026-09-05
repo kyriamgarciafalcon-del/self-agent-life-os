@@ -13,8 +13,8 @@ class PostJournalTest {
 
     private fun service(): PostJournal {
         val store = LedgerStore.open(dir.resolve("ledger.sqlite"))
-        store.createLedgerAccount("cash")
-        store.createLedgerAccount("expense")
+        store.createLedgerAccount("cash", Currency.CNY, AccountRole.OTHER)
+        store.createLedgerAccount("expense", Currency.CNY, AccountRole.OTHER)
         return PostJournal(store)
     }
 

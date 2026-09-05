@@ -16,7 +16,7 @@ class LedgerStoreTest {
     @Test
     fun `rejects posting that references a missing journal or account`() {
         val db = store()
-        db.createLedgerAccount("cash", Currency.CNY)
+        db.createLedgerAccount("cash", Currency.CNY, AccountRole.OTHER)
         val error = assertThrows(LedgerException::class.java) {
             db.commitJournal(
                 JournalDraft(
@@ -34,8 +34,8 @@ class LedgerStoreTest {
     @Test
     fun `rejects unbalanced journal`() {
         val db = store()
-        db.createLedgerAccount("cash", Currency.CNY)
-        db.createLedgerAccount("expense", Currency.CNY)
+        db.createLedgerAccount("cash", Currency.CNY, AccountRole.OTHER)
+        db.createLedgerAccount("expense", Currency.CNY, AccountRole.OTHER)
         val error = assertThrows(LedgerException::class.java) {
             db.commitJournal(
                 JournalDraft(
@@ -55,8 +55,8 @@ class LedgerStoreTest {
     @Test
     fun `rejects duplicate journal id`() {
         val db = store()
-        db.createLedgerAccount("cash", Currency.CNY)
-        db.createLedgerAccount("income", Currency.CNY)
+        db.createLedgerAccount("cash", Currency.CNY, AccountRole.OTHER)
+        db.createLedgerAccount("income", Currency.CNY, AccountRole.OTHER)
         val balanced = JournalDraft(
             id = "j1",
             commandId = "c1",
@@ -75,8 +75,8 @@ class LedgerStoreTest {
     @Test
     fun `backup restore round trip keeps balances`() {
         val db = store()
-        db.createLedgerAccount("cash", Currency.CNY)
-        db.createLedgerAccount("expense", Currency.CNY)
+        db.createLedgerAccount("cash", Currency.CNY, AccountRole.OTHER)
+        db.createLedgerAccount("expense", Currency.CNY, AccountRole.OTHER)
         db.commitJournal(
             JournalDraft(
                 id = "j1",

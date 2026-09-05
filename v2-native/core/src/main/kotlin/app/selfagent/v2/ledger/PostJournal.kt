@@ -26,7 +26,7 @@ data class CommandReceipt(
     val status: String,
 )
 
-class PostJournal(val store: LedgerStore) {
+class PostJournal(val store: LedgerBooks) {
     fun execute(command: JournalCommand): CommandReceipt {
         if (command.commandId.isBlank() || command.journalId.isBlank() || command.postings.isEmpty()) {
             throw LedgerException(LedgerError.INVALID)

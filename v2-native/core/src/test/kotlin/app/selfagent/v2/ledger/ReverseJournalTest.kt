@@ -11,16 +11,16 @@ class ReverseJournalTest {
     @TempDir
     lateinit var dir: Path
 
-    private fun posts(): PostJournal {
+    private fun books(): Pair<PostJournal, LedgerStore> {
         val store = LedgerStore.open(dir.resolve("ledger.sqlite"))
-        store.createLedgerAccount("cash", role = AccountRole.CASH)
-        store.createLedgerAccount("expense", role = AccountRole.EXPENSE)
-        return PostJournal(store)
+        store.createLedgerAccount("cash", Currency.CNY, AccountRole.CASH)
+        store.createLedgerAccount("expense", Currency.CNY, AccountRole.EXPENSE)
+        return PostJournal(store) to store
     }
 
     @Test
     fun `reverse posts opposite amounts keeps original and is idempotent`() {
-        val posts = posts()
+        val (posts, store) = books()
         posts.execute(
             JournalCommand(
                 commandId = "e1",
@@ -31,7 +31,7 @@ class ReverseJournalTest {
                 ),
             ),
         )
-        val reverse = ReverseJournal(posts.store)
+        val reverse = ReverseJournal(store)
         val first = reverse.execute(ReverseCommand("rev-1", "j-rev", "j-exp", "记错"))
         val second = reverse.execute(ReverseCommand("rev-1", "j-rev", "j-exp", "记错"))
         assertEquals(first.journalId, second.journalId)

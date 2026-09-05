@@ -40,7 +40,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = providers.gradleProperty("versionCode").orElse("2000").get().toInt()
-        versionName = providers.gradleProperty("versionName").orElse("2.0.0-shell").get()
+        versionName = providers.gradleProperty("versionName").orElse("2.0.0-ledger").get()
     }
 
     buildTypes {
@@ -65,6 +65,11 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+    }
+
+    sourceSets.getByName("main").java {
+        srcDir("../../core/src/main/kotlin")
+        exclude("**/migrate/**")
     }
 }
 

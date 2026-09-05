@@ -16,13 +16,18 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -33,6 +38,13 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.selfagent.v2.ledger.LedgerBooks
+import app.selfagent.v2.ledger.LedgerException
+import app.selfagent.v2.ledger.LedgerQueries
+import app.selfagent.v2.ledger.PostJournal
+import app.selfagent.v2.ledger.RecordExpense
+import app.selfagent.v2.money.Currency
+import java.util.UUID
 
 private val Canvas = Color(0xFFF2F2F7)
 private val Surface = Color(0xFFFFFFFF)
@@ -50,15 +62,23 @@ private enum class ShellTab(val label: String) {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val books = AndroidLedgerBooks(this).also { it.ensureCashAndExpenseAccounts() }
         enableEdgeToEdge()
-        setContent { ShellApp() }
+        setContent { ShellApp(RecordExpense(PostJournal(books), books)) }
     }
 }
 
 @Composable
-fun ShellApp() {
-    var tab by rememberSaveable { mutableStateOf(ShellTab.Today.name) }
+fun ShellApp(record: RecordExpense) {
+    var tab by rememberSaveable { mutableStateOf(ShellTab.Ledger.name) }
+    var composing by rememberSaveable { mutableStateOf(false) }
+    var amount by rememberSaveable { mutableStateOf("") }
+    var error by rememberSaveable { mutableStateOf("") }
+    var saving by rememberSaveable { mutableStateOf(false) }
+    var commandId by rememberSaveable { mutableStateOf(UUID.randomUUID().toString()) }
+    var stamp by remember { mutableStateOf(0) }
     val current = ShellTab.valueOf(tab)
+    val books: LedgerBooks = record.books
     Column(
         Modifier
             .fillMaxSize()
@@ -82,24 +102,93 @@ fun ShellApp() {
                 .padding(16.dp)
                 .fillMaxWidth(),
         ) {
-            Text("空壳内测", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Medium)
-            Text(
-                "包名 app.selfagent.v2，可与旧版并行安装。不能记账，不写入账本。",
-                color = Ink,
-                fontSize = 16.sp,
-            )
+            Text("内测可记账", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+            Text("默认人民币 CNY。包名 app.selfagent.v2，与旧版并行。双击同一笔只会入账一次。", color = Ink, fontSize = 16.sp)
         }
         Column(
             Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.Start,
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
         ) {
-            Text(emptyTitle(current), color = Ink, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(8.dp))
-            Text(emptyBody(current), color = Muted, fontSize = 16.sp)
+            if (current == ShellTab.Ledger) {
+                stamp
+                val consumption = LedgerQueries(books).personalConsumption(Currency.CNY)
+                val cash = books.balance("cash", Currency.CNY)
+                Text("个人消费 ${formatCny(consumption)}", color = Ink, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                Text("现金 ${formatCny(cash)}", color = Muted, fontSize = 16.sp)
+                Spacer(Modifier.height(16.dp))
+                Button(
+                    onClick = {
+                        composing = true
+                        error = ""
+                        amount = ""
+                        commandId = UUID.randomUUID().toString()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Ink),
+                    shape = RoundedCornerShape(14.dp),
+                ) { Text("记一笔", fontSize = 16.sp) }
+                Spacer(Modifier.height(16.dp))
+                val rows = books.recentExpenseMinors()
+                if (rows.isEmpty()) {
+                    Text("还没有入账记录", color = Muted, fontSize = 16.sp)
+                } else {
+                    rows.forEach { minor ->
+                        Text("餐饮  ${formatCny(minor)}", color = Ink, fontSize = 16.sp, modifier = Modifier.padding(vertical = 8.dp))
+                    }
+                }
+                if (composing) {
+                    Spacer(Modifier.height(16.dp))
+                    Text("金额（CNY）", color = Ink, fontSize = 16.sp)
+                    OutlinedTextField(
+                        value = amount,
+                        onValueChange = { amount = it; error = "" },
+                        placeholder = { Text("30.00") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (error.isNotEmpty()) Text(error, color = Color(0xFFB00020), fontSize = 14.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            if (saving) return@Button
+                            if (amount.trim().isEmpty()) {
+                                error = "金额不能为空"
+                                return@Button
+                            }
+                            saving = true
+                            try {
+                                record.execute(commandId, amount)
+                                composing = false
+                                stamp += 1
+                            } catch (_: LedgerException) {
+                                error = "无法入账"
+                            } finally {
+                                saving = false
+                            }
+                        },
+                        enabled = !saving,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Ink),
+                    ) { Text(if (saving) "保存中" else "保存", fontSize = 16.sp) }
+                    TextButton(
+                        onClick = { composing = false },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                    ) { Text("取消", fontSize = 16.sp, color = Muted) }
+                }
+            } else {
+                Text(emptyTitle(current), color = Ink, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(8.dp))
+                Text(emptyBody(current), color = Muted, fontSize = 16.sp)
+            }
         }
         Row(
             Modifier
@@ -117,15 +206,19 @@ fun ShellApp() {
                         .height(48.dp)
                         .widthIn(min = 48.dp)
                         .semantics { contentDescription = item.label },
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = if (selected) Ink else Muted,
-                    ),
+                    colors = ButtonDefaults.textButtonColors(contentColor = if (selected) Ink else Muted),
                 ) {
                     Text(item.label, fontSize = 16.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
                 }
             }
         }
     }
+}
+
+private fun formatCny(minor: Long): String {
+    val sign = if (minor < 0) "-" else ""
+    val abs = kotlin.math.abs(minor)
+    return sign + "¥" + (abs / 100) + "." + (abs % 100).toString().padStart(2, '0')
 }
 
 private fun emptyTitle(tab: ShellTab): String = when (tab) {
@@ -137,7 +230,7 @@ private fun emptyTitle(tab: ShellTab): String = when (tab) {
 
 private fun emptyBody(tab: ShellTab): String = when (tab) {
     ShellTab.Today -> "空状态来自真实任务。完成前不会假装有日程。"
-    ShellTab.Ledger -> "省略币种时默认人民币 CNY。本空壳不会调用 PostJournal。"
+    ShellTab.Ledger -> "省略币种时默认人民币 CNY。"
     ShellTab.Life -> "健康趋势只基于真实数据，缺日不补零。"
     ShellTab.Assistant -> "断网或未授权时显示不可用，不编造答案。"
 }

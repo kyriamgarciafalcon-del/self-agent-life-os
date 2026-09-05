@@ -4,7 +4,7 @@ import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 're
 import { getConvertedNetWorth, getMonthlyReport, getNetWorth, getOutstandingReimbursements, transactionsInPeriod } from './finance-query';
 import { migrateToSchemaV4, createSchemaV4MigrationBackup, applySchemaV4Migration, SCHEMA_V3_BACKUP_KEY } from './finance-schema';
 import { LargeTitle, GroupedList } from './ui';
-import { buildHealthMetricSeries, type HealthCoreKind, type HealthMetricSeries } from './health-dashboard';
+import { buildHealthMetricSeries, formatCompactSleepDuration, formatSleepDuration, sleepDurationParts, type HealthCoreKind, type HealthMetricSeries } from './health-dashboard';
 import { accountRole, addDaysKey, applyDailyFxRates, applyDailyPriceQuotes, applyInboxLifecycle, AI_CONFIG_EVENT, AI_CONFIG_STORAGE_KEY, AI_REPLY_EVENT, AUDIT_OUTCOMES, auditOutcomeLabel, auditReasonLabel, buildButlerSystemPrompt, buildHealthBriefing, buildAiSendPreview, canUndoInboxConfirm, cnyWealthTotal, confirmByokHost, classifyAiProviderError, interpretAiConnectionTest, consumeCallBudget, createCallBudget, defaultCashId, describeButlerDataScope, detectLegacyDemoData, dialogShouldDismiss, dismissPermissionOnboarding, filterAuditLog, generateRecurringDrafts, healthRecordsFromSnapshots, inboxConfidenceLabel, inboxConfirmBlockReason, inboxAccountsForCurrency, inboxItemFromAiTool, inboxItemFromButlerAction, inboxItemFromNaturalCapture, inboxItemFromPayment, inboxItemFromTravelNotice, inboxSourceLabel, ledgerIdempotencyKeyForInboxItem, INBOX_ACTION_LABELS, isBackupPayload, isDebtRole, latestHealthByKind, loadBrowserAiConfig, localDateKey, markPermissionSettingsOpened, migrateAuditLog, migrateInboxStore, migrateLegacyAiLocalStorage, migratePrivacySettings, normalizeAccountBalance, normalizeMemory, normalizePermissionOnboarding, parseAiProviderResponse, parseButlerModelOutput, parseCapabilityStatus, parseNaturalCapture, pendingInboxItems, persistBrowserAiConfig, permissionOnboardingProgress, planAccountSettlement, planInvestmentMigrations, confirmInvestmentMigration, prepareOutboundAiPayload, reconcileRecurringConfirmations, releaseRecurringConfirmation, resolveInboxFinanceConfirmation, resolvePaymentAccountId, shouldShowPermissionOnboarding, summarizeHealth, TOAST_ARIA_LIVE, updateInboxItemPayload, upsertByExternalKey, validateByokTarget, weekDates, ACCOUNT_TYPES, buildReimbursementSettlement, canDeleteAccount, FINANCE_TABS, financeTransactionFields, transactionFormPhases, previewPostedImpact, investmentAccountSnapshot, normalizeFinanceRecords, postBalanceAdjustment, postFinanceTransaction, refreshHoldingsValuation, reimbursementOutstandingAmount, removePostedTransaction, settlePostedReimbursement, resolveTransferAmounts, type AuditEntry, type ButlerAction, type CapabilityStatusSnapshot, type HealthMetric, type InboxItem, type InboxLifecycleEvent, type InboxSource, type PermissionCardId, type PermissionOnboardingState, type TravelKind } from './product-logic';
 
 type Tab = 'home' | 'schedule' | 'capture' | 'finance' | 'profile' | 'life' | 'health' | 'travel' | 'data' | 'butler' | 'privacy' | 'memory' | 'vault' | 'audit';
@@ -1493,12 +1493,22 @@ function HealthTrendBars({ series }: { series: HealthMetricSeries }) {
     {series.points.map((point) => {
       const height = span === 0 ? 58 : 28 + ((point.value - min) / span) * 58;
       return <div className="health-trend-point" key={point.date}>
-        <strong>{point.value}</strong>
+        <strong aria-label={series.kind === 'sleep' ? formatSleepDuration(point.value) : undefined}>{series.kind === 'sleep' ? formatCompactSleepDuration(point.value) : point.value}</strong>
         <i style={{ height: `${height}%` }} />
         <small>{point.date.slice(5).replace('-', '/')}</small>
       </div>;
     })}
   </div>;
+}
+
+function HealthMetricValue({ series }: { series: HealthMetricSeries }) {
+  if (!series.latest) return <strong>暂无数据</strong>;
+  if (series.kind !== 'sleep') return <strong>{series.displayValue}</strong>;
+  const { hours, minutes } = sleepDurationParts(series.latest.value);
+  return <strong className="sleep-duration" aria-label={series.displayValue}>
+    <span className="sleep-number">{hours}</span><span className="sleep-unit">小时</span>
+    <span className="sleep-number">{minutes}</span><span className="sleep-unit">分钟</span>
+  </strong>;
 }
 
 function HealthPanel({ records, onAdd, onImportHealthConnect, onImportGadgetbridge, onSelectExport, onExportDiagnostics, onSaveBody }: { records: HealthRecord[]; onAdd: () => void; onImportHealthConnect: () => void; onImportGadgetbridge: () => void; onSelectExport: () => void; onExportDiagnostics: () => void; onSaveBody: (height: number, weight: number) => void }) {
@@ -1517,7 +1527,7 @@ function HealthPanel({ records, onAdd, onImportHealthConnect, onImportGadgetbrid
     if (kind === 'height') return `${value} cm`;
     if (kind === 'weight') return `${value} kg`;
     if (kind === 'heartRate') return `${value} 次/分`;
-    if (kind === 'sleep') return `${value} 小时`;
+    if (kind === 'sleep') return formatSleepDuration(value);
     if (kind === 'exercise') return `${value} 分钟`;
     if (kind === 'meal') return `${value} 餐`;
     if (kind === 'steps') return `${value} 步`;
@@ -1549,7 +1559,7 @@ function HealthPanel({ records, onAdd, onImportHealthConnect, onImportGadgetbrid
     <section className="health-status" aria-label="今日健康状态">
       {series.slice(0, 3).map((item) => <article key={item.kind}>
         <span aria-hidden="true">{marks[item.kind]}</span>
-        <div><small>{item.label}</small><strong>{item.displayValue}</strong><em>{item.latest ? `${item.unit ? `${item.unit} · ` : ''}${dateLabel(item.latest.date)}` : '待记录'}</em></div>
+        <div><small>{item.label}</small><HealthMetricValue series={item} /><em>{item.latest ? `${item.unit ? `${item.unit} · ` : ''}${dateLabel(item.latest.date)}` : '待记录'}</em></div>
       </article>)}
     </section>
 
@@ -1558,7 +1568,7 @@ function HealthPanel({ records, onAdd, onImportHealthConnect, onImportGadgetbrid
       <div className="health-metric-tabs" role="tablist" aria-label="选择趋势指标">
         {series.map((item) => <button key={item.kind} type="button" role="tab" aria-selected={selectedKind === item.kind} aria-controls="health-trend-panel" className={selectedKind === item.kind ? 'active' : ''} onClick={() => setSelectedKind(item.kind)}>{item.label}</button>)}
       </div>
-      <div id="health-trend-panel" role="tabpanel"><div className="health-trend-summary"><div><strong>{selected.displayValue}</strong><span>{selected.latest ? selected.unit : ''}</span></div><small>{selected.latest ? `最近一次 · ${dateLabel(selected.latest.date)} · ${selected.latest.source} · 本机保存` : '暂无数据，不会补零或推测'}</small></div>
+      <div id="health-trend-panel" role="tabpanel"><div className="health-trend-summary"><div><HealthMetricValue series={selected} /><span>{selected.latest ? selected.unit : ''}</span></div><small>{selected.latest ? `最近一次 · ${dateLabel(selected.latest.date)} · ${selected.latest.source} · 本机保存` : '暂无数据，不会补零或推测'}</small></div>
         <HealthTrendBars series={selected} />
       </div>
     </section>
@@ -1566,7 +1576,7 @@ function HealthPanel({ records, onAdd, onImportHealthConnect, onImportGadgetbrid
     <section className="health-panel">
       <div className="health-section-title"><div><span>设备指标</span><h2>核心指标</h2></div></div>
       <div className="health-core-grid">{series.map((item) => <button type="button" key={item.kind} onClick={() => setSelectedKind(item.kind)} aria-label={`查看${item.label}趋势`}>
-        <span aria-hidden="true">{marks[item.kind]}</span><small>{item.label}</small><strong>{item.displayValue}</strong><em>{item.latest ? `${item.unit ? `${item.unit} · ` : ''}${dateLabel(item.latest.date)}` : '待记录'}</em>{(item.kind === 'stress' || item.kind === 'pai') && <b>手环原始分 · 无医学单位</b>}
+        <span aria-hidden="true">{marks[item.kind]}</span><small>{item.label}</small><HealthMetricValue series={item} /><em>{item.latest ? `${item.unit ? `${item.unit} · ` : ''}${dateLabel(item.latest.date)}` : '待记录'}</em>{(item.kind === 'stress' || item.kind === 'pai') && <b>手环原始分 · 无医学单位</b>}
       </button>)}</div>
     </section>
 

@@ -31,7 +31,7 @@ export type HealthMetricSeries = {
 
 const METRIC_META: Record<HealthCoreKind, { label: string; unit: string }> = {
   steps: { label: '步数', unit: '步' },
-  sleep: { label: '睡眠', unit: '小时' },
+  sleep: { label: '睡眠', unit: '' },
   heartRate: { label: '心率', unit: '次/分' },
   stress: { label: '压力', unit: '' },
   pai: { label: 'PAI', unit: '' },
@@ -43,8 +43,23 @@ export function healthRecordDateKey(createdAt?: string): string {
   return match ? match[1] : '';
 }
 
-function formatMetricValue(value: number): string {
-  return String(value);
+export function sleepDurationParts(value: number): { hours: number; minutes: number } {
+  const totalMinutes = Math.max(0, Math.round(value * 60));
+  return { hours: Math.floor(totalMinutes / 60), minutes: totalMinutes % 60 };
+}
+
+export function formatSleepDuration(value: number): string {
+  const { hours, minutes } = sleepDurationParts(value);
+  return `${hours}小时${minutes}分钟`;
+}
+
+export function formatCompactSleepDuration(value: number): string {
+  const { hours, minutes } = sleepDurationParts(value);
+  return `${hours}时${minutes}分`;
+}
+
+function formatMetricValue(kind: HealthCoreKind, value: number): string {
+  return kind === 'sleep' ? formatSleepDuration(value) : String(value);
 }
 
 function healthRecordSource(record: HealthDashboardRecord): string {
@@ -85,7 +100,7 @@ export function buildHealthMetricSeries(records: HealthDashboardRecord[], kind: 
           source: healthRecordSource(latestRecord),
         }
       : null,
-    displayValue: latestPoint ? formatMetricValue(latestPoint.value) : '暂无数据',
+    displayValue: latestPoint ? formatMetricValue(kind, latestPoint.value) : '暂无数据',
     points,
   };
 }

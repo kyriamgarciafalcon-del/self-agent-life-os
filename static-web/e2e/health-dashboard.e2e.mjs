@@ -31,12 +31,15 @@ test('health dashboard presents real metrics, sources and editable body profile'
   await expect(page.getByRole('heading', { name: '7 日趋势' })).toBeVisible();
   const status = page.getByRole('region', { name: '今日健康状态' });
   await expect(status).toContainText('7100');
-  await expect(status).toContainText('7.2');
+  await expect(status).toContainText('7小时12分钟');
+  await expect(status.locator('.sleep-duration .sleep-number')).toHaveText(['7', '12']);
+  await expect(status.locator('.sleep-duration .sleep-unit')).toHaveText(['小时', '分钟']);
   await expect(status).toContainText('68');
   await expect(page.locator('.health-trend-point')).toHaveCount(2);
 
   await page.locator('.health-metric-tabs').getByRole('tab', { name: '睡眠' }).click();
-  await expect(page.locator('.health-trend-summary')).toContainText('7.2');
+  await expect(page.locator('.health-trend-summary')).toContainText('7小时12分钟');
+  await expect(page.locator('.health-trend-point').last()).toContainText('7时12分');
   await expect(page.locator('.health-trend-summary')).toContainText('Gadgetbridge');
   await expect(page.locator('.health-trend-point')).toHaveCount(2);
 

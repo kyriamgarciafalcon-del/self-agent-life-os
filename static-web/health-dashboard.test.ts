@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildHealthMetricSeries } from '../app/health-dashboard.ts';
+import { buildHealthMetricSeries, formatSleepDuration } from '../app/health-dashboard.ts';
 
 describe('buildHealthMetricSeries', () => {
   it('keeps the last finite value on the same day and drops NaN', () => {
@@ -39,7 +39,19 @@ describe('buildHealthMetricSeries', () => {
     expect(series.points.map((point) => point.value)).toEqual([5, 6.5, 7.1, 6.8, 7.4, 6.2, 6]);
     expect(series.points).not.toContainEqual(expect.objectContaining({ date: '2026-09-06' }));
     expect(series.latest?.value).toBe(6);
-    expect(series.unit).toBe('小时');
+    expect(series.unit).toBe('');
+    expect(series.displayValue).toBe('6小时0分钟');
+  });
+
+  it('formats decimal sleep hours as hours and minutes', () => {
+    const series = buildHealthMetricSeries([
+      { kind: 'sleep', value: 7.2, createdAt: '2026-09-11T07:00:00+08:00' },
+    ], 'sleep');
+    expect(series.displayValue).toBe('7小时12分钟');
+    expect(formatSleepDuration(0)).toBe('0小时0分钟');
+    expect(formatSleepDuration(0.5)).toBe('0小时30分钟');
+    expect(formatSleepDuration(1.999)).toBe('2小时0分钟');
+    expect(formatSleepDuration(-1)).toBe('0小时0分钟');
   });
 
   it('shows 暂无数据 when there are no finite points and does not invent zeros', () => {

@@ -50,7 +50,7 @@ P-06 是阶段 0 出关锁。未完成不得打开 F-01。
 |---|---|---|---|---|---|---|---|
 | U-01 | 设计系统与页面骨架 | P-06 | `v2-native/android/app/src/main/java/app/selfagent/v2/MainActivity.kt` | RED：核心按钮 <48dp 或无五态也可提交。GREEN：四栏导航、主题、空壳 APK | 主题、48dp；200%/读屏仪器测试后置 | `@owner-android` | done |
 | U-02 | 一页记账与账本页 | U-01 F-06 | `v2-native/android/.../MainActivity.kt` `AndroidLedgerBooks.kt` `RecordExpense.kt` | RED：金额空缺进入预览或双击记两笔。GREEN：真实 PostJournal + 查询刷新 | 空金额拒绝；同 commandId 幂等；默认 CNY | `@owner-android` | done |
-| L-01 | 今天 / 任务 / 日程基础 | U-01 | `v2-native/feature/today/TodayScreen.kt` `v2-native/feature/life/Task.kt` `CalendarEvent.kt` `TodayScreenTest.kt` | RED：完成任务复制成三条互不关联记录。GREEN：完成实例、不永久完成重复规则 | 完成任务；跨午夜刷新今天 | `@owner-android` | blocked |
+| L-01 | 今天 / 任务 / 日程基础 | U-01 | `v2-native/core/.../TaskBoard.kt` `AndroidTaskBoard.kt` | RED：完成三次克隆三条规则。GREEN：实例按天；规则仍在 | 完成今天；次日仍出现未完成 | `@owner-android` | done |
 | I-01 | 收件箱与命令回执 | F-03 | `v2-native/feature/inbox/InboxScreen.kt` `v2-native/application/InboxService.kt` `InboxTest.kt` | RED：并发确认入两笔；草稿进已入账表。GREEN：版本校验、commandId 幂等 | 确认、忽略、冲突、去重 | `@owner-android` | blocked |
 | BAK-03 | 迁移演练 + 备份恢复 UI | BAK-01 BAK-02 U-01 | `v2-native/feature/settings/BackupScreen.kt` `MigrationSummaryScreen.kt` | RED：失败仍切换库。GREEN：失败文案 + 当前库不变 | 用户可见差异；不含密码库冒充 | `@owner-android` | blocked |
 

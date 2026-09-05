@@ -145,3 +145,4 @@ Money 的溢出上限、已支持币种列表的机器可读配置、以及舍�
 | 2026-09-05 | BAK-02 旧 JSON dry-run：演示数据与重复 ID 不写入；新增 v2-core.yml 跑 JVM 测试。 |
 | 2026-09-05 | 用户同意 CI 打 V2 空壳 APK：`app.selfagent.v2`，不改旧 `android/`，不能记账。 |
 | 2026-09-05 | U-02 记一笔接到 PostJournal；空金额拒绝；同 commandId 不双记；Android SQLite。 |
+| 2026-09-05 | L-01 每天任务按实例完成；三次完成不克隆规则；次日仍未完成。 |

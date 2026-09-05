@@ -38,12 +38,14 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.selfagent.v2.life.LifeTasks
 import app.selfagent.v2.ledger.LedgerBooks
 import app.selfagent.v2.ledger.LedgerException
 import app.selfagent.v2.ledger.LedgerQueries
 import app.selfagent.v2.ledger.PostJournal
 import app.selfagent.v2.ledger.RecordExpense
 import app.selfagent.v2.money.Currency
+import java.time.LocalDate
 import java.util.UUID
 
 private val Canvas = Color(0xFFF2F2F7)
@@ -63,16 +65,18 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val books = AndroidLedgerBooks(this).also { it.ensureCashAndExpenseAccounts() }
+        val tasks = AndroidTaskBoard(this)
         enableEdgeToEdge()
-        setContent { ShellApp(RecordExpense(PostJournal(books), books)) }
+        setContent { ShellApp(RecordExpense(PostJournal(books), books), tasks) }
     }
 }
 
 @Composable
-fun ShellApp(record: RecordExpense) {
-    var tab by rememberSaveable { mutableStateOf(ShellTab.Ledger.name) }
+fun ShellApp(record: RecordExpense, tasks: LifeTasks) {
+    var tab by rememberSaveable { mutableStateOf(ShellTab.Today.name) }
     var composing by rememberSaveable { mutableStateOf(false) }
     var amount by rememberSaveable { mutableStateOf("") }
+    var newTitle by rememberSaveable { mutableStateOf("") }
     var error by rememberSaveable { mutableStateOf("") }
     var saving by rememberSaveable { mutableStateOf(false) }
     var commandId by rememberSaveable { mutableStateOf(UUID.randomUUID().toString()) }
@@ -103,7 +107,7 @@ fun ShellApp(record: RecordExpense) {
                 .fillMaxWidth(),
         ) {
             Text("内测可记账", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Medium)
-            Text("默认人民币 CNY。包名 app.selfagent.v2，与旧版并行。双击同一笔只会入账一次。", color = Ink, fontSize = 16.sp)
+            Text("内测：记账默认 CNY；任务按天完成，不删掉每天规则。", color = Ink, fontSize = 16.sp)
         }
         Column(
             Modifier
@@ -112,7 +116,59 @@ fun ShellApp(record: RecordExpense) {
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState()),
         ) {
-            if (current == ShellTab.Ledger) {
+            if (current == ShellTab.Today) {
+                stamp
+                val day = LocalDate.now()
+                val items = tasks.today(day)
+                Text("今天", color = Ink, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                Text("完成只记今天这一次，明天仍会出现。", color = Muted, fontSize = 16.sp)
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = newTitle,
+                    onValueChange = { newTitle = it },
+                    placeholder = { Text("下一件事") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = {
+                        val title = newTitle.trim()
+                        if (title.isEmpty()) return@Button
+                        tasks.addDailyRule(UUID.randomUUID().toString(), title)
+                        newTitle = ""
+                        stamp += 1
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Ink),
+                ) { Text("添加每天", fontSize = 16.sp) }
+                Spacer(Modifier.height(16.dp))
+                if (items.isEmpty()) {
+                    Text("今天还没有下一件事", color = Muted, fontSize = 16.sp)
+                } else {
+                    items.forEach { item ->
+                        Row(
+                            Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(item.title, color = Ink, fontSize = 16.sp, modifier = Modifier.weight(1f))
+                            if (item.completed) {
+                                Text("已完成", color = Muted, fontSize = 16.sp)
+                            } else {
+                                TextButton(
+                                    onClick = {
+                                        tasks.complete(item.ruleId, day)
+                                        stamp += 1
+                                    },
+                                    modifier = Modifier.height(48.dp),
+                                ) { Text("完成", fontSize = 16.sp, color = Ink) }
+                            }
+                        }
+                    }
+                }
+            } else if (current == ShellTab.Ledger) {
                 stamp
                 val consumption = LedgerQueries(books).personalConsumption(Currency.CNY)
                 val cash = books.balance("cash", Currency.CNY)

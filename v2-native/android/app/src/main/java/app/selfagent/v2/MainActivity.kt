@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.selfagent.v2.inbox.InboxDraft
 import app.selfagent.v2.life.LifeTasks
+import app.selfagent.v2.ledger.DayToDayBooks
 import app.selfagent.v2.ledger.LedgerBooks
 import app.selfagent.v2.ledger.LedgerException
 import app.selfagent.v2.ledger.LedgerQueries
@@ -71,14 +72,21 @@ class MainActivity : ComponentActivity() {
         val tasks = AndroidTaskBoard(this)
         val calendar = AndroidCalendar(this)
         val expense = RecordExpense(PostJournal(books), books)
+        val dayBooks = DayToDayBooks(PostJournal(books), expense)
         val inbox = AndroidInbox(this, expense)
         enableEdgeToEdge()
-        setContent { ShellApp(expense, tasks, inbox, calendar) }
+        setContent { ShellApp(expense, tasks, inbox, calendar, dayBooks) }
     }
 }
 
 @Composable
-fun ShellApp(record: RecordExpense, tasks: LifeTasks, inbox: AndroidInbox, calendar: AndroidCalendar) {
+fun ShellApp(
+    record: RecordExpense,
+    tasks: LifeTasks,
+    inbox: AndroidInbox,
+    calendar: AndroidCalendar,
+    dayBooks: DayToDayBooks,
+) {
     var tab by rememberSaveable { mutableStateOf(ShellTab.Today.name) }
     var composing by rememberSaveable { mutableStateOf(false) }
     var amount by rememberSaveable { mutableStateOf("") }
@@ -284,7 +292,8 @@ fun ShellApp(record: RecordExpense, tasks: LifeTasks, inbox: AndroidInbox, calen
                 val consumption = LedgerQueries(books).personalConsumption(Currency.CNY)
                 val cash = books.balance("cash", Currency.CNY)
                 Text("个人消费 ${formatCny(consumption)}", color = Ink, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
-                Text("现金 ${formatCny(cash)}", color = Muted, fontSize = 16.sp)
+                Text("现金 ${formatCny(cash)}  微信 ${formatCny(books.balance("wechat", Currency.CNY))}", color = Muted, fontSize = 16.sp)
+                Text("待收回 ${formatCny(books.balance("receivable", Currency.CNY))}", color = Muted, fontSize = 16.sp)
                 Spacer(Modifier.height(16.dp))
                 Button(
                     onClick = {
@@ -293,12 +302,53 @@ fun ShellApp(record: RecordExpense, tasks: LifeTasks, inbox: AndroidInbox, calen
                         amount = ""
                         commandId = UUID.randomUUID().toString()
                     },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp),
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Ink),
                     shape = RoundedCornerShape(14.dp),
                 ) { Text("记一笔", fontSize = 16.sp) }
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = {
+                        try {
+                            dayBooks.transfer(UUID.randomUUID().toString(), amount.ifBlank { "40.00" }, "cash", "wechat")
+                            stamp += 1
+                            error = ""
+                        } catch (_: LedgerException) {
+                            error = "转账失败"
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Surface, contentColor = Ink),
+                ) { Text("转到微信（默认40）", fontSize = 16.sp) }
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = {
+                        try {
+                            dayBooks.pad(UUID.randomUUID().toString(), "100.00", "200.00")
+                            stamp += 1
+                            error = ""
+                        } catch (_: LedgerException) {
+                            error = "垫付失败"
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Surface, contentColor = Ink),
+                ) { Text("垫付 100+应收200", fontSize = 16.sp) }
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = {
+                        try {
+                            dayBooks.collect(UUID.randomUUID().toString(), amount.ifBlank { "120.00" })
+                            stamp += 1
+                            error = ""
+                        } catch (e: LedgerException) {
+                            error = if (e.code.name == "OVER_SETTLE") "不能超额收回" else "收回失败"
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Surface, contentColor = Ink),
+                ) { Text("收回（默认120）", fontSize = 16.sp) }
+                if (error.isNotEmpty()) Text(error, color = Color(0xFFB00020), fontSize = 16.sp)
                 Spacer(Modifier.height(16.dp))
                 val rows = books.recentExpenseMinors()
                 if (rows.isEmpty()) {

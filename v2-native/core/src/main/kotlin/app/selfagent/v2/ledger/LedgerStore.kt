@@ -39,6 +39,8 @@ class LedgerStore private constructor(private val path: Path, private var connec
     override fun ensureCashAndExpenseAccounts() {
         if (!accountExists("cash")) createLedgerAccount("cash", Currency.CNY, AccountRole.CASH)
         if (!accountExists("expense")) createLedgerAccount("expense", Currency.CNY, AccountRole.EXPENSE)
+        if (!accountExists("wechat")) createLedgerAccount("wechat", Currency.CNY, AccountRole.CASH)
+        if (!accountExists("receivable")) createLedgerAccount("receivable", Currency.CNY, AccountRole.RECEIVABLE)
     }
 
     override fun recentExpenseMinors(): List<Long> =

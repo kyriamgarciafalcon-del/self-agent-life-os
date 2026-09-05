@@ -7,7 +7,7 @@ import java.nio.file.StandardCopyOption
 import java.sql.Connection
 import java.sql.DriverManager
 
-enum class LedgerError { FOREIGN_KEY, UNBALANCED, DUPLICATE_ID, INVALID, COMMAND_CONFLICT }
+enum class LedgerError { FOREIGN_KEY, UNBALANCED, DUPLICATE_ID, INVALID, COMMAND_CONFLICT, ALREADY_REVERSED, OVER_SETTLE }
 
 class LedgerException(val code: LedgerError) : IllegalArgumentException(code.name)
 
@@ -27,10 +27,11 @@ data class JournalDraft(
 )
 
 class LedgerStore private constructor(private val path: Path, private var connection: Connection) {
-    fun createLedgerAccount(id: String, currency: Currency = Currency.CNY) {
-        connection.prepareStatement("INSERT INTO ledger_account(id, currency) VALUES (?, ?)").use { statement ->
+    fun createLedgerAccount(id: String, currency: Currency = Currency.CNY, role: AccountRole = AccountRole.OTHER) {
+        connection.prepareStatement("INSERT INTO ledger_account(id, currency, role) VALUES (?, ?, ?)").use { statement ->
             statement.setString(1, id)
             statement.setString(2, currency.name)
+            statement.setString(3, role.name)
             statement.executeUpdate()
         }
     }
@@ -103,6 +104,127 @@ class LedgerStore private constructor(private val path: Path, private var connec
             }
         }
 
+    fun postingsOf(journalId: String): List<PostingDraft> =
+        connection.prepareStatement(
+            "SELECT id, journal_id, ledger_account_id, signed_minor, currency FROM posting WHERE journal_id = ?",
+        ).use { statement ->
+            statement.setString(1, journalId)
+            statement.executeQuery().use { rows ->
+                val items = mutableListOf<PostingDraft>()
+                while (rows.next()) {
+                    items += PostingDraft(
+                        id = rows.getString(1),
+                        journalId = rows.getString(2),
+                        ledgerAccountId = rows.getString(3),
+                        signedMinor = rows.getLong(4),
+                        currency = Currency.parse(rows.getString(5)),
+                    )
+                }
+                items
+            }
+        }
+
+    fun accountRole(id: String): AccountRole =
+        connection.prepareStatement("SELECT role FROM ledger_account WHERE id = ?").use { statement ->
+            statement.setString(1, id)
+            statement.executeQuery().use { rows ->
+                if (!rows.next()) throw LedgerException(LedgerError.FOREIGN_KEY)
+                AccountRole.valueOf(rows.getString(1))
+            }
+        }
+
+    fun markReversal(journalId: String, originalJournalId: String, reason: String) {
+        connection.prepareStatement("UPDATE journal_entry SET reverses_id = ?, reason = ? WHERE id = ?").use { statement ->
+            statement.setString(1, originalJournalId)
+            statement.setString(2, reason)
+            statement.setString(3, journalId)
+            statement.executeUpdate()
+        }
+    }
+
+    fun reversalOf(originalJournalId: String): String? =
+        connection.prepareStatement("SELECT id FROM journal_entry WHERE reverses_id = ?").use { statement ->
+            statement.setString(1, originalJournalId)
+            statement.executeQuery().use { rows -> if (rows.next()) rows.getString(1) else null }
+        }
+
+    fun insertClaim(id: String, originJournalId: String, receivableAccountId: String, confirmedMinor: Long, currency: Currency) {
+        connection.prepareStatement(
+            "INSERT INTO claim(id, origin_journal_id, receivable_account_id, confirmed_minor, currency) VALUES (?, ?, ?, ?, ?)",
+        ).use { statement ->
+            statement.setString(1, id)
+            statement.setString(2, originJournalId)
+            statement.setString(3, receivableAccountId)
+            statement.setLong(4, confirmedMinor)
+            statement.setString(5, currency.name)
+            statement.executeUpdate()
+        }
+    }
+
+    fun claim(id: String): ClaimRecord {
+        val confirmed = connection.prepareStatement(
+            "SELECT receivable_account_id, confirmed_minor, currency FROM claim WHERE id = ?",
+        ).use { statement ->
+            statement.setString(1, id)
+            statement.executeQuery().use { rows ->
+                if (!rows.next()) throw LedgerException(LedgerError.FOREIGN_KEY)
+                Triple(rows.getString(1), rows.getLong(2), Currency.parse(rows.getString(3)))
+            }
+        }
+        return ClaimRecord(id, confirmed.first, confirmed.third, confirmed.second, claimOutstanding(id))
+    }
+
+    fun claimOutstanding(id: String): Long {
+        val confirmed = connection.prepareStatement("SELECT confirmed_minor FROM claim WHERE id = ?").use { statement ->
+            statement.setString(1, id)
+            statement.executeQuery().use { rows ->
+                if (!rows.next()) throw LedgerException(LedgerError.FOREIGN_KEY)
+                rows.getLong(1)
+            }
+        }
+        val allocated = connection.prepareStatement(
+            "SELECT COALESCE(SUM(amount_minor), 0) FROM settlement_allocation WHERE claim_id = ?",
+        ).use { statement ->
+            statement.setString(1, id)
+            statement.executeQuery().use { rows ->
+                rows.next()
+                rows.getLong(1)
+            }
+        }
+        return confirmed - allocated
+    }
+
+    fun insertAllocation(claimId: String, journalId: String, amountMinor: Long) {
+        connection.prepareStatement(
+            "INSERT INTO settlement_allocation(claim_id, journal_id, amount_minor) VALUES (?, ?, ?)",
+        ).use { statement ->
+            statement.setString(1, claimId)
+            statement.setString(2, journalId)
+            statement.setLong(3, amountMinor)
+            statement.executeUpdate()
+        }
+    }
+
+    fun sumByRoles(currency: Currency, roles: Set<AccountRole>): Long {
+        if (roles.isEmpty()) return 0
+        val placeholders = roles.joinToString(",") { "?" }
+        return connection.prepareStatement(
+            """
+            SELECT COALESCE(SUM(p.signed_minor), 0)
+            FROM posting p
+            JOIN ledger_account a ON a.id = p.ledger_account_id
+            WHERE p.currency = ? AND a.role IN ($placeholders)
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, currency.name)
+            roles.forEachIndexed { index, role -> statement.setString(index + 2, role.name) }
+            statement.executeQuery().use { rows ->
+                rows.next()
+                rows.getLong(1)
+            }
+        }
+    }
+
     fun backupTo(target: Path) {
         val escaped = target.toAbsolutePath().toString().replace("'", "''")
         connection.createStatement().use { it.executeUpdate("VACUUM INTO '$escaped'") }
@@ -169,7 +291,8 @@ class LedgerStore private constructor(private val path: Path, private var connec
                     """
                     CREATE TABLE IF NOT EXISTS ledger_account (
                       id TEXT PRIMARY KEY,
-                      currency TEXT NOT NULL
+                      currency TEXT NOT NULL,
+                      role TEXT NOT NULL DEFAULT 'OTHER'
                     )
                     """.trimIndent(),
                 )
@@ -178,7 +301,9 @@ class LedgerStore private constructor(private val path: Path, private var connec
                     CREATE TABLE IF NOT EXISTS journal_entry (
                       id TEXT PRIMARY KEY,
                       command_id TEXT NOT NULL UNIQUE,
-                      payload_hash TEXT NOT NULL DEFAULT ''
+                      payload_hash TEXT NOT NULL DEFAULT '',
+                      reverses_id TEXT,
+                      reason TEXT
                     )
                     """.trimIndent(),
                 )
@@ -190,6 +315,26 @@ class LedgerStore private constructor(private val path: Path, private var connec
                       ledger_account_id TEXT NOT NULL REFERENCES ledger_account(id),
                       signed_minor INTEGER NOT NULL,
                       currency TEXT NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                statement.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS claim (
+                      id TEXT PRIMARY KEY,
+                      origin_journal_id TEXT NOT NULL,
+                      receivable_account_id TEXT NOT NULL,
+                      confirmed_minor INTEGER NOT NULL,
+                      currency TEXT NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                statement.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS settlement_allocation (
+                      claim_id TEXT NOT NULL REFERENCES claim(id),
+                      journal_id TEXT NOT NULL,
+                      amount_minor INTEGER NOT NULL
                     )
                     """.trimIndent(),
                 )

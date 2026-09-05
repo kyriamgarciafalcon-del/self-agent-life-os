@@ -41,6 +41,7 @@ class LedgerStore private constructor(private val path: Path, private var connec
         if (!accountExists("expense")) createLedgerAccount("expense", Currency.CNY, AccountRole.EXPENSE)
         if (!accountExists("wechat")) createLedgerAccount("wechat", Currency.CNY, AccountRole.CASH)
         if (!accountExists("receivable")) createLedgerAccount("receivable", Currency.CNY, AccountRole.RECEIVABLE)
+        if (!accountExists("card")) createLedgerAccount("card", Currency.CNY, AccountRole.PAYABLE)
     }
 
     override fun recentExpenseMinors(): List<Long> =
@@ -127,7 +128,14 @@ class LedgerStore private constructor(private val path: Path, private var connec
             }
         }
 
-    fun postingsOf(journalId: String): List<PostingDraft> =
+    override fun lastOriginalJournalId(): String? =
+        connection.prepareStatement(
+            "SELECT id FROM journal_entry WHERE command_id NOT LIKE 'rev-%' ORDER BY rowid DESC LIMIT 1",
+        ).use { statement ->
+            statement.executeQuery().use { rows -> if (rows.next()) rows.getString(1) else null }
+        }
+
+    override fun postingsOf(journalId: String): List<PostingDraft> =
         connection.prepareStatement(
             "SELECT id, journal_id, ledger_account_id, signed_minor, currency FROM posting WHERE journal_id = ?",
         ).use { statement ->

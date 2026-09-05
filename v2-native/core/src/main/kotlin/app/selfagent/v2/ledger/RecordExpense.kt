@@ -10,6 +10,8 @@ interface LedgerBooks {
     fun journalCount(): Int
     fun balance(ledgerAccountId: String, currency: Currency): Long
     fun recentExpenseMinors(): List<Long>
+    fun lastOriginalJournalId(): String?
+    fun postingsOf(journalId: String): List<PostingDraft>
     fun commitJournal(draft: JournalDraft)
     fun receiptFor(commandId: String): CommandReceipt?
     fun sumByRoles(currency: Currency, roles: Set<AccountRole>): Long

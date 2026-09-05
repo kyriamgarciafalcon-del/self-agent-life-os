@@ -9,6 +9,7 @@ import app.selfagent.v2.ledger.JournalDraft
 import app.selfagent.v2.ledger.LedgerBooks
 import app.selfagent.v2.ledger.LedgerError
 import app.selfagent.v2.ledger.LedgerException
+import app.selfagent.v2.ledger.PostingDraft
 import app.selfagent.v2.money.Currency
 
 class AndroidLedgerBooks(context: Context) : LedgerBooks {
@@ -21,6 +22,7 @@ class AndroidLedgerBooks(context: Context) : LedgerBooks {
         if (!accountExists("expense")) createLedgerAccount("expense", Currency.CNY, AccountRole.EXPENSE)
         if (!accountExists("wechat")) createLedgerAccount("wechat", Currency.CNY, AccountRole.CASH)
         if (!accountExists("receivable")) createLedgerAccount("receivable", Currency.CNY, AccountRole.RECEIVABLE)
+        if (!accountExists("card")) createLedgerAccount("card", Currency.CNY, AccountRole.PAYABLE)
     }
 
     override fun createLedgerAccount(id: String, currency: Currency, role: AccountRole) {
@@ -56,6 +58,31 @@ class AndroidLedgerBooks(context: Context) : LedgerBooks {
             arrayOf(AccountRole.EXPENSE.name),
         ).use { rows ->
             while (rows.moveToNext()) items += rows.getLong(0)
+        }
+        return items
+    }
+
+    override fun lastOriginalJournalId(): String? =
+        db.rawQuery(
+            "SELECT id FROM journal_entry WHERE command_id NOT LIKE 'rev-%' ORDER BY rowid DESC LIMIT 1",
+            null,
+        ).use { rows -> if (rows.moveToFirst()) rows.getString(0) else null }
+
+    override fun postingsOf(journalId: String): List<PostingDraft> {
+        val items = mutableListOf<PostingDraft>()
+        db.rawQuery(
+            "SELECT id, journal_id, ledger_account_id, signed_minor, currency FROM posting WHERE journal_id = ?",
+            arrayOf(journalId),
+        ).use { rows ->
+            while (rows.moveToNext()) {
+                items += PostingDraft(
+                    rows.getString(0),
+                    rows.getString(1),
+                    rows.getString(2),
+                    rows.getLong(3),
+                    Currency.parse(rows.getString(4)),
+                )
+            }
         }
         return items
     }

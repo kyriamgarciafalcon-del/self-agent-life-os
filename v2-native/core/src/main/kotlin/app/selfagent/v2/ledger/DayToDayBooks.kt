@@ -58,6 +58,58 @@ class DayToDayBooks(private val posts: PostJournal, val record: RecordExpense) {
         )
     }
 
+    fun reverseLast() {
+        val originalId = record.books.lastOriginalJournalId() ?: throw LedgerException(LedgerError.INVALID)
+        val reverseCommand = "rev-$originalId"
+        if (record.books.receiptFor(reverseCommand) != null) {
+            throw LedgerException(LedgerError.ALREADY_REVERSED)
+        }
+        val original = record.books.postingsOf(originalId)
+        if (original.isEmpty()) throw LedgerException(LedgerError.FOREIGN_KEY)
+        posts.execute(
+            JournalCommand(
+                commandId = reverseCommand,
+                journalId = "j-$reverseCommand",
+                postings = original.mapIndexed { index, posting ->
+                    PostingInput(
+                        id = "r$index-$reverseCommand",
+                        ledgerAccountId = posting.ledgerAccountId,
+                        signedMinor = Math.negateExact(posting.signedMinor),
+                        currency = posting.currency,
+                    )
+                },
+            ),
+        )
+    }
+
+    fun cardSpend(commandId: String, amount: String) {
+        val money = parsePositive(amount)
+        posts.execute(
+            JournalCommand(
+                commandId = commandId,
+                journalId = "j-$commandId",
+                postings = listOf(
+                    PostingInput("e-$commandId", "expense", signedMinor = money.minor, currency = money.currency),
+                    PostingInput("p-$commandId", "card", signedMinor = -money.minor, currency = money.currency),
+                ),
+            ),
+        )
+    }
+
+    fun cardPay(commandId: String, amount: String) {
+        val money = parsePositive(amount)
+        posts.execute(
+            JournalCommand(
+                commandId = commandId,
+                journalId = "j-$commandId",
+                postings = listOf(
+                    PostingInput("cash-$commandId", "cash", signedMinor = -money.minor, currency = money.currency),
+                    PostingInput("card-$commandId", "card", signedMinor = money.minor, currency = money.currency),
+                ),
+            ),
+        )
+    }
+
     private fun parsePositive(amount: String) = try {
         val money = Money.parse(amount.trim())
         if (money.minor <= 0) throw LedgerException(LedgerError.INVALID)

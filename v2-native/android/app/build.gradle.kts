@@ -40,7 +40,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = providers.gradleProperty("versionCode").orElse("2000").get().toInt()
-        versionName = providers.gradleProperty("versionName").orElse("2.0.0-day").get()
+        versionName = providers.gradleProperty("versionName").orElse("2.0.0-card").get()
     }
 
     buildTypes {

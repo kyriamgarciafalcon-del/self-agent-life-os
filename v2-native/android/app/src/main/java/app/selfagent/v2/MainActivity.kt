@@ -293,7 +293,7 @@ fun ShellApp(
                 val cash = books.balance("cash", Currency.CNY)
                 Text("个人消费 ${formatCny(consumption)}", color = Ink, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
                 Text("现金 ${formatCny(cash)}  微信 ${formatCny(books.balance("wechat", Currency.CNY))}", color = Muted, fontSize = 16.sp)
-                Text("待收回 ${formatCny(books.balance("receivable", Currency.CNY))}", color = Muted, fontSize = 16.sp)
+                Text("待收回 ${formatCny(books.balance("receivable", Currency.CNY))}  信用卡 ${formatCny(books.balance("card", Currency.CNY))}", color = Muted, fontSize = 16.sp)
                 Spacer(Modifier.height(16.dp))
                 Button(
                     onClick = {
@@ -348,6 +348,48 @@ fun ShellApp(
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Surface, contentColor = Ink),
                 ) { Text("收回（默认120）", fontSize = 16.sp) }
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = {
+                        try {
+                            dayBooks.cardSpend(UUID.randomUUID().toString(), amount.ifBlank { "30.00" })
+                            stamp += 1
+                            error = ""
+                        } catch (_: LedgerException) {
+                            error = "信用卡记账失败"
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Surface, contentColor = Ink),
+                ) { Text("信用卡消费（默认30）", fontSize = 16.sp) }
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = {
+                        try {
+                            dayBooks.cardPay(UUID.randomUUID().toString(), amount.ifBlank { "30.00" })
+                            stamp += 1
+                            error = ""
+                        } catch (_: LedgerException) {
+                            error = "还款失败"
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Surface, contentColor = Ink),
+                ) { Text("还信用卡（不算消费）", fontSize = 16.sp) }
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = {
+                        try {
+                            dayBooks.reverseLast()
+                            stamp += 1
+                            error = ""
+                        } catch (e: LedgerException) {
+                            error = if (e.code.name == "ALREADY_REVERSED") "已经冲销过" else "冲销失败"
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Surface, contentColor = Ink),
+                ) { Text("冲销上一笔", fontSize = 16.sp) }
                 if (error.isNotEmpty()) Text(error, color = Color(0xFFB00020), fontSize = 16.sp)
                 Spacer(Modifier.height(16.dp))
                 val rows = books.recentExpenseMinors()

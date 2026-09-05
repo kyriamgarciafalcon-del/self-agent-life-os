@@ -53,7 +53,7 @@ jobs:
 
       - name: Build signed V2 shell APK
         working-directory: v2-native/android
-        run: gradle --no-daemon assembleDebug -PversionCode="$((2000 + GITHUB_RUN_NUMBER))" -PversionName="2.0.0-card.${GITHUB_RUN_NUMBER}"
+        run: gradle --no-daemon assembleDebug -PversionCode="$((2000 + GITHUB_RUN_NUMBER))" -PversionName="2.0.0-alarm.${GITHUB_RUN_NUMBER}"
 
       - name: Verify stable update signature
         run: python3 android/scripts/verify-update-cert.py v2-native/android/app/build/outputs/apk/debug/app-debug.apk

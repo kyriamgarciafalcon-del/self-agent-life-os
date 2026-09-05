@@ -70,7 +70,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val books = AndroidLedgerBooks(this).also { it.ensureCashAndExpenseAccounts() }
         val tasks = AndroidTaskBoard(this)
-        val calendar = AndroidCalendar(this)
+        val calendar = AndroidCalendar(this).also { it.rescheduleAlarms() }
         val expense = RecordExpense(PostJournal(books), books)
         val dayBooks = DayToDayBooks(PostJournal(books), expense)
         val inbox = AndroidInbox(this, expense)
@@ -220,13 +220,15 @@ fun ShellApp(
                         val title = eventTitle.trim()
                         val time = runCatching { LocalTime.parse(eventHour.trim()) }.getOrNull()
                         if (title.isEmpty() || time == null) return@Button
-                        calendar.add(UUID.randomUUID().toString(), title, LocalDateTime.of(day, time))
+                        val scheduled = calendar.add(UUID.randomUUID().toString(), title, LocalDateTime.of(day, time))
                         eventTitle = ""
                         stamp += 1
+                        error = if (scheduled == 0) "时间已过，没有设置提醒" else "已安排 ${scheduled} 个提醒（提前10分钟和到点）"
                     },
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Ink),
                 ) { Text("添加今天的日程", fontSize = 16.sp) }
+                if (error.isNotEmpty()) Text(error, color = Ink, fontSize = 16.sp)
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
                     value = newTitle,

@@ -13,11 +13,10 @@ class InboxServiceTest {
     @TempDir
     lateinit var dir: Path
 
-    private fun inbox(): InboxService {
-        val store = LedgerStore.open(dir.resolve("ledger.sqlite"))
-        store.ensureCashAndExpenseAccounts()
-        return InboxService(RecordExpense(PostJournal(store), store))
-    }
+    private fun books() = LedgerStore.open(dir.resolve("ledger.sqlite")).also { it.ensureCashAndExpenseAccounts() }
+
+    private fun inbox(store: LedgerStore = books()): InboxService =
+        InboxService.open(dir.resolve("inbox.sqlite"), RecordExpense(PostJournal(store), store))
 
     @Test
     fun `draft is not a journal until confirmed`() {
@@ -47,12 +46,22 @@ class InboxServiceTest {
         try {
             inbox.ignore("d1", expectedVersion = 1)
         } catch (_: app.selfagent.v2.ledger.LedgerException) {
-            // stale version must not ignore the current draft
         }
         assertEquals(1, inbox.pending().size)
         inbox.confirm("d1", expectedVersion = 2)
         assertEquals(0, inbox.pending().size)
         assertEquals(2000L, inbox.record.books.balance("expense", Currency.CNY))
         assertEquals(1, inbox.record.books.journalCount())
+    }
+
+    @Test
+    fun `reopened file still has pending draft and no journal`() {
+        val store = books()
+        inbox(store).offer(InboxDraft("keep", "12.00", version = 1))
+        val again = InboxService.open(dir.resolve("inbox.sqlite"), RecordExpense(PostJournal(store), store))
+        assertEquals(listOf("keep"), again.pending().map { it.id })
+        assertEquals(0, store.journalCount())
+        again.confirm("keep", expectedVersion = 1)
+        assertEquals(1200L, store.balance("expense", Currency.CNY))
     }
 }

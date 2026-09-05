@@ -39,7 +39,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.selfagent.v2.inbox.InboxDraft
-import app.selfagent.v2.inbox.InboxService
 import app.selfagent.v2.life.LifeTasks
 import app.selfagent.v2.ledger.LedgerBooks
 import app.selfagent.v2.ledger.LedgerException
@@ -69,14 +68,14 @@ class MainActivity : ComponentActivity() {
         val books = AndroidLedgerBooks(this).also { it.ensureCashAndExpenseAccounts() }
         val tasks = AndroidTaskBoard(this)
         val expense = RecordExpense(PostJournal(books), books)
-        val inbox = InboxService(expense)
+        val inbox = AndroidInbox(this, expense)
         enableEdgeToEdge()
         setContent { ShellApp(expense, tasks, inbox) }
     }
 }
 
 @Composable
-fun ShellApp(record: RecordExpense, tasks: LifeTasks, inbox: InboxService) {
+fun ShellApp(record: RecordExpense, tasks: LifeTasks, inbox: AndroidInbox) {
     var tab by rememberSaveable { mutableStateOf(ShellTab.Today.name) }
     var composing by rememberSaveable { mutableStateOf(false) }
     var amount by rememberSaveable { mutableStateOf("") }

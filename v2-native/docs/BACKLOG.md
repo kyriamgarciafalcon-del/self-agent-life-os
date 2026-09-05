@@ -32,7 +32,7 @@ P-06 是阶段 0 出关锁。未完成不得打开 F-01。
 | ID | 任务 | 依赖 | 未来路径 | RED | GREEN | 验收 | Owner | 状态 |
 |---|---|---|---|---|---|---|---|---|
 | F-01 | Money 与币种解析 | P-06 | `v2-native/core/src/main/kotlin/app/selfagent/v2/money/Money.kt` | JPY 带小数、溢出、非法串、经 Double 的解析被测试捕获且失败 | 整数最小单位；列表外币种拒绝；不改写为 0 | 精度、符号、JPY、非法值、溢出 | `@owner-android` | done |
-| F-02 | 账务表与初始迁移 | F-01 | `v2-native/data/room/AppDatabase.kt` `entities/` `dao/` `Migrations.kt` `AppDatabaseTest.kt` | 无外键仍能插入不平衡/孤儿 posting | 外键、唯一 journalId、空库可备份恢复原型 | 外键、唯一 ID、备份恢复原型 | `@owner-android` | blocked |
+| F-02 | 账务表与初始迁移 | F-01 | `v2-native/core/src/main/kotlin/app/selfagent/v2/ledger/LedgerStore.kt` | 无外键仍能插入不平衡/孤儿 posting | 外键、唯一 journalId、空库可备份恢复原型 | JVM SQLite 不变量已绿；Android Room 绑定后置 | `@owner-android` | done |
 | F-03 | PostJournal 命令 | F-02 | `v2-native/domain/ledger/PostJournal.kt` `v2-native/application/CommandService.kt` `PostJournalTest.kt` | 币种不匹配、缺账户、零金额仍入账 | 单事务写 journal+postings+receipt；每币种 Σ=0 | 事务、平衡、账户币种、幂等 commandId | `@owner-android` | blocked |
 | F-04 | 冲销与更正 | F-03 | `v2-native/domain/ledger/ReverseJournal.kt` `CorrectJournal.kt` `ReverseJournalTest.kt` | 重复冲销产生第二套凭证；更正中断留下半笔 | 原 ID 保留；反向+新凭证同事务；同命令重放返回既有结果 | 唯一 ID、重复调用、原子替代 | `@owner-android` | blocked |
 | F-05 | 往来与结算分配 | F-03 | `v2-native/domain/ledger/Claim.kt` `SettleClaim.kt` `ClaimTest.kt` | 超额收回成功；跨币种被接受 | 部分收回；未结≥0；超额拒绝 | 部分收回、超额拒绝、核销 | `@owner-android` | blocked |

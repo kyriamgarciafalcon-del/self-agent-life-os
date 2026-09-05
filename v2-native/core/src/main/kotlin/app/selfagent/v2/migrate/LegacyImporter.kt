@@ -53,4 +53,12 @@ object LegacyImporter {
     fun applyIfClear(report: DryRunReport, store: LedgerStore) {
         if (!report.canApply) return
     }
+
+    fun explain(report: DryRunReport): String {
+        if (!report.canApply) {
+            val ids = report.ambiguities.take(8).joinToString().ifBlank { "无" }
+            return "不能切换当前库。原因：${report.blockers.joinToString()}。歧义：$ids。现有账本未改。"
+        }
+        return "可映射 ${report.transactionCount} 笔，估算日期 ${report.estimatedOccurredAt}，币种 ${report.currencies.joinToString()}。未写入，当前库不变。"
+    }
 }

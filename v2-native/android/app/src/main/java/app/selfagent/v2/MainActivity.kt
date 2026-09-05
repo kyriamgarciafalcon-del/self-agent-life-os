@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.selfagent.v2.inbox.InboxDraft
 import app.selfagent.v2.life.LifeTasks
+import app.selfagent.v2.migrate.LegacyImporter
 import app.selfagent.v2.ledger.DayToDayBooks
 import app.selfagent.v2.ledger.LedgerBooks
 import app.selfagent.v2.ledger.LedgerException
@@ -450,6 +451,42 @@ fun ShellApp(
                             .height(48.dp),
                     ) { Text("取消", fontSize = 16.sp, color = Muted) }
                 }
+            } else if (current == ShellTab.Assistant) {
+                stamp
+                Text("迁移演练", color = Ink, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                Text("只出差异报告，不会切换当前账本。加密备份仍未开。", color = Muted, fontSize = 16.sp)
+                Text("当前分录 ${books.journalCount()} 条", color = Ink, fontSize = 16.sp)
+                Spacer(Modifier.height(12.dp))
+                Button(
+                    onClick = {
+                        error = LegacyImporter.explain(LegacyImporter.dryRun(SAMPLE_DEMO))
+                        stamp += 1
+                    },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Surface, contentColor = Ink),
+                ) { Text("演练：演示数据", fontSize = 16.sp) }
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = {
+                        error = LegacyImporter.explain(LegacyImporter.dryRun(SAMPLE_DUP))
+                        stamp += 1
+                    },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Surface, contentColor = Ink),
+                ) { Text("演练：重复 ID", fontSize = 16.sp) }
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = {
+                        error = LegacyImporter.explain(LegacyImporter.dryRun(SAMPLE_OK))
+                        stamp += 1
+                    },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Ink),
+                ) { Text("演练：可映射样例", fontSize = 16.sp) }
+                if (error.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    Text(error, color = Ink, fontSize = 16.sp)
+                }
             } else {
                 Text(emptyTitle(current), color = Ink, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(8.dp))
@@ -500,3 +537,12 @@ private fun emptyBody(tab: ShellTab): String = when (tab) {
     ShellTab.Life -> "健康趋势只基于真实数据，缺日不补零。"
     ShellTab.Assistant -> "断网或未授权时显示不可用，不编造答案。"
 }
+
+private const val SAMPLE_DEMO =
+    """{"schemaVersion":4,"demoMode":true,"accounts":[{"id":"wechat"}],"transactions":[{"id":"t1","kind":"expense","amount":30,"currency":"CNY"}]}"""
+
+private const val SAMPLE_DUP =
+    """{"schemaVersion":4,"demoMode":false,"accounts":[{"id":"cash","currency":"CNY"}],"transactions":[{"id":"t1","kind":"expense","amount":"10.00","currency":"CNY","occurredAt":"2026-09-01"},{"id":"t1","kind":"expense","amount":"20.00","currency":"CNY","occurredAt":"2026-09-02"}]}"""
+
+private const val SAMPLE_OK =
+    """{"schemaVersion":4,"demoMode":false,"accounts":[{"id":"cash","currency":"CNY"}],"transactions":[{"id":"t1","kind":"expense","amount":"30.00","accountId":"cash","currency":"CNY","createdAt":"2026-09-01T12:00:00+08:00"}]}"""

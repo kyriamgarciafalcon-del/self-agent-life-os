@@ -52,5 +52,10 @@ class LegacyImporterTest {
         assertEquals(1, report.transactionCount)
         assertEquals(1, report.estimatedOccurredAt)
         assertEquals("CNY", report.currencies.single())
+        val store = LedgerStore.open(dir.resolve("ok.sqlite"))
+        val before = store.journalCount()
+        LegacyImporter.applyIfClear(report, store)
+        assertEquals(before, store.journalCount())
+        assertTrue(LegacyImporter.explain(report).contains("未写入"))
     }
 }

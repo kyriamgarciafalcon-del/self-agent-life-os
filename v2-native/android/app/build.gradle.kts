@@ -67,10 +67,7 @@ android {
         jvmTarget = "17"
     }
 
-    sourceSets.getByName("main").java {
-        srcDir("../../core/src/main/kotlin")
-        exclude("**/migrate/**")
-    }
+    sourceSets.getByName("main").java.srcDir("../../core/src/main/kotlin")
 }
 
 dependencies {

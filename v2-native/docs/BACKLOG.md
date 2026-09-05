@@ -27,8 +27,8 @@
 | F-04 | 冲销与更正 | F-03 | 同上 | RED：重复冲销出第二笔 | 唯一 ID、原子替代 |
 | F-05 | 往来与结算 | F-03 | 同上 | RED：超额收回成功 | 部分收回、核销 |
 | F-06 | 唯一查询层 | F-03 F-05 | `v2-native/application/query/` | RED：页面与查询数字不一致 | 余额/消费/现金流/净资产样例 |
-| D-01 | 加密备份与临时库恢复 | F-02 | `v2-native/data/backup/` | RED：坏文件覆盖当前库 | 换机、截断、失败回退 |
-| D-02 | 旧版迁移 dry-run | F-04 F-05 F-06 | `v2-native/data/migrate/` | RED：无差异报告仍启用 | 歧义隔离 |
+| BAK-01 | 加密备份与临时库恢复（基线 D-01） | F-02 | `v2-native/data/backup/` | RED：坏文件覆盖当前库 | 换机、截断、失败回退 |
+| BAK-02 | 旧版迁移 dry-run（基线 D-02） | F-04 F-05 F-06 | `v2-native/data/migrate/` | RED：无差异报告仍启用 | 歧义隔离 |
 
 财务硬门槛见基线 §12.1，任一失败停止可写发布。
 
@@ -40,7 +40,7 @@
 | U-02 | 一页记账与账本 | U-01 F-06 | `v2-native/feature/ledger/` | 操作测试含真实保存 |
 | L-01 | 今天/任务/日程基础 | U-01 | `v2-native/feature/today/` `life/` | 完成任务、无复制三条记录 |
 | I-01 | 收件箱与命令回执 | F-03 | `v2-native/feature/inbox/` | 版本确认、并发点击、去重 |
-| D-03 | 迁移演练 + 备份恢复 UI | D-01 D-02 | `v2-native/feature/settings/` | 失败保留当前库 |
+| BAK-03 | 迁移演练 + 备份恢复 UI | BAK-01 BAK-02 | `v2-native/feature/settings/` | 失败保留当前库 |
 
 ## 阶段 3+
 

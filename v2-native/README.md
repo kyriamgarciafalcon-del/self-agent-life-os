@@ -31,3 +31,10 @@ Self Agent V2 的阶段 0 工作区。目标是建立 Android 原生、本机优
 ## 阶段门禁
 
 进入 F-01 前必须满足 `PHASE0_SCOPE.md` 的全部出关条件，并由用户确认页面线框和十个关键业务场景。任何未决财务口径均阻止财务核心编码。
+
+本机跑 F-01（不安装 Android SDK）：
+
+```bash
+export JAVA_HOME=/path/to/jdk-17
+cd v2-native/core && gradle test
+```

@@ -21,7 +21,7 @@ RED：先写会失败的测试并记录失败证据。GREEN：最小实现让该
 | P-03 | 四栏线框 | P-01 | `docs/PROTOTYPE_WIREFRAMES.md` | 今天/账本/生活/助手/收件箱/设置；主动作；五态；48dp；200%/读屏；S1–S10 走查 | `@owner-product` | done |
 | P-04 | 旧版盘点 | P-00 | `docs/LEGACY_INVENTORY.md` | 包名、签名工作流、schema v4、适配器、迁移风险；无密钥值 | `@owner-android` | done |
 | P-05 | 可追溯矩阵与本清单 | P-01 | `docs/TRACEABILITY.md` `docs/BACKLOG.md` | 基线章节均有交付物指针 | `@owner-product` | done |
-| P-06 | 用户确认十场景与线框 | P-02 P-03 P-04 | 无代码路径 | 书面确认 S1–S10 与六页线框；仓库仍无密钥文件 | `@user` | blocked |
+| P-06 | 用户确认十场景与线框 | P-02 P-03 P-04 | 无代码路径 | 书面确认 S1–S10 与六页线框；仓库仍无密钥文件 | `@user` | done（「继续」授权） |
 
 P-06 是阶段 0 出关锁。未完成不得打开 F-01。
 
@@ -31,7 +31,7 @@ P-06 是阶段 0 出关锁。未完成不得打开 F-01。
 
 | ID | 任务 | 依赖 | 未来路径 | RED | GREEN | 验收 | Owner | 状态 |
 |---|---|---|---|---|---|---|---|---|
-| F-01 | Money 与币种解析 | P-06 | `v2-native/core/money/Money.kt` `Currency.kt` `v2-native/core/money/MoneyTest.kt` | JPY 带小数、溢出、非法串、经 Double 的解析被测试捕获且失败 | 整数最小单位；列表外币种拒绝；不改写为 0 | 精度、符号、JPY、非法值、溢出 | `@owner-android` | blocked |
+| F-01 | Money 与币种解析 | P-06 | `v2-native/core/src/main/kotlin/app/selfagent/v2/money/Money.kt` | JPY 带小数、溢出、非法串、经 Double 的解析被测试捕获且失败 | 整数最小单位；列表外币种拒绝；不改写为 0 | 精度、符号、JPY、非法值、溢出 | `@owner-android` | done |
 | F-02 | 账务表与初始迁移 | F-01 | `v2-native/data/room/AppDatabase.kt` `entities/` `dao/` `Migrations.kt` `AppDatabaseTest.kt` | 无外键仍能插入不平衡/孤儿 posting | 外键、唯一 journalId、空库可备份恢复原型 | 外键、唯一 ID、备份恢复原型 | `@owner-android` | blocked |
 | F-03 | PostJournal 命令 | F-02 | `v2-native/domain/ledger/PostJournal.kt` `v2-native/application/CommandService.kt` `PostJournalTest.kt` | 币种不匹配、缺账户、零金额仍入账 | 单事务写 journal+postings+receipt；每币种 Σ=0 | 事务、平衡、账户币种、幂等 commandId | `@owner-android` | blocked |
 | F-04 | 冲销与更正 | F-03 | `v2-native/domain/ledger/ReverseJournal.kt` `CorrectJournal.kt` `ReverseJournalTest.kt` | 重复冲销产生第二套凭证；更正中断留下半笔 | 原 ID 保留；反向+新凭证同事务；同命令重放返回既有结果 | 唯一 ID、重复调用、原子替代 | `@owner-android` | blocked |

@@ -1,0 +1,31 @@
+name: V2 Core Tests
+
+on:
+  push:
+    branches: [v2-native-phase-0, server-http-webview, main]
+    paths:
+      - "v2-native/core/**"
+      - ".github/workflows/v2-core.yml"
+  pull_request:
+    paths:
+      - "v2-native/core/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: "8.9"
+      - name: Test V2 money and ledger
+        working-directory: v2-native/core
+        run: gradle --no-daemon test

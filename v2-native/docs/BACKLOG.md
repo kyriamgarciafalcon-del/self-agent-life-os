@@ -38,7 +38,7 @@ P-06 是阶段 0 出关锁。未完成不得打开 F-01。
 | F-05 | 往来与结算分配 | F-03 | 同上 ClaimService | 超额收回成功；跨币种被接受 | 部分收回；未结≥0；超额拒绝 | 部分收回、超额拒绝、核销 | `@owner-android` | done |
 | F-06 | 唯一查询层 | F-03 F-05 | 同上 LedgerQueries | 页面私自 reduce 与查询结果不一致即可红 | 余额/个人消费/现金流/净资产固定样例一致 | 与报表名称、公式同 `FINANCE_RULES.md` | `@owner-android` | done |
 | BAK-01 | 加密备份与临时库恢复（基线 D-01） | F-02 | `v2-native/data/backup/EncryptedBackup.kt` `RestoreTest.kt` | 坏文件/错误口令覆盖当前库 | 先写临时库；失败回退；导出不含密钥 | 换机、截断、篡改、失败回退（库未定则功能不开，见 Q-04） | `@owner-android` | blocked |
-| BAK-02 | 旧版迁移 dry-run（基线 D-02） | F-04 F-05 F-06 | `v2-native/data/migrate/LegacyImporter.kt` `Mapping.kt` `DryRunReport.kt` `LegacyImporterTest.kt` | 无差异报告仍启用新库；重复旧 ID 被当成同一凭证 | 来源键=批次+位置；歧义隔离；演示数据默认不迁 | 差异报告与歧义清单；不写密钥 | `@owner-android` | blocked |
+| BAK-02 | 旧版迁移 dry-run（基线 D-02） | F-04 F-05 F-06 | `v2-native/core/src/main/kotlin/app/selfagent/v2/migrate/LegacyImporter.kt` | 无差异报告仍启用新库；重复旧 ID 被当成同一凭证 | 来源键=批次+位置；歧义隔离；演示数据默认不迁 | 差异报告与歧义清单；不写密钥 | `@owner-android` | done |
 
 财务可写发布硬门槛：基线 §12.1 十条，**任一失败停止发布**。阶段 1 出关至少覆盖其中与 F-01–F-06 相关的不变量测试。
 

@@ -2,13 +2,12 @@ package app.selfagent.v2
 
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
-import android.database.sqlite.SQLiteOpenHelper
 import app.selfagent.v2.life.LifeTasks
 import app.selfagent.v2.life.TodayItem
 import java.time.LocalDate
 
 class AndroidTaskBoard(context: Context) : LifeTasks {
-    private val db: SQLiteDatabase = Helper(context).writableDatabase
+    private val db: SQLiteDatabase = LifeDb(context).writableDatabase
 
     override fun addDailyRule(id: String, title: String) {
         if (ruleExists(id)) return
@@ -52,29 +51,4 @@ class AndroidTaskBoard(context: Context) : LifeTasks {
 
     override fun ruleExists(id: String): Boolean =
         db.rawQuery("SELECT 1 FROM task_rule WHERE id = ?", arrayOf(id)).use { it.moveToFirst() }
-
-    private class Helper(context: Context) : SQLiteOpenHelper(context, "v2-life.sqlite", null, 1) {
-        override fun onCreate(db: SQLiteDatabase) {
-            db.execSQL(
-                """
-                CREATE TABLE task_rule (
-                  id TEXT PRIMARY KEY,
-                  title TEXT NOT NULL,
-                  kind TEXT NOT NULL
-                )
-                """.trimIndent(),
-            )
-            db.execSQL(
-                """
-                CREATE TABLE task_instance (
-                  rule_id TEXT NOT NULL,
-                  day TEXT NOT NULL,
-                  PRIMARY KEY (rule_id, day)
-                )
-                """.trimIndent(),
-            )
-        }
-
-        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
-    }
 }

@@ -47,6 +47,8 @@ import app.selfagent.v2.ledger.PostJournal
 import app.selfagent.v2.ledger.RecordExpense
 import app.selfagent.v2.money.Currency
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
 import java.util.UUID
 
 private val Canvas = Color(0xFFF2F2F7)
@@ -67,19 +69,22 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val books = AndroidLedgerBooks(this).also { it.ensureCashAndExpenseAccounts() }
         val tasks = AndroidTaskBoard(this)
+        val calendar = AndroidCalendar(this)
         val expense = RecordExpense(PostJournal(books), books)
         val inbox = AndroidInbox(this, expense)
         enableEdgeToEdge()
-        setContent { ShellApp(expense, tasks, inbox) }
+        setContent { ShellApp(expense, tasks, inbox, calendar) }
     }
 }
 
 @Composable
-fun ShellApp(record: RecordExpense, tasks: LifeTasks, inbox: AndroidInbox) {
+fun ShellApp(record: RecordExpense, tasks: LifeTasks, inbox: AndroidInbox, calendar: AndroidCalendar) {
     var tab by rememberSaveable { mutableStateOf(ShellTab.Today.name) }
     var composing by rememberSaveable { mutableStateOf(false) }
     var amount by rememberSaveable { mutableStateOf("") }
     var newTitle by rememberSaveable { mutableStateOf("") }
+    var eventTitle by rememberSaveable { mutableStateOf("") }
+    var eventHour by rememberSaveable { mutableStateOf("15:00") }
     var error by rememberSaveable { mutableStateOf("") }
     var saving by rememberSaveable { mutableStateOf(false) }
     var commandId by rememberSaveable { mutableStateOf(UUID.randomUUID().toString()) }
@@ -183,8 +188,37 @@ fun ShellApp(record: RecordExpense, tasks: LifeTasks, inbox: AndroidInbox) {
                 stamp
                 val day = LocalDate.now()
                 val items = tasks.today(day)
+                val events = calendar.on(day)
                 Text("今天", color = Ink, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
-                Text("完成只记今天这一次，明天仍会出现。", color = Muted, fontSize = 16.sp)
+                Text("日程按本地日历日；完成任务只记今天这一次。", color = Muted, fontSize = 16.sp)
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = eventTitle,
+                    onValueChange = { eventTitle = it },
+                    placeholder = { Text("日程标题") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = eventHour,
+                    onValueChange = { eventHour = it },
+                    placeholder = { Text("15:00") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = {
+                        val title = eventTitle.trim()
+                        val time = runCatching { LocalTime.parse(eventHour.trim()) }.getOrNull()
+                        if (title.isEmpty() || time == null) return@Button
+                        calendar.add(UUID.randomUUID().toString(), title, LocalDateTime.of(day, time))
+                        eventTitle = ""
+                        stamp += 1
+                    },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Ink),
+                ) { Text("添加今天的日程", fontSize = 16.sp) }
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
                     value = newTitle,
@@ -208,8 +242,22 @@ fun ShellApp(record: RecordExpense, tasks: LifeTasks, inbox: AndroidInbox) {
                     colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Ink),
                 ) { Text("添加每天", fontSize = 16.sp) }
                 Spacer(Modifier.height(16.dp))
-                if (items.isEmpty()) {
+                if (events.isNotEmpty()) {
+                    Text("日程", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                    events.forEach { event ->
+                        Text(
+                            "${event.start.toLocalTime()}  ${event.title}",
+                            color = Ink,
+                            fontSize = 16.sp,
+                            modifier = Modifier.padding(vertical = 8.dp),
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+                if (items.isEmpty() && events.isEmpty()) {
                     Text("今天还没有下一件事", color = Muted, fontSize = 16.sp)
+                } else if (items.isEmpty()) {
+                    Text("今天没有未完成任务", color = Muted, fontSize = 16.sp)
                 } else {
                     items.forEach { item ->
                         Row(

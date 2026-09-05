@@ -38,6 +38,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.selfagent.v2.inbox.InboxDraft
+import app.selfagent.v2.inbox.InboxService
 import app.selfagent.v2.life.LifeTasks
 import app.selfagent.v2.ledger.LedgerBooks
 import app.selfagent.v2.ledger.LedgerException
@@ -66,13 +68,15 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val books = AndroidLedgerBooks(this).also { it.ensureCashAndExpenseAccounts() }
         val tasks = AndroidTaskBoard(this)
+        val expense = RecordExpense(PostJournal(books), books)
+        val inbox = InboxService(expense)
         enableEdgeToEdge()
-        setContent { ShellApp(RecordExpense(PostJournal(books), books), tasks) }
+        setContent { ShellApp(expense, tasks, inbox) }
     }
 }
 
 @Composable
-fun ShellApp(record: RecordExpense, tasks: LifeTasks) {
+fun ShellApp(record: RecordExpense, tasks: LifeTasks, inbox: InboxService) {
     var tab by rememberSaveable { mutableStateOf(ShellTab.Today.name) }
     var composing by rememberSaveable { mutableStateOf(false) }
     var amount by rememberSaveable { mutableStateOf("") }
@@ -80,6 +84,8 @@ fun ShellApp(record: RecordExpense, tasks: LifeTasks) {
     var error by rememberSaveable { mutableStateOf("") }
     var saving by rememberSaveable { mutableStateOf(false) }
     var commandId by rememberSaveable { mutableStateOf(UUID.randomUUID().toString()) }
+    var showInbox by rememberSaveable { mutableStateOf(false) }
+    var draftAmount by rememberSaveable { mutableStateOf("") }
     var stamp by remember { mutableStateOf(0) }
     val current = ShellTab.valueOf(tab)
     val books: LedgerBooks = record.books
@@ -97,7 +103,13 @@ fun ShellApp(record: RecordExpense, tasks: LifeTasks) {
         ) {
             Text("Self Agent V2", color = Ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.weight(1f))
-            Text("收件箱 0", color = Muted, fontSize = 14.sp)
+            TextButton(
+                onClick = { showInbox = !showInbox },
+                modifier = Modifier.height(48.dp),
+            ) {
+                stamp
+                Text("收件箱 ${inbox.pending().size}", color = Ink, fontSize = 16.sp)
+            }
         }
         Column(
             Modifier
@@ -107,7 +119,7 @@ fun ShellApp(record: RecordExpense, tasks: LifeTasks) {
                 .fillMaxWidth(),
         ) {
             Text("内测可记账", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Medium)
-            Text("内测：记账默认 CNY；任务按天完成，不删掉每天规则。", color = Ink, fontSize = 16.sp)
+            Text("草稿确认后才入账。忽略不记账。过期版本不能确认。", color = Ink, fontSize = 16.sp)
         }
         Column(
             Modifier
@@ -116,7 +128,59 @@ fun ShellApp(record: RecordExpense, tasks: LifeTasks) {
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState()),
         ) {
-            if (current == ShellTab.Today) {
+            if (showInbox) {
+                stamp
+                Text("收件箱", color = Ink, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                Text("确认才调用 PostJournal。草稿不在账本里。", color = Muted, fontSize = 16.sp)
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = draftAmount,
+                    onValueChange = { draftAmount = it },
+                    placeholder = { Text("30.00") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = {
+                        val text = draftAmount.trim()
+                        if (text.isEmpty()) return@Button
+                        inbox.offer(InboxDraft(UUID.randomUUID().toString(), text, version = 1))
+                        draftAmount = ""
+                        stamp += 1
+                    },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Ink),
+                ) { Text("放入草稿", fontSize = 16.sp) }
+                Spacer(Modifier.height(16.dp))
+                val pending = inbox.pending()
+                if (pending.isEmpty()) {
+                    Text("没有待确认草稿", color = Muted, fontSize = 16.sp)
+                } else {
+                    pending.forEach { item ->
+                        Row(
+                            Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("餐饮 ¥${item.amount}", color = Ink, fontSize = 16.sp, modifier = Modifier.weight(1f))
+                            TextButton(
+                                onClick = {
+                                    inbox.confirm(item.id, item.version)
+                                    stamp += 1
+                                },
+                                modifier = Modifier.height(48.dp),
+                            ) { Text("确认", color = Ink, fontSize = 16.sp) }
+                            TextButton(
+                                onClick = {
+                                    inbox.ignore(item.id, item.version)
+                                    stamp += 1
+                                },
+                                modifier = Modifier.height(48.dp),
+                            ) { Text("忽略", color = Muted, fontSize = 16.sp) }
+                        }
+                    }
+                }
+            } else if (current == ShellTab.Today) {
                 stamp
                 val day = LocalDate.now()
                 val items = tasks.today(day)

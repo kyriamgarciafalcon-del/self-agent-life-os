@@ -7,7 +7,7 @@ import java.nio.file.StandardCopyOption
 import java.sql.Connection
 import java.sql.DriverManager
 
-enum class LedgerError { FOREIGN_KEY, UNBALANCED, DUPLICATE_ID, INVALID }
+enum class LedgerError { FOREIGN_KEY, UNBALANCED, DUPLICATE_ID, INVALID, COMMAND_CONFLICT }
 
 class LedgerException(val code: LedgerError) : IllegalArgumentException(code.name)
 
@@ -23,10 +23,11 @@ data class JournalDraft(
     val id: String,
     val commandId: String,
     val postings: List<PostingDraft>,
+    val payloadHash: String = "",
 )
 
 class LedgerStore private constructor(private val path: Path, private var connection: Connection) {
-    fun createLedgerAccount(id: String, currency: Currency) {
+    fun createLedgerAccount(id: String, currency: Currency = Currency.CNY) {
         connection.prepareStatement("INSERT INTO ledger_account(id, currency) VALUES (?, ?)").use { statement ->
             statement.setString(1, id)
             statement.setString(2, currency.name)
@@ -49,9 +50,10 @@ class LedgerStore private constructor(private val path: Path, private var connec
         }
         connection.autoCommit = false
         try {
-            connection.prepareStatement("INSERT INTO journal_entry(id, command_id) VALUES (?, ?)").use { statement ->
+            connection.prepareStatement("INSERT INTO journal_entry(id, command_id, payload_hash) VALUES (?, ?, ?)").use { statement ->
                 statement.setString(1, draft.id)
                 statement.setString(2, draft.commandId)
+                statement.setString(3, draft.payloadHash)
                 statement.executeUpdate()
             }
             connection.prepareStatement(
@@ -127,6 +129,22 @@ class LedgerStore private constructor(private val path: Path, private var connec
             }
         }
 
+    fun receiptFor(commandId: String): CommandReceipt? =
+        connection.prepareStatement(
+            "SELECT command_id, id, payload_hash FROM journal_entry WHERE command_id = ?",
+        ).use { statement ->
+            statement.setString(1, commandId)
+            statement.executeQuery().use { rows ->
+                if (!rows.next()) null
+                else CommandReceipt(
+                    commandId = rows.getString(1),
+                    journalId = rows.getString(2),
+                    payloadHash = rows.getString(3),
+                    status = "committed",
+                )
+            }
+        }
+
     private fun journalExists(id: String): Boolean =
         connection.prepareStatement("SELECT 1 FROM journal_entry WHERE id = ?").use { statement ->
             statement.setString(1, id)
@@ -159,7 +177,8 @@ class LedgerStore private constructor(private val path: Path, private var connec
                     """
                     CREATE TABLE IF NOT EXISTS journal_entry (
                       id TEXT PRIMARY KEY,
-                      command_id TEXT NOT NULL UNIQUE
+                      command_id TEXT NOT NULL UNIQUE,
+                      payload_hash TEXT NOT NULL DEFAULT ''
                     )
                     """.trimIndent(),
                 )

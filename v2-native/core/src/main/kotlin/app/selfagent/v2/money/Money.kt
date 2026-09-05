@@ -34,6 +34,8 @@ class Money(val minor: Long, val currency: Currency) {
     }
 
     companion object {
+        fun parse(text: String): Money = parse(text, Currency.CNY)
+
         fun parse(text: String, currency: Currency): Money {
             val raw = text.trim()
             if (raw.isEmpty()) throw MoneyException(MoneyError.INVALID)

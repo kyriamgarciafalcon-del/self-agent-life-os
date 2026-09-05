@@ -224,7 +224,7 @@
         <label>金额（CNY）<input name="amount" inputmode="decimal" required placeholder="30.00" /></label>
         <label>账户<select name="account"><option>现金 CNY</option><option>微信 CNY</option></select></label>
         <label>分类<select name="category"><option>餐饮</option><option>交通</option></select></label>
-        <p class="muted">账户决定币种。换汇与往来走专用流程，不堆在这一页。</p>
+        <p class="muted">未选币种时默认人民币 CNY。账户币种必须匹配。换汇与往来走专用流程。</p>
         <button class="primary" type="submit" ${state.saving ? "disabled" : ""}>${state.saving ? "保存中" : "保存"}</button>
         <button class="ghost" type="button" id="close-overlay" style="width:100%;margin-top:8px">取消</button></form>`;
     }

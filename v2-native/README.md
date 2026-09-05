@@ -14,6 +14,7 @@ Self Agent V2 的阶段 0 工作区。目标是建立 Android 原生、本机优
 - 财务、健康、日程、AI、设备均通过定义明确的命令或查询边界。
 - 密码、验证码、私钥、助记词和恢复码永不进入 AI、业务备份、诊断包或设备端。
 - 阶段 0 未出关前，不创建 Room schema、Compose 空页面或 Gradle 模块。
+- 可点线框原型：[`prototype/index.html`](prototype/index.html)（纸面走查，不能记账）
 
 ## 文档索引
 

@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Self Agent V2 · 阶段 0 线框原型</title>
+  <style>
+    :root {
+      --bg: #F2F2F7;
+      --paper: #ffffff;
+      --ink: #1c2b24;
+      --muted: #6b7a73;
+      --line: #e4eae6;
+      --mint: #5e9b76;
+      --mint-soft: #e7f6ee;
+      --danger: #b42318;
+      --ok: #1f6b45;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: #d8ddd9; color: var(--ink); font: 16px/1.45 -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC", sans-serif; }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+    .phone {
+      max-width: 390px; min-height: 100dvh; margin: 0 auto; background: var(--bg);
+      display: flex; flex-direction: column; position: relative;
+    }
+    .top {
+      display: grid; grid-template-columns: 48px 1fr 48px; align-items: center;
+      gap: 8px; padding: 12px 16px 8px;
+    }
+    .icon-btn, .nav button, .primary, .ghost, .chip {
+      min-height: 48px; min-width: 48px; border: 0; border-radius: 12px;
+    }
+    .icon-btn { background: var(--paper); color: var(--ink); position: relative; }
+    .icon-btn .badge {
+      position: absolute; top: 6px; right: 6px; min-width: 16px; height: 16px;
+      border-radius: 8px; background: var(--mint); color: #fff; font-size: 10px; line-height: 16px; text-align: center;
+    }
+    .top h1 { margin: 0; font-size: 22px; letter-spacing: -0.02em; text-align: center; }
+    .banner {
+      margin: 0 16px 8px; padding: 8px 12px; border-radius: 10px;
+      background: #fff6d6; color: #5c4b12; font-size: 13px;
+    }
+    main { flex: 1; overflow: auto; padding: 8px 16px 96px; }
+    .kicker { color: var(--mint); font-size: 12px; font-weight: 800; letter-spacing: .08em; }
+    .muted { color: var(--muted); font-size: 13px; }
+    .card, .empty, .row {
+      background: var(--paper); border: 1px solid var(--line); border-radius: 16px;
+    }
+    .card { padding: 16px; margin-bottom: 12px; }
+    .empty { padding: 24px 16px; text-align: center; margin-bottom: 12px; }
+    .empty h2 { margin: 8px 0; font-size: 18px; }
+    .row { display: flex; justify-content: space-between; gap: 12px; padding: 14px; margin-bottom: 8px; align-items: center; }
+    .money { font-variant-numeric: tabular-nums; font-weight: 700; }
+    .primary { width: 100%; background: var(--mint); color: #fff; font-weight: 700; }
+    .primary[disabled] { opacity: .55; }
+    .ghost { background: var(--mint-soft); color: var(--ok); font-weight: 700; }
+    .chip { padding: 0 14px; background: var(--mint-soft); color: var(--ok); }
+    .chip.danger { background: #fde8e6; color: var(--danger); }
+    .ops { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+    .ops .chip, .ops .ghost { flex: 1; }
+    .nav {
+      position: sticky; bottom: 0; display: grid; grid-template-columns: repeat(4, 1fr);
+      background: var(--paper); border-top: 1px solid var(--line); padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+    }
+    .nav button { background: transparent; color: var(--muted); font-size: 12px; }
+    .nav button[aria-current="page"] { color: var(--ok); font-weight: 800; }
+    .sheet {
+      position: absolute; inset: 0; background: rgba(20, 32, 26, .45);
+      display: flex; align-items: flex-end;
+    }
+    .sheet form, .sheet .panel {
+      width: 100%; max-height: 86%; overflow: auto; background: var(--paper);
+      border-radius: 24px 24px 0 0; padding: 16px 16px 24px;
+    }
+    label { display: block; margin: 12px 0 6px; font-size: 13px; color: var(--muted); }
+    input, select {
+      width: 100%; min-height: 48px; border: 1px solid var(--line); border-radius: 12px; padding: 0 12px; background: var(--bg);
+    }
+    .live { position: absolute; left: -9999px; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="phone">
+    <div class="live" aria-live="polite" id="live"></div>
+    <header class="top">
+      <button class="icon-btn" id="open-settings" aria-label="设置">我</button>
+      <h1 id="title">今天</h1>
+      <button class="icon-btn" id="open-inbox" aria-label="收件箱">箱<span class="badge" id="badge" hidden>0</span></button>
+    </header>
+    <p class="banner">纸面原型，不能记账。样例只用于走查，不会写入旧版或新账本。</p>
+    <main id="main"></main>
+    <nav class="nav" aria-label="主导航">
+      <button type="button" data-tab="today" aria-current="page">今天</button>
+      <button type="button" data-tab="ledger">账本</button>
+      <button type="button" data-tab="life">生活</button>
+      <button type="button" data-tab="assistant">助手</button>
+    </nav>
+    <div class="sheet" id="overlay" hidden></div>
+  </div>
+  <script>
+    const titles = { today: "今天", ledger: "账本", life: "生活", assistant: "助手" };
+    const state = {
+      tab: "today",
+      sample: false,
+      offline: false,
+      healthOn: true,
+      nextDone: false,
+      inbox: [],
+      overlay: null,
+      saving: false,
+      recorded: false,
+    };
+    const sampleInbox = [
+      { id: "p1", title: "微信支付 36.00 CNY", note: "通知 · 候选重复已标记", status: "pending" },
+      { id: "p2", title: "垫付草稿 300.00 CNY", note: "个人 100 + 应收 200", status: "pending" },
+    ];
+    function say(text) { document.getElementById("live").textContent = text; }
+    function money(n, c = "CNY") { return `${c} ${n.toFixed(2)}`; }
+    function pending() { return state.inbox.filter((i) => i.status === "pending"); }
+    function setOverlay(html) {
+      const el = document.getElementById("overlay");
+      if (!html) { el.hidden = true; el.innerHTML = ""; state.overlay = null; return; }
+      el.hidden = false; el.innerHTML = html; state.overlay = true;
+    }
+    function render() {
+      document.getElementById("title").textContent = titles[state.tab];
+      document.querySelectorAll(".nav button").forEach((b) => b.setAttribute("aria-current", b.dataset.tab === state.tab ? "page" : "false"));
+      const n = pending().length;
+      const badge = document.getElementById("badge");
+      badge.hidden = n === 0; badge.textContent = String(n);
+      document.getElementById("main").innerHTML = view();
+    }
+    function view() {
+      if (state.tab === "today") return todayView();
+      if (state.tab === "ledger") return ledgerView();
+      if (state.tab === "life") return lifeView();
+      return assistantView();
+    }
+    function sampleToggle() {
+      return `<p class="muted">${state.sample ? "正在预览十场景样例。" : "默认空状态，不加载演示账本。"}</p>
+        <button class="ghost" type="button" id="toggle-sample">${state.sample ? "回到空状态" : "载入十场景样例"}</button>`;
+    }
+    function todayView() {
+      if (!state.sample) {
+        return `<div class="empty"><span class="kicker">今天</span><h2>还没有今天的安排</h2><p class="muted">添加任务或快速记录。不默认演示数据。</p>
+          <button class="primary" type="button" id="quick">快速记录</button></div>${sampleToggle()}`;
+      }
+      return `<p class="kicker">现在最需要处理什么？</p>
+        <p class="muted">星期六 · 数据更新于 07:10${state.offline ? " · 本机" : ""}</p>
+        <section class="card"><span class="kicker">下一件事</span>
+          <h2 style="margin:6px 0">${state.nextDone ? "暂无下一件事" : "12:20 午饭后散步"}</h2>
+          <p class="muted">${state.nextDone ? "已完成，未生成健康评分。" : "健康 · 20 分钟"}</p>
+          ${state.nextDone ? "" : `<div class="ops"><button class="primary" type="button" id="done-next" ${state.saving ? "disabled" : ""}>${state.saving ? "保存中" : "完成"}</button></div>`}
+        </section>
+        <section class="card"><span class="kicker">今日重点</span>
+          <p>整理季度预算 · 15:00</p><p>给妈妈打电话 · 19:30</p></section>
+        <section class="card"><span class="kicker">待确认</span>
+          ${pending().slice(0, 3).map((item) => `<div class="row"><div><strong>${item.title}</strong><div class="muted">${item.note}</div></div></div>
+            <div class="ops"><button class="chip" data-confirm="${item.id}">修改后确认</button><button class="chip danger" data-ignore="${item.id}">忽略</button></div>`).join("") || "<p class='muted'>没有待确认。</p>"}
+        </section>
+        ${state.healthOn ? `<section class="card"><span class="kicker">健康摘要</span><p>睡眠 <strong>6小时12分钟</strong> · 今日</p><p class="muted">不是诊断。权限关闭后助手不再读取。</p></section>` : `<p class="muted">健康摘要权限已关闭，本块不显示。</p>`}
+        <button class="primary" type="button" id="quick">快速记录</button>
+        ${sampleToggle()}`;
+    }
+    function ledgerView() {
+      if (!state.sample) {
+        return `<div class="empty"><span class="kicker">账本</span><h2>净资产</h2><p class="money" aria-label="人民币 0.00">${money(0)}</p>
+          <p class="muted">添加第一个账户或记一笔。汇率不在本页维护。</p>
+          <button class="primary" type="button" id="record">记一笔</button></div>${sampleToggle()}`;
+      }
+      return `<p class="kicker">钱和往来现在怎样？</p>
+        <section class="card"><span class="kicker">净资产</span>
+          <p class="money" style="font-size:28px" aria-label="人民币 12340.55">${money(12340.55)}</p>
+          <p class="muted">已知部分估值 · 2 笔 USD 未折算 · 绝不 1:1</p></section>
+        <div class="row"><span>本月个人消费</span><strong class="money">${money(1860)}</strong></div>
+        <div class="row"><span>本月收入</span><strong class="money">${money(8000)}</strong></div>
+        <div class="row"><span>往来待办</span><strong>应收 ${money(80)}</strong></div>
+        <p class="muted">垫付 300：消费 100、应收 200、现金流出 300。收回 120 后剩余应收 80，不算工资。</p>
+        <button class="primary" type="button" id="record">${state.recorded ? "再记一笔" : "记一笔"}</button>
+        ${state.recorded ? `<p class="muted">样例已模拟保存并给出撤销入口，未写入真实账本。</p>` : ""}
+        ${sampleToggle()}`;
+    }
+    function lifeView() {
+      return `<p class="kicker">日程、健康和资料在哪？</p>
+        <div class="row"><div><strong>日程</strong><div class="muted">有开始结束时间的安排</div></div><button class="chip" id="create-cal">创建</button></div>
+        <div class="row"><div><strong>任务</strong><div class="muted">待完成事项，完成的是实例</div></div><button class="chip" id="create-task">创建</button></div>
+        <div class="row"><div><strong>健康</strong><div class="muted">今日状态 → 7 日趋势 → 核心指标</div></div><button class="chip" id="open-health">打开</button></div>
+        <div class="row"><div><strong>行程</strong><div class="muted">缺字段保持待确认，不填 08:00</div></div><button class="chip" id="create-trip">创建</button></div>
+        <p class="muted">数据管理与身体资料折下。Health Connect、Gadgetbridge、导入排障分开。缺日不补 0。</p>
+        ${sampleToggle()}`;
+    }
+    function assistantView() {
+      return `<p class="kicker">帮我理解或准备一个动作</p>
+        <section class="card"><span class="kicker">能力状态</span>
+          <p><strong>${state.offline ? "无网络" : "未配置"}</strong></p>
+          <p class="muted">${state.offline ? "本机规则可用。外部 AI 不可用，不能说已回答。" : "可用本机规则。外部 AI 未连接，测试通过前不宣称在线。"}</p></section>
+        <section class="card"><p>问：今天有什么没做？</p>
+          <p class="muted">${state.sample ? "依据本机任务：季度预算 15:00、电话 19:30。无虚构评分。" : "还没有任务可引用。"}</p></section>
+        <button class="primary" type="button" id="ask">提问／发起草稿</button>
+        ${sampleToggle()}`;
+    }
+    function inboxPanel() {
+      const items = pending();
+      return `<div class="panel"><span class="kicker">收件箱</span><h2>哪些还没确认？</h2>
+        ${items.length ? items.map((item) => `<div class="card"><strong>${item.title}</strong><p class="muted">${item.note}</p>
+          <div class="ops"><button class="chip" data-confirm="${item.id}">修改后确认</button><button class="chip danger" data-ignore="${item.id}">忽略</button></div></div>`).join("") : `<div class="empty"><p>没有待确认草稿。</p></div>`}
+        <button class="ghost" type="button" id="close-overlay">关闭</button></div>`;
+    }
+    function settingsPanel() {
+      return `<div class="panel"><span class="kicker">设置</span><h2>数据和设备由谁控制？</h2>
+        <div class="row"><div><strong>健康摘要</strong><div class="muted">关则下次请求不再带健康</div></div>
+          <button class="chip" id="toggle-health">${state.healthOn ? "已开启" : "已关闭"}</button></div>
+        <div class="row"><div><strong>断网走查</strong><div class="muted">本机可记；AI 显示不可用</div></div>
+          <button class="chip" id="toggle-offline">${state.offline ? "断网" : "在线"}</button></div>
+        <div class="row"><div><strong>AI</strong><div class="muted">未配置 · 密钥不在此显示</div></div><span class="muted">—</span></div>
+        <div class="row"><div><strong>备份</strong><div class="muted">不含密码库与 API Key</div></div><span class="muted">—</span></div>
+        <div class="row"><div><strong>密码库</strong><div class="muted">明文永不进入本原型</div></div><span class="muted">旧版独立访问</span></div>
+        <button class="ghost" type="button" id="close-overlay">关闭</button></div>`;
+    }
+    function recordSheet() {
+      return `<form id="record-form"><span class="kicker">记一笔</span><h2>普通支出一页完成</h2>
+        <label>金额（CNY）<input name="amount" inputmode="decimal" required placeholder="30.00" /></label>
+        <label>账户<select name="account"><option>现金 CNY</option><option>微信 CNY</option></select></label>
+        <label>分类<select name="category"><option>餐饮</option><option>交通</option></select></label>
+        <p class="muted">账户决定币种。换汇与往来走专用流程，不堆在这一页。</p>
+        <button class="primary" type="submit" ${state.saving ? "disabled" : ""}>${state.saving ? "保存中" : "保存"}</button>
+        <button class="ghost" type="button" id="close-overlay" style="width:100%;margin-top:8px">取消</button></form>`;
+    }
+    document.querySelector(".phone").addEventListener("click", (event) => {
+      const t = event.target;
+      if (!(t instanceof HTMLElement)) return;
+      if (t.dataset.tab) { state.tab = t.dataset.tab; setOverlay(); render(); return; }
+      if (t.id === "toggle-sample") {
+        state.sample = !state.sample;
+        state.inbox = state.sample ? sampleInbox.map((i) => ({ ...i })) : [];
+        state.nextDone = false; state.recorded = false;
+        say(state.sample ? "已载入样例" : "已回到空状态"); render(); return;
+      }
+      if (t.id === "open-inbox") { setOverlay(inboxPanel()); return; }
+      if (t.id === "open-settings") { setOverlay(settingsPanel()); return; }
+      if (t.id === "close-overlay") { setOverlay(); render(); return; }
+      if (t.id === "toggle-health") { state.healthOn = !state.healthOn; say(state.healthOn ? "健康摘要已开启" : "健康摘要已关闭"); setOverlay(settingsPanel()); render(); return; }
+      if (t.id === "toggle-offline") { state.offline = !state.offline; say(state.offline ? "断网走查" : "在线走查"); setOverlay(settingsPanel()); render(); return; }
+      if (t.id === "done-next") {
+        state.saving = true; render(); say("正在保存");
+        setTimeout(() => { state.saving = false; state.nextDone = true; say("已完成散步"); render(); }, 400);
+        return;
+      }
+      if (t.id === "quick" || t.id === "record") { setOverlay(recordSheet()); return; }
+      if (t.id === "ask") { say("助手只准备草稿，不会声称已执行"); return; }
+      if (t.dataset.confirm) {
+        const item = state.inbox.find((i) => i.id === t.dataset.confirm);
+        if (item) item.status = "confirmed";
+        say("样例已确认，未写入真实账本"); setOverlay(); render(); return;
+      }
+      if (t.dataset.ignore) {
+        const item = state.inbox.find((i) => i.id === t.dataset.ignore);
+        if (item) item.status = "ignored";
+        say("已忽略"); setOverlay(); render(); return;
+      }
+    });
+    document.querySelector(".phone").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const amount = Number(new FormData(event.target).get("amount"));
+      if (!(amount > 0)) { say("金额空缺不能保存"); return; }
+      state.saving = true; setOverlay(recordSheet()); say("正在保存");
+      setTimeout(() => {
+        state.saving = false; state.recorded = true; state.tab = "ledger";
+        setOverlay(); say("样例已保存，可撤销。未写入真实账本"); render();
+      }, 400);
+    });
+    render();
+  </script>
+</body>
+</html>

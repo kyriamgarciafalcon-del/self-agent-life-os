@@ -51,8 +51,8 @@ export type TransactionDraft = {
   idempotencyKey?: string;
 };
 
-function isActivePosted(item: { status?: string; reversesId?: string }): boolean {
-  return item.status !== 'reversed' && item.status !== 'superseded' && !item.reversesId;
+export function isActivePosted(item: { status?: string; reversesId?: string }): boolean {
+  return (!item.status || item.status === 'confirmed') && !item.reversesId;
 }
 
 function moneyAmount(...values: Array<number | undefined>): number {
@@ -224,7 +224,7 @@ export function postFinanceTransaction<TA extends LedgerAccount, TT extends Tran
   if (!canApplyPostings(current.accounts, postings)) {
     return current;
   }
-  const transaction = { ...draft, postings, accountAmount: moneyAmount(draft.accountAmount, draft.amount), kind: draft.kind, status: draft.status || 'confirmed', occurredAt: draft.createdAt || draft.occurredAt, ...(idempotencyKey ? { idempotencyKey } : {}) } as TT & { postings: LedgerPosting[] };
+  const transaction = { ...draft, postings, accountAmount: moneyAmount(draft.accountAmount, draft.amount), kind: draft.kind, status: draft.status || 'confirmed', occurredAt: draft.occurredAt || draft.createdAt, ...(idempotencyKey ? { idempotencyKey } : {}) } as TT & { postings: LedgerPosting[] };
   const nextTransactions = [transaction, ...current.transactions];
   return {
     accounts: applyPostings(current.accounts, postings, 1).map((account) => ({

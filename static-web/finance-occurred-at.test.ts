@@ -1,8 +1,18 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { getMonthlyReport, transactionsInPeriod } from '../app/finance-query';
+import { postFinanceTransaction } from '../app/finance-core';
 
 describe('period reports use occurredAt', () => {
+  it('preserves the selected occurrence date when posting a backdated transaction', () => {
+    const result = postFinanceTransaction(
+      [{ id: 'cash', type: '资金账户', currency: 'CNY', balance: 100 }], [],
+      { id: 'late', kind: 'expense', accountId: 'cash', currency: 'CNY', amount: 10,
+        occurredAt: '2026-08-31T12:00:00+08:00', createdAt: '2026-09-04T12:00:00+08:00' },
+    );
+    expect(result.transactions[0]?.occurredAt).toBe('2026-08-31T12:00:00+08:00');
+    expect(getMonthlyReport(transactionsInPeriod(result.transactions, '2026-08'), 'CNY').expense).toBe(10);
+  });
   it('puts a backdated expense in the month it happened, not the month it was entered', () => {
     const items = [
       {

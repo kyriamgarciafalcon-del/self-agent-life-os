@@ -84,5 +84,7 @@ body{font-size:14px;line-height:1.45}
 .large-title h2{font-size:28px;line-height:1.2;margin:0 0 8px;font-weight:700}
 .large-title p{margin:0;font-size:14px;color:var(--muted);line-height:1.5}
 .status-pill{display:inline-block;min-height:24px;padding:4px 8px;border-radius:8px;background:var(--green-soft);color:var(--accent);font-size:12px}
+.account-grid .account-open-button{display:block;width:100%;min-height:44px;margin-top:12px;padding:8px 0;border:0;border-top:1px solid currentColor;background:transparent;color:inherit;text-align:left;font-size:13px}
+.account-grid .account-edit-button{min-width:44px;min-height:44px}
+.account-grid button:focus-visible{outline:3px solid var(--accent);outline-offset:3px;border-radius:8px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
-

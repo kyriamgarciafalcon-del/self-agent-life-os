@@ -8,7 +8,29 @@ import {
   type WealthHolding,
   type WealthTxn,
 } from './product-logic';
-import type { MonthlyFinanceTransaction } from './finance-core';
+import { isActivePosted, reimbursementOutstandingAmount, type MonthlyFinanceTransaction } from './finance-core';
+import { moneySum, moneyToMajor } from './money';
+
+// A scalar total must never silently add different currencies.
+function selectCurrency(currencies: string[], requested?: string): string | undefined {
+  const unique = [...new Set(currencies)];
+  if (!requested && unique.length > 1) throw new Error('Mixed currencies require an explicit currency');
+  return requested || unique[0];
+}
+
+type ReimbursementTransaction = MonthlyFinanceTransaction & {
+  id?: string; reimbursable?: boolean; reimbursed?: boolean;
+  targetAmount?: number; targetCurrency?: string;
+};
+
+export function getOutstandingReimbursements(transactions: ReimbursementTransaction[], currency: string): number {
+  const amounts = transactions
+    .filter((item) => item.kind === 'expense' && item.reimbursable && !item.reimbursed && isActivePosted(item))
+    .map((item) => reimbursementOutstandingAmount(item, transactions))
+    .filter((item) => item.currency === currency)
+    .map((item) => item.amount);
+  return moneyToMajor(moneySum(currency, amounts));
+}
 
 export function getNetWorth(
   accounts: WealthAccount[],
@@ -34,16 +56,22 @@ export function getReceivables(
   accounts: WealthAccount[],
   transactions: WealthTxn[] = [],
   holdings: WealthHolding[] = [],
+  currency?: string,
 ) {
-  return getNetWorth(accounts, transactions, holdings).reduce((sum, line) => sum + line.receivable, 0);
+  const lines = getNetWorth(accounts, transactions, holdings);
+  const selected = selectCurrency(lines.map((line) => line.currency), currency);
+  return lines.find((line) => line.currency === selected)?.receivable ?? 0;
 }
 
 export function getInvestmentValue(
-  accounts: Array<{ id?: string; type: string; openingBalance?: number; balance?: number }>,
+  accounts: Array<{ id?: string; type: string; currency: string; openingBalance?: number; balance?: number }>,
   holdings: Array<{ accountId: string; quantity: number; currentPrice: number }>,
+  currency?: string,
 ) {
-  return accounts
-    .filter((account) => account.id && /理财账户/.test(account.type))
+  const investments = accounts.filter((account) => account.id && /理财账户/.test(account.type));
+  const selected = selectCurrency(investments.map((account) => account.currency), currency);
+  return investments
+    .filter((account) => account.currency === selected)
     .reduce(
       (sum, account) => {
         const snapshot = investmentAccountSnapshot(

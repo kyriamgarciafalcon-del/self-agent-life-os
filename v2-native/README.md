@@ -4,7 +4,7 @@ Self Agent V2 的阶段 0 工作区。目标是建立 Android 原生、本机优
 
 ## 当前阶段
 
-**Phase 0：冻结规则与原型。** 本目录当前只允许产品、架构、规则、迁移盘点、页面线框和任务拆解；不包含可写业务实现，不接入旧版运行路径，也不修改现有 `android/` WebView 应用。
+**当前：JVM 财务核心 + Compose 空壳 APK。** 旧版 `android/` WebView 仍是正式 1.1.x。V2 内测包名 `app.selfagent.v2`，不能记账。
 
 ## 不变量
 
@@ -15,6 +15,8 @@ Self Agent V2 的阶段 0 工作区。目标是建立 Android 原生、本机优
 - 密码、验证码、私钥、助记词和恢复码永不进入 AI、业务备份、诊断包或设备端。
 - 阶段 0 未出关前，不创建 Room schema、Compose 空页面或 Gradle 模块。
 - 可点线框原型：[`prototype/index.html`](prototype/index.html)（纸面走查，不能记账）
+- JVM 核心：[`core/`](core/)（`gradle test`）
+- Compose 空壳：[`android/`](android/)（CI `v2-apk.yml`，包名 `app.selfagent.v2`）
 
 ## 文档索引
 

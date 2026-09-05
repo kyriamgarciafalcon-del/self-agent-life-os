@@ -48,7 +48,7 @@ P-06 是阶段 0 出关锁。未完成不得打开 F-01。
 
 | ID | 任务 | 依赖 | 未来路径 | RED / GREEN | 验收 | Owner | 状态 |
 |---|---|---|---|---|---|---|---|
-| U-01 | 设计系统与页面骨架 | P-06 | `v2-native/feature/ui/PageScaffold.kt` `MoneyText.kt` `EmptyState.kt` `Theme.kt` `Navigation.kt` `UiScaffoldTest.kt` | RED：核心按钮 <48dp 或无五态也可提交。GREEN：四栏导航、主题、字号缩放 | 主题、48dp、读屏、200% 不挡主动作 | `@owner-android` | blocked |
+| U-01 | 设计系统与页面骨架 | P-06 | `v2-native/android/app/src/main/java/app/selfagent/v2/MainActivity.kt` | RED：核心按钮 <48dp 或无五态也可提交。GREEN：四栏导航、主题、空壳 APK | 主题、48dp；200%/读屏仪器测试后置 | `@owner-android` | done |
 | U-02 | 一页记账与账本页 | U-01 F-06 | `v2-native/feature/ledger/LedgerScreen.kt` `RecordExpenseScreen.kt` `LedgerScreenTest.kt` | RED：金额空缺进入预览或双击记两笔。GREEN：真实 PostJournal + 查询刷新 | 仪器测试含保存后重启仍在 | `@owner-android` | blocked |
 | L-01 | 今天 / 任务 / 日程基础 | U-01 | `v2-native/feature/today/TodayScreen.kt` `v2-native/feature/life/Task.kt` `CalendarEvent.kt` `TodayScreenTest.kt` | RED：完成任务复制成三条互不关联记录。GREEN：完成实例、不永久完成重复规则 | 完成任务；跨午夜刷新今天 | `@owner-android` | blocked |
 | I-01 | 收件箱与命令回执 | F-03 | `v2-native/feature/inbox/InboxScreen.kt` `v2-native/application/InboxService.kt` `InboxTest.kt` | RED：并发确认入两笔；草稿进已入账表。GREEN：版本校验、commandId 幂等 | 确认、忽略、冲突、去重 | `@owner-android` | blocked |

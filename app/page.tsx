@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import HomeOverview from './components/home/HomeOverview';
 import { buildHomeOverviewModel } from './lib/home-overview-source';
 import { addLocalDays, formatDateCN, localISODate, weekOptions } from './lib/local-date';
+import { emptyData, investmentValue, normalizeData } from './lib/local-data';
 
 type Tab = 'home' | 'schedule' | 'capture' | 'finance' | 'profile' | 'health' | 'travel' | 'data' | 'butler' | 'privacy' | 'memory' | 'vault';
 type ScheduleColor = 'blue' | 'green' | 'orange';
@@ -42,59 +43,6 @@ const MONTH = TODAY.slice(0, 7);
 const currencies: Currency[] = ['CNY', 'USD', 'HKD', 'EUR', 'JPY'];
 const dateOptions = weekOptions(TODAY);
 
-const seedData: AppData = {
-  schedules: [
-    { id: 's1', date: TODAY, time: '09:30', title: '项目周会', detail: '线上会议 · 45 分钟', color: 'blue', done: true },
-    { id: 's2', date: TODAY, time: '12:20', title: '午饭后散步', detail: '健康 · 20 分钟', color: 'green', done: false },
-    { id: 's3', date: TODAY, time: '15:00', title: '整理季度预算', detail: '专注时间 · 60 分钟', color: 'blue', done: false },
-    { id: 's4', date: TODAY, time: '19:30', title: '给妈妈打电话', detail: '个人 · 提醒一次', color: 'orange', done: false },
-  ],
-  accounts: [
-    { id: 'wechat', name: '微信余额', type: '资金账户', balance: 1280.55, currency: 'CNY', tone: 'forest' },
-    { id: 'alipay', name: '支付宝', type: '资金账户', balance: 830.2, currency: 'CNY', tone: 'ink' },
-    { id: 'bank', name: '日常银行卡', type: '储蓄卡', balance: 12600, currency: 'CNY', tone: 'clay' },
-    { id: 'credit', name: '信用卡', type: '待还款', balance: -2340, currency: 'CNY', tone: 'ink' },
-    { id: 'invest-cny', name: '人民币理财', type: '理财账户', balance: 4150, currency: 'CNY', tone: 'forest' },
-    { id: 'invest-usd', name: '海外投资', type: '理财账户', balance: 1131.5, currency: 'USD', tone: 'ink' },
-  ],
-  transactions: [
-    { id: 't1', kind: 'expense', amount: 36, accountAmount: 36, currency: 'CNY', merchant: '午餐', category: '餐饮', accountId: 'wechat', source: '手动记录', reimbursable: true, createdAt: '2026-08-28T12:31:00+08:00' },
-    { id: 't2', kind: 'expense', amount: 18.5, accountAmount: 18.5, currency: 'CNY', merchant: '地铁出行', category: '交通', accountId: 'alipay', source: '通知草稿确认', reimbursable: false, createdAt: '2026-08-28T08:42:00+08:00' },
-    { id: 't3', kind: 'income', amount: 4200, accountAmount: 4200, currency: 'CNY', merchant: '项目回款', category: '收入', accountId: 'bank', source: '手动记录', reimbursable: false, createdAt: '2026-08-27T16:18:00+08:00' },
-    { id: 't4', kind: 'expense', amount: 128, accountAmount: 128, currency: 'CNY', merchant: '超市采购', category: '生活', accountId: 'alipay', source: '手动记录', reimbursable: false, createdAt: '2026-08-20T18:22:00+08:00' },
-    { id: 't5', kind: 'expense', amount: 68, accountAmount: 68, currency: 'CNY', merchant: '手机套餐', category: '生活', accountId: 'bank', source: '自动扣款确认', reimbursable: false, createdAt: '2026-08-10T09:00:00+08:00' },
-  ],
-  recurringRules: [
-    { id: 'r1', name: '云盘订阅', kind: 'subscription', amount: 30, currency: 'CNY', accountId: 'alipay', dueDay: 30, enabled: true },
-    { id: 'r2', name: '信用卡还款', kind: 'credit-card', amount: 2340, currency: 'CNY', accountId: 'bank', targetAccountId: 'credit', dueDay: 5, enabled: true, lastRunPeriod: MONTH },
-  ],
-  healthRecords: [
-    { id: 'h1', kind: 'sleep', value: 6.2, note: '昨晚睡眠', createdAt: '2026-08-28T07:10:00+08:00' },
-    { id: 'h2', kind: 'exercise', value: 32, note: '快走', createdAt: '2026-08-27T19:20:00+08:00' },
-    { id: 'h3', kind: 'meal', value: 2, note: '今日已记录餐数', createdAt: '2026-08-28T13:00:00+08:00' },
-  ],
-  travels: [
-    { id: 'travel-1', kind: 'train', number: 'G11', from: '北京南', to: '上海虹桥', departAt: '2026-08-30T09:00:00+08:00', arriveAt: '2026-08-30T13:28:00+08:00', seat: '06车 08A', terminal: '检票口待同步', status: 'upcoming', source: 'import', verified: false },
-    { id: 'travel-2', kind: 'flight', number: '示例航班 MU5101', from: '上海虹桥', to: '北京首都', departAt: '2026-09-03T08:20:00+08:00', arriveAt: '2026-09-03T10:40:00+08:00', seat: '座位待值机', terminal: 'T2', status: 'upcoming', source: 'import', verified: false },
-  ],
-  investments: [
-    { id: 'holding-1', accountId: 'invest-cny', kind: 'fund', name: '沪深300ETF（示例）', code: '510300.SH', contract: '', network: '', quantity: 1000, averageCost: 3.82, currentPrice: 4.15, currency: 'CNY', updatedAt: TODAY, quoteStatus: 'sample', history: [{ date: '08-22', price: 4.02 }, { date: '08-23', price: 4.08 }, { date: '08-24', price: 4.05 }, { date: '08-25', price: 4.11 }, { date: '08-26', price: 4.09 }, { date: '08-27', price: 4.13 }, { date: '08-28', price: 4.15 }] },
-    { id: 'holding-2', accountId: 'invest-usd', kind: 'stock', name: 'Apple（示例）', code: 'AAPL', contract: '', network: '', quantity: 5, averageCost: 186, currentPrice: 224.5, currency: 'USD', updatedAt: TODAY, quoteStatus: 'sample', history: [{ date: '08-22', price: 216 }, { date: '08-23', price: 219 }, { date: '08-24', price: 217.5 }, { date: '08-25', price: 221 }, { date: '08-26', price: 220.4 }, { date: '08-27', price: 222 }, { date: '08-28', price: 224.5 }] },
-    { id: 'holding-3', accountId: 'invest-usd', kind: 'meme', name: 'PEPE（示例）', code: 'PEPE', contract: '0x6982508145454Ce325dDbE47a25d4ec3d2311933', network: 'Ethereum', quantity: 1000000, averageCost: 0.0000082, currentPrice: 0.000009, currency: 'USD', updatedAt: TODAY, quoteStatus: 'sample', history: [{ date: '08-22', price: 0.0000081 }, { date: '08-23', price: 0.0000084 }, { date: '08-24', price: 0.0000083 }, { date: '08-25', price: 0.0000087 }, { date: '08-26', price: 0.0000085 }, { date: '08-27', price: 0.0000088 }, { date: '08-28', price: 0.000009 }] },
-  ],
-  memories: [
-    { id: 'm1', kind: '目标', title: '每月结余至少 2,000 元', note: '用于生成财务提醒，不自动修改账户。', active: true },
-    { id: 'm2', kind: '偏好', title: '23:30 前开始睡前准备', note: '提醒保持温和，不因一次未完成而批评。', active: true },
-    { id: 'm3', kind: '观察', title: '睡眠不足后外卖支出可能上升', note: '只是相关性观察，7 天后复核。', active: false },
-  ],
-  privacy: { health: true, finance: true, schedule: true },
-  vaultItems: [
-    { id: 'v1', title: '招商银行', usernameHint: '账号已保存', note: '等待 Android Autofill 接管' },
-    { id: 'v2', title: '个人邮箱', usernameHint: '账号已保存', note: '不在网页保存密码明文' },
-  ],
-  theme: 'light',
-};
-
 const navItems: { id: Tab; label: string; icon: string }[] = [
   { id: 'home', label: '首页', icon: '⌂' }, { id: 'schedule', label: '日程', icon: '□' },
   { id: 'capture', label: '记录', icon: '＋' }, { id: 'finance', label: '财务', icon: '▣' },
@@ -106,37 +54,7 @@ function money(value: number) {
 }
 function currencyMark(currency: Currency) { return currency === 'CNY' ? '¥' : currency === 'USD' ? '$' : currency === 'HKD' ? 'HK$' : currency === 'EUR' ? '€' : 'JP¥'; }
 function uid(prefix: string) { return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
-function investmentValue(item: InvestmentHolding) { return item.quantity * item.currentPrice; }
 function investmentProfit(item: InvestmentHolding) { return investmentValue(item) - item.quantity * item.averageCost; }
-function syncInvestmentBalances(accounts: Account[], investments: InvestmentHolding[]) {
-  const totals = new Map<string, number>();
-  investments.forEach((item) => totals.set(item.accountId, (totals.get(item.accountId) ?? 0) + investmentValue(item)));
-  return accounts.map((account) => totals.has(account.id) ? { ...account, balance: totals.get(account.id) ?? account.balance } : account);
-}
-function normalizeData(raw: Partial<AppData>): AppData {
-  const investments = raw.investments ?? seedData.investments;
-  const rawAccounts = raw.accounts ?? seedData.accounts;
-  const missingInvestmentAccounts = raw.investments === undefined ? seedData.accounts.filter((account) => investments.some((item) => item.accountId === account.id) && !rawAccounts.some((item) => item.id === account.id)) : [];
-  const accounts = syncInvestmentBalances([...rawAccounts, ...missingInvestmentAccounts].map((account) => ({ ...account, currency: account.currency ?? 'CNY' as Currency })), investments);
-  return {
-    schedules: raw.schedules ?? seedData.schedules,
-    accounts,
-    transactions: (raw.transactions ?? seedData.transactions).map((item) => ({
-      ...item,
-      currency: item.currency ?? accounts.find((account) => account.id === item.accountId)?.currency ?? 'CNY',
-      accountAmount: item.accountAmount ?? item.amount,
-      reimbursable: item.reimbursable ?? false,
-    })),
-    recurringRules: raw.recurringRules ?? seedData.recurringRules,
-    healthRecords: raw.healthRecords ?? seedData.healthRecords,
-    travels: raw.travels ?? seedData.travels,
-    investments,
-    memories: raw.memories ?? seedData.memories,
-    privacy: raw.privacy ?? seedData.privacy,
-    vaultItems: raw.vaultItems ?? seedData.vaultItems,
-    theme: raw.theme ?? 'light',
-  };
-}
 function adjustAccounts(accounts: Account[], transaction: Transaction, factor: 1 | -1) {
   return accounts.map((account) => {
     let delta = 0;
@@ -171,7 +89,7 @@ function parseCapture(text: string): CaptureDraft {
 }
 
 export default function Home() {
-  const [data, setData] = useState<AppData>(seedData);
+  const [data, setData] = useState<AppData>(emptyData);
   const [hydrated, setHydrated] = useState(false);
   const [tab, setTab] = useState<Tab>('home');
   const [selectedDate, setSelectedDate] = useState(TODAY);
@@ -213,9 +131,9 @@ export default function Home() {
           const history = [...item.history.filter((entry) => entry.date !== point.date), point].slice(-30);
           return { ...item, currentPrice: quote.price, updatedAt: date, quoteStatus: 'live' as const, history };
         });
-        return { ...current, investments, accounts: syncInvestmentBalances(current.accounts, investments) };
+        return { ...current, investments };
       });
-      notify('今日行情与理财余额已更新');
+      notify('今日行情与持仓估值已更新');
     }
     window.addEventListener('self-agent:travel-updated', onTravel);
     window.addEventListener('self-agent:market-quotes', onMarket);
@@ -346,14 +264,14 @@ export default function Home() {
     if (holding.kind === 'meme' && !holding.contract) { notify('Meme 币需要填写合约地址'); return; }
     setData((current) => {
       const investments = previous ? current.investments.map((item) => item.id === previous.id ? holding : item) : [...current.investments, holding];
-      return { ...current, investments, accounts: syncInvestmentBalances(current.accounts, investments) };
+      return { ...current, investments };
     });
     setEditingHoldingId(null); setSheet(null); setSelectedAccountId(accountId); notify(previous ? '持仓与今日净值已更新' : '理财产品已添加');
   }
   function deleteHolding() {
     const selected = editingHoldingId ? data.investments.find((item) => item.id === editingHoldingId) : undefined;
     if (!selected || !window.confirm('确定删除这个理财产品吗？历史收益记录也会删除。')) return;
-    setData((current) => { const investments = current.investments.filter((item) => item.id !== selected.id); return { ...current, investments, accounts: syncInvestmentBalances(current.accounts, investments) }; });
+    setData((current) => ({ ...current, investments: current.investments.filter((item) => item.id !== selected.id) }));
     setEditingHoldingId(null); setSelectedHoldingId(null); setSheet(null); notify('理财产品已删除');
   }
   function requestMarketRefresh() {
@@ -369,8 +287,8 @@ export default function Home() {
     const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([JSON.stringify(safe, null, 2)], { type: 'application/json' })); link.download = 'self-agent-data.json'; link.click(); URL.revokeObjectURL(link.href); notify('已导出脱敏本机数据');
   }
   function clearLocalData() {
-    if (!window.confirm('确定恢复示例数据吗？本机新增的日程和账目会被清除。')) return;
-    setData(seedData); window.localStorage.removeItem(STORAGE_KEY); notify('已恢复示例数据');
+    if (!window.confirm('确定清空全部本机数据吗？本机保存的日程、账目和其他记录都会被删除。')) return;
+    setData(emptyData); window.localStorage.removeItem(STORAGE_KEY); notify('本机数据已清空');
   }
   function pageTitle() { return tab === 'schedule' ? '日程与行动' : tab === 'capture' ? '快速记录' : tab === 'finance' ? selectedHoldingId ? '收益详情' : selectedAccountId ? '账户账单' : '我的财务' : tab === 'profile' ? '我的' : tab === 'health' ? '健康记录' : tab === 'travel' ? '我的出行' : tab === 'data' ? '数据中心' : tab === 'butler' ? '本机管家' : tab === 'privacy' ? '隐私与权限' : tab === 'memory' ? '记忆管理' : tab === 'vault' ? '密码库' : '今天'; }
 
@@ -397,7 +315,7 @@ export default function Home() {
 
     {tab === 'finance' && <FinancePanel data={data} currency={financeCurrency} selectedAccountId={selectedAccountId} selectedHoldingId={selectedHoldingId} onCurrency={setFinanceCurrency} onSelectAccount={(id) => { setSelectedAccountId(id); setSelectedHoldingId(null); }} onSelectHolding={setSelectedHoldingId} onBackAccount={() => setSelectedAccountId(null)} onBackHolding={() => setSelectedHoldingId(null)} onNewTransaction={() => { setEditingTransactionId(null); setSheet('transaction'); }} onEditTransaction={(id) => { setEditingTransactionId(id); setSheet('transaction'); }} onNewAccount={() => { setEditingAccountId(null); setSheet('account'); }} onEditAccount={(id) => { setEditingAccountId(id); setSheet('account'); }} onNewHolding={() => { setEditingHoldingId(null); setSheet('holding'); }} onEditHolding={(id) => { setEditingHoldingId(id); setSheet('holding'); }} onRefreshMarket={requestMarketRefresh} onNewRecurring={() => setSheet('recurring')} onRunRecurring={runRecurringRule} onToggleRecurring={toggleRecurringRule} />}
 
-    {tab === 'profile' && <div className="page profile-page"><section className="profile-heading"><div>SA</div><span>SELF AGENT</span><h2>数据留在你的设备上</h2><p>网页端保存生活记录；敏感系统能力由 Android 版主动授权。</p></section><section className="profile-menu"><button onClick={() => setTab('memory')}><span>忆</span><div><strong>AI 记忆管理</strong><small>查看、暂停或删除管家记忆</small></div><b>›</b></button><button onClick={() => setTab('privacy')}><span>盾</span><div><strong>隐私与权限</strong><small>分别控制健康、财务和日程摘要</small></div><b>›</b></button><button onClick={() => setTab('vault')}><span>钥</span><div><strong>密码库</strong><small>不在网页保存密码明文</small></div><b>›</b></button><button onClick={() => setTab('data')}><span>数</span><div><strong>数据中心</strong><small>健康、财务与行动统一摘要</small></div><b>›</b></button></section><section className="profile-actions"><button onClick={toggleTheme}>{data.theme === 'dark' ? '切换浅色模式' : '切换深色模式'}</button><button onClick={exportLocalData}>导出脱敏数据</button><button onClick={clearLocalData}>恢复示例数据</button></section><p className="privacy-note">支付通知和 Autofill 仍等待 Android 原生模块接入；网页不会伪装成已获得系统权限。</p></div>}
+    {tab === 'profile' && <div className="page profile-page"><section className="profile-heading"><div>SA</div><span>SELF AGENT</span><h2>数据留在你的设备上</h2><p>网页端保存生活记录；敏感系统能力由 Android 版主动授权。</p></section><section className="profile-menu"><button onClick={() => setTab('memory')}><span>忆</span><div><strong>AI 记忆管理</strong><small>查看、暂停或删除管家记忆</small></div><b>›</b></button><button onClick={() => setTab('privacy')}><span>盾</span><div><strong>隐私与权限</strong><small>分别控制健康、财务和日程摘要</small></div><b>›</b></button><button onClick={() => setTab('vault')}><span>钥</span><div><strong>密码库</strong><small>不在网页保存密码明文</small></div><b>›</b></button><button onClick={() => setTab('data')}><span>数</span><div><strong>数据中心</strong><small>健康、财务与行动统一摘要</small></div><b>›</b></button></section><section className="profile-actions"><button onClick={toggleTheme}>{data.theme === 'dark' ? '切换浅色模式' : '切换深色模式'}</button><button onClick={exportLocalData}>导出脱敏数据</button><button onClick={clearLocalData}>清空全部本机数据</button></section><p className="privacy-note">支付通知和 Autofill 仍等待 Android 原生模块接入；网页不会伪装成已获得系统权限。</p></div>}
 
     {tab === 'health' && <HealthPanel records={data.healthRecords} onAdd={() => setSheet('health')} />}
     {tab === 'travel' && <TravelPanel items={data.travels} onSync={requestTravelSync} onAdd={() => setSheet('travel')} />}

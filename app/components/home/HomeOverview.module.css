@@ -1,0 +1,52 @@
+.home :global(.summary-grid button),
+.home :global(.capture-callout),
+.home :global(.feature-grid button),
+.home :global(.section-title button) {
+  min-height: 44px;
+}
+
+.entry,
+.event {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  text-align: left;
+  align-items: center;
+}
+
+.entry {
+  justify-content: space-between;
+}
+
+.entry strong,
+.event strong {
+  display: block;
+  font-size: 14px;
+}
+
+.entry small,
+.event small {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.event time {
+  flex: none;
+  min-width: 44px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.empty {
+  margin: 8px 0 0;
+  font-size: 14px;
+  color: var(--muted);
+}

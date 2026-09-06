@@ -1,6 +1,9 @@
 'use client';
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import HomeOverview from './components/home/HomeOverview';
+import { buildHomeOverviewModel } from './lib/home-overview-source';
+import { addLocalDays, formatDateCN, localISODate, weekOptions } from './lib/local-date';
 
 type Tab = 'home' | 'schedule' | 'capture' | 'finance' | 'profile' | 'health' | 'travel' | 'data' | 'butler' | 'privacy' | 'memory' | 'vault';
 type ScheduleColor = 'blue' | 'green' | 'orange';
@@ -33,27 +36,6 @@ type ExpenseDraft = { kind: 'expense'; amount: number; merchant: string; categor
 type ScheduleDraft = { kind: 'schedule'; title: string; date: string; time: string };
 type CaptureDraft = ExpenseDraft | ScheduleDraft;
 
-function localISODate(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-function formatDateCN(iso: string) {
-  const [year, month, day] = iso.split('-').map(Number);
-  const weekday = '日一二三四五六'[new Date(year, month - 1, day).getDay()];
-  return `${month}月${day}日 · 星期${weekday}`;
-}
-function weekOptions(todayIso: string) {
-  const [year, month, day] = todayIso.split('-').map(Number);
-  const today = new Date(year, month - 1, day);
-  const mondayOffset = (today.getDay() + 6) % 7;
-  return ['一', '二', '三', '四', '五', '六', '日'].map((weekday, index) => {
-    const item = new Date(today);
-    item.setDate(today.getDate() - mondayOffset + index);
-    return { weekday, day: item.getDate(), value: localISODate(item) };
-  });
-}
 const TODAY = localISODate(new Date());
 const STORAGE_KEY = 'self-agent:local-data:v1';
 const MONTH = TODAY.slice(0, 7);
@@ -184,7 +166,7 @@ function parseCapture(text: string): CaptureDraft {
   const hour = Math.min(Number(timeMatch?.[1] ?? 10), 23);
   const minute = Math.min(Number(timeMatch?.[2] || 0), 59);
   const title = text.replace(/今天|明天|后天/g, '').replace(/\d{1,2}(?::|：|点)\d{0,2}/, '').replace(/提醒我|提醒|安排|日程/g, '').trim() || '新日程';
-  const date = /明天/.test(text) ? localISODate(new Date(Date.now() + 86400000)) : /后天/.test(text) ? localISODate(new Date(Date.now() + 2 * 86400000)) : TODAY;
+  const date = /明天/.test(text) ? addLocalDays(TODAY, 1) : /后天/.test(text) ? addLocalDays(TODAY, 2) : TODAY;
   return { kind: 'schedule', title, date, time: `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}` };
 }
 
@@ -252,13 +234,12 @@ export default function Home() {
 
   const selectedSchedules = useMemo(() => data.schedules.filter((item) => item.date === selectedDate).sort((a, b) => a.time.localeCompare(b.time)), [data.schedules, selectedDate]);
   const todaySpend = useMemo(() => data.transactions.filter((item) => item.kind === 'expense' && item.currency === 'CNY' && item.createdAt.startsWith(TODAY)).reduce((sum, item) => sum + item.amount, 0), [data.transactions]);
-  const monthIncome = useMemo(() => data.transactions.filter((item) => item.kind === 'income' && item.currency === 'CNY' && item.createdAt.startsWith(MONTH)).reduce((sum, item) => sum + item.amount, 0), [data.transactions]);
-  const monthExpense = useMemo(() => data.transactions.filter((item) => item.kind === 'expense' && item.currency === 'CNY' && item.createdAt.startsWith(MONTH)).reduce((sum, item) => sum + item.amount, 0), [data.transactions]);
-  const totalBalance = useMemo(() => data.accounts.filter((item) => item.currency === 'CNY').reduce((sum, item) => sum + item.balance, 0), [data.accounts]);
-  const todayEvents = useMemo(() => data.schedules.filter((item) => item.date === TODAY).sort((a, b) => a.time.localeCompare(b.time)), [data.schedules]);
-  const nextSchedule = todayEvents.find((item) => !item.done);
-  const todaySleep = data.healthRecords.find((item) => item.kind === 'sleep' && item.createdAt.startsWith(TODAY));
-  const pendingCount = draft ? 1 : 0;
+  const homeModel = useMemo(() => buildHomeOverviewModel({
+    todayIso: TODAY,
+    schedules: data.schedules,
+    healthRecords: data.healthRecords,
+    todaySpendCny: todaySpend,
+  }), [data.schedules, data.healthRecords, todaySpend]);
   const editingAccount = editingAccountId ? data.accounts.find((item) => item.id === editingAccountId) : undefined;
   const editingTransaction = editingTransactionId ? data.transactions.find((item) => item.id === editingTransactionId) : undefined;
   const editingHolding = editingHoldingId ? data.investments.find((item) => item.id === editingHoldingId) : undefined;
@@ -394,28 +375,21 @@ export default function Home() {
   function pageTitle() { return tab === 'schedule' ? '日程与行动' : tab === 'capture' ? '快速记录' : tab === 'finance' ? selectedHoldingId ? '收益详情' : selectedAccountId ? '账户账单' : '我的财务' : tab === 'profile' ? '我的' : tab === 'health' ? '健康记录' : tab === 'travel' ? '我的出行' : tab === 'data' ? '数据中心' : tab === 'butler' ? '本机管家' : tab === 'privacy' ? '隐私与权限' : tab === 'memory' ? '记忆管理' : tab === 'vault' ? '密码库' : '今天'; }
 
   return <main className={`phone-app ${data.theme === 'dark' ? 'dark' : ''}`}>
-    <header className="app-header"><button className="round" aria-label="返回" onClick={() => { if (tab === 'finance' && selectedHoldingId) setSelectedHoldingId(null); else if (tab === 'finance' && selectedAccountId) setSelectedAccountId(null); else setTab('home'); }}>‹</button><div><span>{formatDateCN(TODAY)}</span><h1>{pageTitle()}</h1></div>{pendingCount > 0 ? <button className="pending-chip" onClick={() => setTab('capture')}>{pendingCount} 待确认</button> : <button className="round status-dot" aria-label="本机保存状态"><i />•••</button>}</header>
+    <header className="app-header"><button className="round" aria-label="返回" onClick={() => { if (tab === 'finance' && selectedHoldingId) setSelectedHoldingId(null); else if (tab === 'finance' && selectedAccountId) setSelectedAccountId(null); else setTab('home'); }}>‹</button><div><span>{formatDateCN(TODAY)}</span><h1>{pageTitle()}</h1></div><button className="round status-dot" aria-label="本机保存状态"><i />•••</button></header>
 
-    {tab === 'home' && <div className="page home-page">
-      <section className="pulse-card" onClick={() => setTab('finance')} role="button">
-        <header><h2>账本脉搏</h2><span>净资产 ¥ {money(totalBalance)}</span></header>
-        <div className="pulse-grid">
-          <div><small>今日支出</small><strong>¥{money(todaySpend)}</strong></div>
-          <div><small>本月收入</small><strong>¥{money(monthIncome)}</strong></div>
-          <div><small>本月支出</small><strong>¥{money(monthExpense)}</strong></div>
-        </div>
-      </section>
-      <section className="pulse-card" onClick={() => setTab('health')} role="button">
-        <header><h2>健康一览</h2><span>只显示已有记录</span></header>
-        <p className="health-glance">{todaySleep ? `${Math.floor(todaySleep.value)}小时${Math.round((todaySleep.value % 1) * 60)}分钟` : '今天还没有睡眠记录'}</p>
-      </section>
-      <section className="section-block"><div className="section-title"><div><h2>今天</h2></div></div>
-        {todayEvents.length ? todayEvents.map((item) => <button key={item.id} className="schedule-card" onClick={() => setTab('schedule')}><time>{item.time}</time><div><strong>{item.title}</strong><small>{item.detail}</small></div></button>) : <p className="empty-line">{nextSchedule ? nextSchedule.title : '今天还没有日程'}</p>}
-      </section>
-      <section className="section-block"><div className="section-title"><div><h2>一句话交给管家</h2></div></div><button className="capture-callout" onClick={() => setTab('capture')}><span>＋</span><div><strong>记录一件事</strong><small>确认后才会写入账本或日程</small></div><b>›</b></button></section>
-      <section className="section-block"><div className="section-title"><div><h2>生活工具</h2></div></div><div className="feature-grid"><button onClick={() => setTab('travel')}><span>行</span><strong>出行</strong><small>火车与航班</small></button><button onClick={() => setTab('health')}><span>健</span><strong>健康</strong><small>睡眠与运动</small></button><button onClick={() => setTab('butler')}><span>管</span><strong>管家</strong><small>本机摘要问答</small></button><button onClick={() => setTab('data')}><span>数</span><strong>数据</strong><small>统一趋势</small></button><button onClick={() => setTab('vault')}><span>钥</span><strong>密码库</strong><small>安全元数据</small></button></div></section>
-      <section className="section-block"><div className="section-title"><div><h2>最近入账</h2></div><button onClick={() => setTab('finance')}>查看全部</button></div><TransactionList items={data.transactions.slice(0, 3)} accounts={data.accounts} /></section>
-    </div>}
+    {tab === 'home' && <HomeOverview
+      model={homeModel}
+      todaySpendText={`¥ ${money(todaySpend)}`}
+      recentLedger={<TransactionList items={data.transactions.slice(0, 3)} accounts={data.accounts} />}
+      onOpenSchedule={() => setTab('schedule')}
+      onOpenFinance={() => setTab('finance')}
+      onOpenHealth={() => setTab('health')}
+      onOpenCapture={() => setTab('capture')}
+      onOpenTravel={() => setTab('travel')}
+      onOpenButler={() => setTab('butler')}
+      onOpenData={() => setTab('data')}
+      onOpenVault={() => setTab('vault')}
+    />}
 
     {tab === 'schedule' && <div className="page schedule-page"><section className="calendar"><div className="week-title"><button aria-label="上一周">‹</button><strong>{dateOptions[0].value} — {dateOptions[6].value}</strong><button aria-label="下一周">›</button></div><div className="dates">{dateOptions.map((date) => <button key={date.value} onClick={() => setSelectedDate(date.value)} className={selectedDate === date.value ? 'active' : ''}><span>{date.weekday}</span><b>{date.day}</b>{date.value === TODAY && <i />}</button>)}</div></section><section className="day-section"><div className="day-heading"><div><span>{selectedDate === TODAY ? '今天' : `${Number(selectedDate.slice(-2))}日`} · 星期{dateOptions.find((date) => date.value === selectedDate)?.weekday}</span><h2>{selectedSchedules.length ? '今天安排得刚刚好' : '给这一天留点空白'}</h2></div><small>{selectedSchedules.filter((item) => item.done).length}/{selectedSchedules.length} 完成</small></div>{selectedSchedules.length ? <div className="timeline">{selectedSchedules.map((item, index) => <article className={item.done ? 'done' : ''} key={item.id}><time>{item.time}</time><div className="track"><i className={item.color} />{index < selectedSchedules.length - 1 && <span />}</div><button className="schedule-card" onClick={() => toggleSchedule(item.id)}><div><strong>{item.title}</strong><small>{item.detail}</small></div><span className="check">{item.done ? '✓' : ''}</span></button></article>)}</div> : <div className="empty"><span>○</span><h3>没有日程</h3><p>给这一天留点空白，或添加一件事。</p><button onClick={() => setSheet('schedule')}>添加日程</button></div>}</section></div>}
 

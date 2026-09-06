@@ -88,3 +88,12 @@ body{font-size:14px;line-height:1.45}
 .account-grid .account-edit-button{min-width:44px;min-height:44px}
 .account-grid button:focus-visible{outline:3px solid var(--accent);outline-offset:3px;border-radius:8px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+.home-page{overflow-x:hidden}
+.home-page .large-title{margin:0 0 12px;padding:18px 16px;border-radius:16px;background:#e7f6ee;border:1px solid var(--line)}
+.home-page button{min-height:44px;min-width:44px}
+.home-page .summary-grid,.home-page .summary-grid button,.home-page .feature-grid,.home-page .feature-grid button,.home-page .grouped-list{min-width:0}
+.home-page .summary-grid{margin-top:0}
+@media (max-width:375px){
+  .home-page .summary-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .home-page .feature-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+}

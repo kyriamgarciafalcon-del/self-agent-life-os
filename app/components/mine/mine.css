@@ -1,0 +1,287 @@
+.profile-page{overflow-x: hidden;}
+.profile-page,
+.life-page,
+.mine-surface {
+  --accent: #2F6F57;
+  --page-bg: #F2F2F7;
+  --surface: #FFFFFF;
+  --ink: #1C1C1E;
+  --muted: #8E8E93;
+  --separator: rgba(60, 60, 67, 0.12);
+  background: #F2F2F7;
+  overflow-x: hidden;
+  min-width: 0;
+  padding: 4px 0 28px;
+}
+
+.sa-page-header {
+  padding: 8px 20px 12px;
+}
+
+.sa-page-header h1 {
+  margin: 0;
+  font-size: 34px;
+  line-height: 41px;
+  letter-spacing: 0.37px;
+  font-weight: 700;
+  color: #000;
+}
+
+.sa-page-header p,
+.sa-page-header h2 {
+  margin: 2px 0 0;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.sa-group-header {
+  margin: 24px 20px 6px;
+  padding: 0 16px;
+  font-size: 13px;
+  line-height: 18px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.sa-group-header:first-child,
+.sa-page-header + .sa-group-header {
+  margin-top: 8px;
+}
+
+.sa-group {
+  margin: 0 16px;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.sa-group + .sa-group-header {
+  margin-top: 28px;
+}
+
+.sa-card {
+  margin: 16px 16px 0;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #fff;
+  padding: 16px;
+  min-width: 0;
+}
+
+.sa-row{min-height:44px;
+  position: relative;
+  display: flex;
+  width: 100%;
+  min-width: 44px;
+  align-items: center;
+  gap: 12px;
+  background: #fff;
+  padding: 10px 16px;
+  text-align: left;
+  border: 0;
+  color: inherit;
+}
+
+.sa-row + .sa-row::before {
+  content: '';
+  position: absolute;
+  left: 56px;
+  right: 0;
+  top: 0;
+  height: 0.5px;
+  background: var(--separator);
+}
+
+.sa-row:active {
+  background: #E5E5EA;
+}
+
+.sa-row-icon {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sa-row-icon.mint { background: #2F6F57; }
+.sa-row-icon.red { background: #FF3B30; }
+.sa-row-icon.orange { background: #FF9500; }
+.sa-row-icon.gray { background: #8E8E93; }
+.sa-row-icon.teal { background: #3D8B74; }
+.sa-row-icon.ink { background: #3A4A43; }
+
+.sa-row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sa-row-text strong {
+  font-size: 17px;
+  line-height: 22px;
+  font-weight: 400;
+}
+
+.sa-row-text small {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--muted);
+}
+
+.sa-chevron {
+  flex: 0 0 auto;
+  color: #C7C7CC;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.sa-group-footer,
+.sa-page-footer {
+  margin: 8px 20px 0;
+  padding: 0 16px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--muted);
+}
+
+.sa-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 12px;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.sa-btn-primary {
+  background: #2F6F57;
+  color: #fff;
+}
+
+.sa-btn-secondary {
+  background: #E5E5EA;
+  color: #2F6F57;
+}
+
+.sa-btn-danger {
+  background: transparent;
+  color: #FF3B30;
+  font-weight: 400;
+}
+
+.sa-input,
+.sa-card input,
+.sa-card textarea,
+.sa-card select {
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  border-radius: 12px;
+  background: #F2F2F7;
+  padding: 10px 14px;
+  font-size: 17px;
+}
+
+.sa-label {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.sa-card > strong {
+  display: block;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.sa-card > p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--muted);
+}
+
+.sa-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.sa-actions button,
+.native-actions button,
+.profile-actions button,
+.file-action {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+.mine-howto {
+  margin: 16px 16px 0;
+  padding: 16px;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.mine-howto h3 {
+  margin: 0 0 8px;
+  font-size: 17px;
+}
+
+.mine-howto ol {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.mine-howto + .mine-howto {
+  margin-top: 12px;
+}
+
+.file-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: #E5E5EA;
+  color: #2F6F57;
+  font-weight: 600;
+}
+
+.profile-page button,
+.life-page button {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+@media (max-width: 375px) {
+  .profile-page,
+  .life-page,
+  .mine-surface {
+    overflow-x: hidden;
+  }
+
+  .sa-row-text strong,
+  .sa-row-text small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}

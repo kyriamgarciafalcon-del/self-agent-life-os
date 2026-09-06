@@ -8,6 +8,7 @@ import '../app/finance.css';
 import '../app/editing.css';
 import '../app/feature-hub.css';
 import '../app/travel-investments.css';
+import '../app/components/mine/mine.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

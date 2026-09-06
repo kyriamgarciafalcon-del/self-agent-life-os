@@ -54,7 +54,8 @@ describe('shell nav wiring', () => {
     expect(page).toContain("from './components/ui/AppShell'");
     expect(page).toContain('<BottomNav');
     expect(page).toContain('<AppHeader');
-    expect(page).toContain("navigate('life')");
+    expect(page).toContain('<ProfilePage');
+    expect(page).toContain('<LifePage');
     expect(page).not.toContain("label: '今天'");
     expect(page).not.toContain("label: '收件箱'");
     expect(page).not.toContain("label: '生活'");

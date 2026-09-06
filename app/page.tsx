@@ -367,6 +367,8 @@ function TransactionComposer({ accounts, currency, editing, onClose, onSubmit, o
 
 export default function Home() {
   const [data, setData] = useState<AppData>(emptyData);
+  const schedulesRef = useRef(data.schedules);
+  schedulesRef.current = data.schedules;
   const [hydrated, setHydrated] = useState(false);
   const [schemaFrozen, setSchemaFrozen] = useState(false);
   const [tab, setTabState] = useState<Tab>('home');
@@ -729,40 +731,48 @@ export default function Home() {
     const editing = editingScheduleId;
     const item: ScheduleItem = { id: editing ?? uid('schedule'), title: String(form.get('title')), date: String(form.get('date')), time: String(form.get('time')), detail: `${String(form.get('detail') || '个人')} · 提前 10 分钟提醒`, color: 'orange', done: false };
     if (!item.date || !item.time) { notify('请填写日期和时间'); return; }
-    const nextSchedules = editing ? data.schedules.map((row) => row.id === editing ? { ...item, done: row.done, color: row.color } : row) : [...data.schedules, item];
+    const sourceSchedules = schedulesRef.current;
+    const nextSchedules = editing ? sourceSchedules.map((row) => row.id === editing ? { ...item, done: row.done, color: row.color } : row) : [...sourceSchedules, item];
+    schedulesRef.current = nextSchedules;
     setData((current) => ({ ...current, schedules: nextSchedules }));
     setSelectedDate(item.date); setEditingScheduleId(null); setSheet(null);
     pushReminders(nextSchedules, data.recurringRules);
   }
-  function pushReminders(schedules: ScheduleItem[], bills: RecurringRule[]) {
+  function pushReminders(schedules: ScheduleItem[], bills: RecurringRule[], feedback = true) {
     const native = (window as Window & { SelfAgentNative?: { syncReminders?: (json: string) => string } }).SelfAgentNative;
-    if (!native?.syncReminders) { notify('系统弹窗只在 Android App 里有效'); return; }
+    if (!native?.syncReminders) { if (feedback) notify('系统弹窗只在 Android App 里有效'); return true; }
     try {
       const info = JSON.parse(native.syncReminders(JSON.stringify({
         ack: true,
         schedules: schedules.filter((item) => !item.done).map((item) => ({ id: item.id, title: item.title, date: item.date, time: item.time })),
         bills: bills.filter((item) => item.enabled).map((item) => ({ id: item.id, name: item.name, dueDay: item.dueDay, amount: item.amount, lastRunPeriod: item.lastRunPeriod || '' })),
       })) || '{}') as { scheduled?: number; notifications?: boolean };
-      if (info.notifications === false) notify('请允许通知并打开横幅，否则不会弹窗');
-      else if (!info.scheduled) notify('这个时间已过，没有排上提醒。请选几分钟之后');
-      else notify(`已设置 ${info.scheduled} 个提醒（提前10分钟 + 到点）`);
+      if (feedback) {
+        if (info.notifications === false) notify('请允许通知并打开横幅，否则不会弹窗');
+        else if (!info.scheduled) notify('这个时间已过，没有排上提醒。请选几分钟之后');
+        else notify(`已设置 ${info.scheduled} 个提醒（提前10分钟 + 到点）`);
+      }
+      return true;
     } catch {
-      notify('提醒没有设置成功');
+      if (feedback) notify('提醒没有设置成功');
+      return false;
     }
   }
   function toggleSchedule(id: string) {
-    const current = data.schedules.find((item) => item.id === id);
+    const current = schedulesRef.current.find((item) => item.id === id);
     if (!current) return;
-    const nextSchedules = data.schedules.map((item) => item.id === id ? { ...item, done: !item.done } : item);
+    const nextSchedules = schedulesRef.current.map((item) => item.id === id ? { ...item, done: !item.done } : item);
+    schedulesRef.current = nextSchedules;
     setData((state) => ({ ...state, schedules: nextSchedules }));
-    pushReminders(nextSchedules, data.recurringRules);
-    notify(current.done ? '日程已恢复为未完成' : '日程已完成，提醒已取消');
+    const synced = pushReminders(nextSchedules, data.recurringRules, false);
+    notify(!synced ? '日程已更新，但提醒同步失败' : current.done ? '日程已恢复为未完成' : '日程已完成，提醒已取消');
   }
   function deleteSchedule(id: string) {
-    const nextSchedules = data.schedules.filter((item) => item.id !== id);
+    const nextSchedules = schedulesRef.current.filter((item) => item.id !== id);
+    schedulesRef.current = nextSchedules;
     setData((current) => ({ ...current, schedules: nextSchedules }));
-    pushReminders(nextSchedules, data.recurringRules);
-    setEditingScheduleId(null); setSheet(null); notify('日程已删除');
+    const synced = pushReminders(nextSchedules, data.recurringRules, false);
+    setEditingScheduleId(null); setSheet(null); notify(synced ? '日程已删除' : '日程已删除，但提醒同步失败');
   }
   function saveTransaction(input: ExpenseDraft & { transactionKind?: 'expense' | 'income'; accountAmount?: number }) {
     const transactionKind = input.transactionKind ?? 'expense';

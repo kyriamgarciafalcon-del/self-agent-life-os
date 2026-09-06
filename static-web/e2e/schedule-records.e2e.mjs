@@ -83,31 +83,40 @@ test('375px schedule empty state, segments, and native reminder bridge on save',
   expect(shortActions).toEqual([]);
 
   await page.getByRole('button', { name: '新建日程' }).click();
-  await page.getByLabel('日程名称').fill('桥接提醒会议');
+  await page.getByLabel('日程名称').fill('桥接提醒会议与跨部门项目同步安排');
   await page.locator('input[name="time"]').fill('23:50');
   await page.getByRole('button', { name: '确认添加' }).click();
-  await expect(schedule.getByText('桥接提醒会议')).toBeVisible();
+  await expect(schedule.getByText('桥接提醒会议与跨部门项目同步安排')).toBeVisible();
+  const populatedLayout = await page.evaluate(() => {
+    const root = document.querySelector('.schedule-page');
+    const short = [...document.querySelectorAll('.schedule-page button')].filter((button) => {
+      const box = button.getBoundingClientRect();
+      return box.height > 0 && box.height < 44;
+    }).length;
+    return { overflow: root ? root.scrollWidth > document.documentElement.clientWidth : true, short };
+  });
+  expect(populatedLayout).toEqual({ overflow: false, short: 0 });
 
   const payloads = await page.evaluate(() => window.__reminderPayloads || []);
   expect(payloads.length).toBeGreaterThan(0);
-  expect(payloads.some((payload) => Array.isArray(payload.schedules) && payload.schedules.some((item) => item.title === '桥接提醒会议'))).toBe(true);
+  expect(payloads.some((payload) => Array.isArray(payload.schedules) && payload.schedules.some((item) => item.title === '桥接提醒会议与跨部门项目同步安排'))).toBe(true);
 
-  await schedule.getByRole('button', { name: '标记完成 桥接提醒会议' }).click();
+  await schedule.getByRole('button', { name: '标记完成 桥接提醒会议与跨部门项目同步安排' }).click();
   const completed = await page.evaluate((key) => {
     const saved = JSON.parse(localStorage.getItem(key) || '{}');
-    return saved.schedules?.find((item) => item.title === '桥接提醒会议')?.done;
+    return saved.schedules?.find((item) => item.title === '桥接提醒会议与跨部门项目同步安排')?.done;
   }, STORAGE_KEY);
   expect(completed).toBe(true);
   const afterComplete = await page.evaluate(() => window.__reminderPayloads || []);
-  expect(afterComplete.at(-1)?.schedules?.some((item) => item.title === '桥接提醒会议')).toBe(false);
+  expect(afterComplete.at(-1)?.schedules?.some((item) => item.title === '桥接提醒会议与跨部门项目同步安排')).toBe(false);
 
-  await schedule.getByRole('button', { name: '恢复未完成 桥接提醒会议' }).click();
+  await schedule.getByRole('button', { name: '恢复未完成 桥接提醒会议与跨部门项目同步安排' }).click();
   const afterRestore = await page.evaluate(() => window.__reminderPayloads || []);
-  expect(afterRestore.at(-1)?.schedules?.some((item) => item.title === '桥接提醒会议')).toBe(true);
-  await schedule.getByRole('button', { name: '删除 桥接提醒会议' }).click();
-  await expect(schedule.getByText('桥接提醒会议')).toHaveCount(0);
+  expect(afterRestore.at(-1)?.schedules?.some((item) => item.title === '桥接提醒会议与跨部门项目同步安排')).toBe(true);
+  await schedule.getByRole('button', { name: '删除 桥接提醒会议与跨部门项目同步安排' }).click();
+  await expect(schedule.getByText('桥接提醒会议与跨部门项目同步安排')).toHaveCount(0);
   const afterDelete = await page.evaluate(() => window.__reminderPayloads || []);
-  expect(afterDelete.at(-1)?.schedules?.some((item) => item.title === '桥接提醒会议')).toBe(false);
+  expect(afterDelete.at(-1)?.schedules?.some((item) => item.title === '桥接提醒会议与跨部门项目同步安排')).toBe(false);
 });
 
 test('375px records confirm loop does not write until confirm and can undo', async ({ page }) => {

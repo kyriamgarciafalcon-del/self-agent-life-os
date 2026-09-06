@@ -76,7 +76,7 @@ test('375px 我的 menu uses grouped rows and keeps shipping actions', async ({ 
   await expect(life.getByRole('button', { name: /健康/ })).toBeVisible();
   await expect(life.getByRole('button', { name: /出行/ })).toBeVisible();
   await expect(life.getByRole('button', { name: /记忆/ })).toBeVisible();
-  await expect(life.getByRole('button', { name: /管家/ })).toBeVisible();
+  await expect(life.getByRole('button', { name: /^管家 / })).toBeVisible();
   expect(await overflowX(page, '.life-page')).toBe(0);
   expect(await shortControls(page, '.life-page')).toEqual([]);
 });

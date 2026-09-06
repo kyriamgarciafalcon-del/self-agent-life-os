@@ -296,7 +296,8 @@ describe('AI provider error classes', () => {
     expect(interpretAiConnectionTest({ ok: false, status: 401 })).toMatchObject({ ok: false, code: 'auth', label: '重新输入密钥' });
     expect(interpretAiConnectionTest({ ok: false, error: 'timeout' }).code).toBe('timeout');
     const page = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8');
-    expect(page).toContain('测试连接');
+    const profile = readFileSync(new URL('../app/components/mine/ProfilePage.tsx', import.meta.url), 'utf8');
+    expect(profile).toContain('测试连接');
     expect(page).toContain('interpretAiConnectionTest');
   });
 });

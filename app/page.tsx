@@ -680,6 +680,7 @@ export default function Home() {
   const hasFinanceData = homeHasFinanceData(data);
   const inboxPending = useMemo(() => pendingInboxItems(data.inboxItems), [data.inboxItems]);
   const inboxPendingCount = inboxPending.length;
+  const recentTransactions = useMemo(() => data.transactions.filter((item) => item.status !== 'reversed' && item.status !== 'superseded' && !item.reversesId).slice(0, 3), [data.transactions]);
   const lastConfirmedInbox = data.inboxItems.find((item) => item.id === data.lastConfirmedInboxId);
   const editingAccount = editingAccountId ? data.accounts.find((item) => item.id === editingAccountId) : undefined;
   const editingTransaction = editingTransactionId ? data.transactions.find((item) => item.id === editingTransactionId) : undefined;
@@ -1413,8 +1414,8 @@ export default function Home() {
       todaySchedules={schedulesOnDate(data.schedules, TODAY).map((item) => ({ id: item.id, time: item.time, title: item.title, detail: item.detail }))}
       todaySpendLabel={`¥ ${money(todaySpend)}`}
       netWorthLabel={totalBalanceLabel}
-      recentCount={data.transactions.filter((item) => item.status !== 'reversed' && item.status !== 'superseded' && !item.reversesId).slice(0, 3).length}
-      recentLedger={<TransactionList items={data.transactions.slice(0, 3)} accounts={data.accounts} onEdit={(id) => { setEditingTransactionId(id); setSheet('transaction'); }} onDelete={(id) => deleteTransaction(id)} onSettle={(id) => settleReimbursement(id)} />}
+      recentCount={recentTransactions.length}
+      recentLedger={<TransactionList items={recentTransactions} accounts={data.accounts} onEdit={(id) => { setEditingTransactionId(id); setSheet('transaction'); }} onDelete={(id) => deleteTransaction(id)} onSettle={(id) => settleReimbursement(id)} />}
       onClearDemo={clearLocalData}
       onNavigate={(id) => navigate(id)}
       onAddFirstSchedule={() => { setEditingScheduleId(null); navigate('schedule'); setSheet('schedule'); }}

@@ -67,6 +67,9 @@ describe('home daily source', () => {
     expect(home).toContain('最近入账');
     expect(home).toContain('今天暂无日程');
     expect(home).toContain('hasFinanceData');
+    expect(page).toContain('recentCount={recentTransactions.length}');
+    expect(page).toContain('items={recentTransactions}');
+    expect(page).not.toContain('items={data.transactions.slice(0, 3)}');
   });
 
   it('keeps demo, permission, empty onboarding, and real pending inbox on home', () => {

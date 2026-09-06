@@ -17,6 +17,9 @@ import { TravelPage } from './components/mine/surfaces/TravelPage';
 import { PrivacyPage } from './components/mine/surfaces/PrivacyPage';
 import { MemoryPage } from './components/mine/surfaces/MemoryPage';
 import { VaultPage } from './components/mine/surfaces/VaultPage';
+import { ButlerPage } from './components/mine/surfaces/ButlerPage';
+import { AuditPage } from './components/mine/surfaces/AuditPage';
+import { DataPage } from './components/mine/surfaces/DataPage';
 import { primaryNavActiveId } from './components/ui/nav';
 import { accountRole, applyDailyFxRates, applyDailyPriceQuotes, applyInboxLifecycle, AI_CONFIG_EVENT, AI_CONFIG_STORAGE_KEY, AI_REPLY_EVENT, AUDIT_OUTCOMES, auditOutcomeLabel, auditReasonLabel, buildButlerSystemPrompt, buildHealthBriefing, buildAiSendPreview, canUndoInboxConfirm, cnyWealthTotal, confirmByokHost, classifyAiProviderError, interpretAiConnectionTest, consumeCallBudget, createCallBudget, defaultCashId, describeButlerDataScope, detectLegacyDemoData, dialogShouldDismiss, dismissPermissionOnboarding, filterAuditLog, generateRecurringDrafts, healthRecordsFromSnapshots, inboxConfidenceLabel, inboxConfirmBlockReason, inboxItemFromAiTool, inboxItemFromButlerAction, inboxItemFromNaturalCapture, inboxItemFromPayment, inboxItemFromTravelNotice, inboxSourceLabel, ledgerIdempotencyKeyForInboxItem, INBOX_ACTION_LABELS, isBackupPayload, isDebtRole, latestHealthByKind, loadBrowserAiConfig, localDateKey, markPermissionSettingsOpened, migrateAuditLog, migrateInboxStore, migrateLegacyAiLocalStorage, migratePrivacySettings, normalizeAccountBalance, normalizeMemory, normalizePermissionOnboarding, parseAiProviderResponse, parseButlerModelOutput, parseCapabilityStatus, parseNaturalCapture, pendingInboxItems, persistBrowserAiConfig, permissionOnboardingProgress, planAccountSettlement, planInvestmentMigrations, confirmInvestmentMigration, prepareOutboundAiPayload, reconcileRecurringConfirmations, releaseRecurringConfirmation, resolveInboxFinanceConfirmation, resolvePaymentAccountId, shouldShowPermissionOnboarding, summarizeHealth, TOAST_ARIA_LIVE, updateInboxItemPayload, upsertByExternalKey, validateByokTarget, ACCOUNT_TYPES, buildReimbursementSettlement, canDeleteAccount, FINANCE_TABS, financeTransactionFields, transactionFormPhases, previewPostedImpact, investmentAccountSnapshot, normalizeFinanceRecords, postBalanceAdjustment, postFinanceTransaction, refreshHoldingsValuation, reimbursementOutstandingAmount, removePostedTransaction, settlePostedReimbursement, resolveTransferAmounts, type AuditEntry, type ButlerAction, type CapabilityStatusSnapshot, type HealthMetric, type InboxItem, type InboxLifecycleEvent, type InboxSource, type PermissionCardId, type PermissionOnboardingState, type TravelKind } from './product-logic';
 
@@ -1444,12 +1447,12 @@ export default function Home() {
     {tab === 'life' && <LifePage onNavigate={navigate} />}
     {tab === 'health' && <HealthPage records={data.healthRecords} onAdd={() => setSheet('health')} onImportHealthConnect={importHealthConnect} onImportGadgetbridge={importGadgetbridgeHealth} onSelectExport={chooseGadgetbridgeExport} onExportDiagnostics={exportHealthDiagnostics} onSaveBody={saveBodyMetrics} />}
     {tab === 'travel' && <TravelPage items={data.travels} onSync={requestTravelSync} onAdd={() => setSheet('travel')} onDelete={(id) => { setData((current) => ({ ...current, travels: current.travels.filter((item) => item.id !== id) })); notify('行程已删除'); }} />}
-    {tab === 'data' && <DataPanel data={data} />}
-    {tab === 'butler' && <ButlerPanel data={data} ai={aiConfig} onQueueActions={queueButlerActions} onQueueTools={queueAiTools} />}
+    {tab === 'data' && <DataPage data={data} />}
+    {tab === 'butler' && <ButlerPage data={data} ai={aiConfig} onQueueActions={queueButlerActions} onQueueTools={queueAiTools} />}
     {tab === 'privacy' && <PrivacyPage settings={data.privacy} onToggle={togglePrivacy} />}
     {tab === 'memory' && <MemoryPage items={data.memories} onToggle={toggleMemory} onToggleSend={toggleMemorySend} onDelete={deleteMemory} />}
     {tab === 'vault' && <VaultPage items={nativeOn && vaultMeta.length ? vaultMeta : data.vaultItems} nativeOn={nativeOn} onReveal={(id) => (window as Window & { SelfAgentNative?: { revealPassword?: (id: string) => void } }).SelfAgentNative?.revealPassword?.(id)} />}
-    {tab === 'audit' && <AuditHistoryPanel entries={data.auditLog} />}
+    {tab === 'audit' && <AuditPage entries={data.auditLog} />}
 
     {tab === 'finance' && <button className="add-button" onClick={() => { setEditingTransactionId(null); setSheet('transaction'); }} aria-label="新建流水">＋</button>}
     <BottomNav active={primaryNavActiveId(tab)} onChange={(id) => navigate(id)} badge={inboxPendingCount} hidden={tab === 'capture' && Boolean(editingInboxId)} />
@@ -1475,180 +1478,6 @@ function PermissionOnboardingPanel({ caps, nativeOn, onOpen, onLater }: { caps: 
     <div className="permission-onboarding-list">{cards.map((card) => <article key={card.id} className={card.enabled ? 'enabled' : ''}><div className="permission-state">{card.enabled ? '✓ 已开启' : '○ 未检测到'}</div><h3>{card.title}</h3><p><strong>为什么需要：</strong>{card.why}</p><p><strong>可以读取：</strong>{card.reads}</p><p><strong>不会读取：</strong>{card.cannotRead}</p><div><button type="button" onClick={() => onOpen(card.id)}>{card.id === 'health' ? '选择健康授权' : '打开系统设置'}</button>{card.id === 'payment' && <button type="button" className="ghost" onClick={() => onOpen(card.id, true)}>打开无障碍</button>}</div></article>)}</div>
     <footer><button type="button" className="later" onClick={onLater}>稍后设置</button><button type="button" className="done" onClick={onLater}>完成并进入</button></footer>
   </div></div>;
-}
-
-function DataPanel({ data }: { data: AppData }) {
-  const month = transactionsInPeriod(data.transactions, MONTH).filter((item) => item.currency === 'CNY');
-  const monthReport = getMonthlyReport(month, 'CNY');
-  const income = monthReport.income;
-  const expense = monthReport.expense;
-  const todayItems = data.schedules.filter((item) => item.date === TODAY);
-  const healthLine = summarizeHealth(data.healthRecords);
-  const hasEnough = month.length + todayItems.length + data.healthRecords.length > 0;
-  return <div className="page feature-page"><section className="data-hero"><span>本机摘要</span><h2>{hasEnough ? '已保存记录' : '暂无结论'}</h2><p>{hasEnough ? '只汇总你确认保存过的日程、账本和健康记录，没有预测分数。' : '记录几天真实数据后，这里才会出现摘要。'}</p></section><section className="feature-section"><div className="feature-title"><div><span>SUMMARY</span><h2>统一摘要</h2></div></div><div className="data-summary"><article><span>健</span><div><strong>健康</strong><small>{data.healthRecords.length ? healthLine : '还没有健康记录'}</small></div><b>{data.healthRecords.length ? `${data.healthRecords.length} 条` : '—'}</b></article><article><span>财</span><div><strong>财务</strong><small>{month.length ? `收入 ¥${money(income)} · 支出 ¥${money(expense)}` : '本月还没有流水'}</small></div><b>{month.length ? `${month.length} 笔` : '—'}</b></article><article><span>行</span><div><strong>行动</strong><small>今日 {todayItems.length} 项日程</small></div><b>{todayItems.length ? `${todayItems.filter((item) => item.done).length}/${todayItems.length}` : '—'}</b></article></div></section></div>;
-}
-
-
-function formatHealthAnswer(briefing: { rangeLabel: string; evidence: string; missing: string[]; disclaimer: string }, extra = '') {
-  const missing = briefing.missing.length ? briefing.missing.join('、') : '无';
-  return [extra, `数据范围：${briefing.rangeLabel}`, `证据：${briefing.evidence}`, `缺失指标：${missing}`, briefing.disclaimer].filter(Boolean).join('\n');
-}
-
-function ButlerPanel({ data, ai, onQueueActions, onQueueTools }: { data: AppData; ai: AiConfig; onQueueActions: (actions: ButlerAction[]) => void; onQueueTools: (tools: Parameters<typeof inboxItemFromAiTool>[0]['tool'][]) => void }) {
-  const connected = Boolean(ai.baseUrl && ai.configured);
-  const [input, setInput] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [linkState, setLinkState] = useState<'unconfigured' | 'ready' | 'busy' | 'offline'>(connected ? 'ready' : 'unconfigured');
-  const [pending, setPending] = useState<ButlerAction[]>([]);
-  const [confirmSend, setConfirmSend] = useState<{ text: string; preview: ReturnType<typeof buildAiSendPreview> } | null>(null);
-  const [confirmedHost, setConfirmedHost] = useState('');
-  const budgetRef = useRef(createCallBudget({ maxCalls: 20, maxTokens: 4096, timeoutMs: 15_000 }));
-  const confirmDialogRef = useRef<HTMLDivElement | null>(null);
-  const confirmReturnFocus = useRef<HTMLElement | null>(null);
-  useEffect(() => {
-    if (!confirmSend) return;
-    confirmReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const focusable = confirmDialogRef.current?.querySelector<HTMLElement>('input,button');
-    focusable?.focus();
-    const onKey = (event: KeyboardEvent) => {
-      if (!dialogShouldDismiss(event.key)) return;
-      setConfirmSend(null);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      confirmReturnFocus.current?.focus?.();
-    };
-  }, [confirmSend]);
-  const briefing = buildHealthBriefing(data.healthRecords, data.privacy.health);
-  const scopes = describeButlerDataScope(data.privacy);
-  const [messages, setMessages] = useState<{ role: 'user' | 'bot'; text: string }[]>([{ role: 'bot', text: connected ? '已连接你配置的 AI 接口。我只会发送允许的摘要，不会读取密码。写操作都要你确认。' : '尚未配置 AI 接口时，我使用本机规则摘要。密码永远不会进入请求。' }]);
-  function localAnswer(text: string) {
-    if (/密码|验证码|私钥|助记词/.test(text)) return '密码库是独立安全域。我不能读取或复述密码、验证码、私钥和助记词。这个问题不会发给 AI。';
-    if (/睡眠|疲惫|健康|心率|压力|PAI|身高|体重|步数/.test(text)) {
-      if (!data.privacy.health) return formatHealthAnswer(briefing, '健康摘要权限已关闭，不会把健康记录发给 AI。');
-      return formatHealthAnswer(briefing, briefing.evidence.startsWith('尚无') ? '还没有足够的健康记录。可在健康页添加或导入手环。' : '以下是本机健康摘要。');
-    }
-    if (/财务|花|钱|结余/.test(text)) {
-      if (!data.privacy.finance) return '财务摘要权限已关闭。你可以在隐私与权限中重新开启。';
-      const monthReport = getMonthlyReport(transactionsInPeriod(data.transactions, MONTH), 'CNY');
-      return `本月已确认收入 ${money(monthReport.income)} 元、支出 ${money(monthReport.expense)} 元，结余 ${money(monthReport.balance)} 元。未读取订单号或密码。财务不是投资建议。`;
-    }
-    if (/记忆/.test(text)) {
-      if (!data.privacy.memory) return '记忆摘要权限已关闭。你可以在隐私与权限中单独开启，并按条允许发送。';
-      const allowed = data.memories.filter((item) => item.active && item.sendAllowed);
-      return allowed.length ? `当前允许发送的记忆：${allowed.map((item) => item.title).join('、')}。修改需要确认管家动作。` : '还没有允许发送给 AI 的记忆。';
-    }
-    if (!data.privacy.schedule) return '日程摘要权限已关闭。你可以在隐私与权限中重新开启。';
-    const open = data.schedules.filter((item) => item.date === TODAY && !item.done);
-    return open.length ? `建议先处理“${open[0].title}”，完成后再安排下一项。` : '今天没有未完成日程，可以保留一点空白。';
-  }
-  async function dispatchAi(value: string) {
-    setBusy(true); setLinkState('busy');
-    let reply = localAnswer(value);
-    const system = buildButlerSystemPrompt({ today: TODAY, month: MONTH, privacy: data.privacy, schedules: data.schedules, transactions: data.transactions, healthRecords: data.privacy.health ? data.healthRecords : [], memories: data.memories });
-    const outbound = prepareOutboundAiPayload({ userMessage: value, fields: { system } });
-    if (!outbound.ok || !outbound.messages) {
-      setMessages((current) => [...current, { role: 'bot', text: '检测到密码、令牌、验证码、私钥、助记词或完整卡号，这条消息不会发给 AI。' }]);
-      setBusy(false); setLinkState(connected ? 'ready' : 'unconfigured');
-      return;
-    }
-    const target = validateByokTarget(ai.baseUrl);
-    if (!target.ok) {
-      setMessages((current) => [...current, { role: 'bot', text: 'AI 接口地址不安全：只允许 HTTPS 公网主机，禁止 localhost/内网/链路本地地址。' }]);
-      setBusy(false); setLinkState('offline');
-      return;
-    }
-    const budget = consumeCallBudget(budgetRef.current, 256);
-    if (!budget.ok) {
-      setMessages((current) => [...current, { role: 'bot', text: '已达到本次会话的调用或 token 上限。' }]);
-      setBusy(false); setLinkState('ready');
-      return;
-    }
-    try {
-      const native = (window as Window & { SelfAgentNative?: NativeAiBridge }).SelfAgentNative;
-      const request = { requestId: uid('ai'), model: ai.model || 'gpt-4o-mini', messages: outbound.messages };
-      let content = '';
-      if (native?.nativeReady?.() && native.askAi) {
-        content = await askNativeAi(native, request);
-      } else {
-        throw new Error('native_keystore_required');
-      }
-      const parsed = parseAiProviderResponse(content || reply);
-      reply = parsed.reply || reply;
-      if (parsed.tools.length) {
-        onQueueTools(parsed.tools);
-        reply = `${reply}\n\n已放入收件箱 ${parsed.tools.filter((item) => item.name !== 'read_finance_summary').length} 条，确认后才会写入。`;
-      } else {
-        const fallback = parseButlerModelOutput(content || reply);
-        if (fallback.actions.length) {
-          onQueueActions(fallback.actions);
-          reply = `${fallback.reply}\n\n已放入收件箱 ${fallback.actions.length} 条，确认后才会写入。`;
-        }
-      }
-      if (/健康|心率|睡眠|压力|PAI|身高|体重|步数/.test(value) && !reply.includes('不是诊断')) reply = formatHealthAnswer(briefing, reply);
-      setLinkState('ready');
-    } catch (error) {
-      const classified = classifyAiProviderError({ message: String(error) });
-      reply = String(error).includes('native_keystore_required')
-        ? `${reply}\n\n外部 AI 只能通过 Android Keystore 通道发送，浏览器直连已关闭。`
-        : `${reply}\n\n（${classified.action}）`;
-      setLinkState('offline');
-    }
-    setPending([]);
-    setMessages((current) => [...current, { role: 'bot', text: reply }]);
-    setBusy(false);
-  }
-  async function send(text = input) {
-    const value = text.trim(); if (!value || busy) return;
-    setInput('');
-    setMessages((current) => [...current, { role: 'user', text: value }]);
-    if (/密码|验证码|私钥|助记词/.test(value) || !prepareOutboundAiPayload({ userMessage: value }).ok) {
-      setMessages((current) => [...current, { role: 'bot', text: localAnswer(value).includes('密码库') ? localAnswer(value) : '检测到敏感数据，这条消息不会发给 AI。' }]);
-      return;
-    }
-    if (connected) {
-      setConfirmSend({ text: value, preview: buildAiSendPreview({ privacy: data.privacy, memories: data.memories, baseUrl: ai.baseUrl }) });
-      setConfirmedHost('');
-      return;
-    }
-    setMessages((current) => [...current, { role: 'bot', text: localAnswer(value) }]);
-  }
-  function confirmOutbound() {
-    if (!confirmSend) return;
-    if (!confirmByokHost(ai.baseUrl, confirmedHost)) {
-      setMessages((current) => [...current, { role: 'bot', text: `请精确确认目标主机 ${confirmSend.preview.domain}，不会发送。` }]);
-      return;
-    }
-    const pendingText = confirmSend.text;
-    setConfirmSend(null);
-    void dispatchAi(pendingText);
-  }
-  const statusLabel = busy || linkState === 'busy' ? '正在连接' : linkState === 'offline' ? '接口不可用，已回退本机规则' : connected ? '已配置，可连接' : '未配置，使用本机规则';
-  return <div className="page butler-page">
-    <section className="butler-status"><span>AI 连接状态</span><strong>{statusLabel}</strong><small>{connected ? (ai.model || 'gpt-4o-mini') : '不会调用外部接口'}</small></section>
-    <section className="butler-scope"><span>当前允许的数据域</span><div>{scopes.map((item) => <b key={item.key} className={item.allowed ? 'on' : 'off'}>{item.label} · {item.allowed ? '开' : '关'}</b>)}</div></section>
-    <section className="butler-briefing"><span>健康回答边界</span><p>数据范围：{briefing.rangeLabel}</p><p>缺失指标：{briefing.missing.length ? briefing.missing.join('、') : '无'}</p><p>{briefing.disclaimer}</p></section>
-    <div className="butler-quick"><button type="button" onClick={() => send('帮我安排明天上午的日程')}>安排日程</button><button type="button" onClick={() => send('帮我记下今天的健康数据')}>记健康</button><button type="button" onClick={() => send('分析最近的健康记录')}>分析健康</button><button type="button" onClick={() => send('帮我查看并管理记忆')}>管理记忆</button></div>
-    <div className="chat-messages">{messages.map((message, index) => <div key={index} className={message.role}>{message.text}</div>)}</div>
-    {confirmSend && <div ref={confirmDialogRef} className="butler-pending" role="dialog" aria-modal="true" aria-label="发送前确认"><article><span>发送前确认</span><h3>将发往 {confirmSend.preview.domain}</h3><p>当前字段（不含值）：</p><ul>{confirmSend.preview.fields.map((field) => <li key={field.key}>{field.label} · {field.included ? '会发送摘要' : '不会发送'}</li>)}</ul><label>精确确认主机<input value={confirmedHost} onChange={(event) => setConfirmedHost(event.target.value)} placeholder={confirmSend.preview.domain} /></label><div><button type="button" onClick={confirmOutbound}>确认发送</button><button type="button" onClick={() => setConfirmSend(null)}>取消</button></div></article></div>}
-    {pending.length > 0 && <div className="butler-pending"><article><span>已转入收件箱</span><h3>写操作需要在收件箱确认</h3><p>管家只生成草稿，不会直接改账本或日程。</p></article></div>}
-    <form className="butler-composer" onSubmit={(event) => { event.preventDefault(); send(); }}><input value={input} onChange={(event) => setInput(event.target.value)} placeholder={busy ? '正在生成…' : '问问今天的状态…'} /><button disabled={busy}>发送</button></form>
-  </div>;
-}
-function AuditHistoryPanel({ entries }: { entries: AuditEntry[] }) {
-  const [outcome, setOutcome] = useState('');
-  const [source, setSource] = useState('');
-  const visible = filterAuditLog(entries, { outcome, source });
-  const sources = Array.from(new Set(entries.map((entry) => entry.source)));
-  return <div className="page feature-page audit-page">
-    <section className="feature-heading"><span>AUDIT LOG</span><h2>每次处理都有记录。</h2><p>这里只说明收件箱草稿经历了什么，不提供虚假的二次撤销。密码、密钥和令牌不会写入历史。</p></section>
-    <section className="audit-filters">
-      <label>结果<select aria-label="筛选操作结果" value={outcome} onChange={(event) => setOutcome(event.target.value)}><option value="">全部结果</option>{AUDIT_OUTCOMES.map((value) => <option key={value} value={value}>{auditOutcomeLabel(value)}</option>)}</select></label>
-      <label>来源<select aria-label="筛选操作来源" value={source} onChange={(event) => setSource(event.target.value)}><option value="">全部来源</option>{sources.map((value) => <option key={value} value={value}>{inboxSourceLabel(value)}</option>)}</select></label>
-    </section>
-    <section className="audit-list">{visible.length ? visible.map((entry) => <article key={entry.id} className={`audit-${entry.outcome}`}><header><strong>{auditOutcomeLabel(entry.outcome)}</strong><time>{entry.timestamp ? entry.timestamp.replace('T', ' ').slice(0, 16) : '时间未知'}</time></header><h3>{entry.summary}</h3><p>{inboxSourceLabel(entry.source)} · {INBOX_ACTION_LABELS[entry.action]}</p>{entry.reason && <small>原因：{auditReasonLabel(entry.reason)}</small>}{entry.dataScope && <small>数据范围：{entry.dataScope}</small>}</article>) : <div className="list-empty">没有符合条件的操作记录</div>}</section>
-  </div>;
 }
 
 type FinancePanelProps = { data: AppData; currency: Currency; selectedAccountId: string | null; selectedHoldingId: string | null; onCurrency: (currency: Currency) => void; onSelectAccount: (id: string) => void; onSelectHolding: (id: string) => void; onBackAccount: () => void; onBackHolding: () => void; onNewTransaction: () => void; onEditTransaction: (id: string) => void; onDeleteTransaction: (id: string) => void; onNewAccount: () => void; onEditAccount: (id: string) => void; onNewHolding: () => void; onEditHolding: (id: string) => void; onNewRecurring: () => void; onEditRecurring: (id: string) => void; onDeleteRecurring: (id: string) => void; onRunRecurring: (id: string) => void; onSettleReimbursement: (id: string) => void; onSettleAccount: (id: string) => void; onNewRate: () => void; onEditRate: (currency: string) => void; onDeleteRate: (currency: string) => void; onRefreshQuotes: () => void };

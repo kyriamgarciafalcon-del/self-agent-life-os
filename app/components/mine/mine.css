@@ -548,6 +548,57 @@
   padding: 8px 12px;
 }
 
+.sa-filter-row {
+  gap: 8px;
+}
+
+.sa-filter-row select {
+  min-height: 44px;
+  min-width: 44px;
+  max-width: 58%;
+  border: 0;
+  border-radius: 10px;
+  background: #F2F2F7;
+  padding: 0 10px;
+}
+
+.butler-chat {
+  display: grid;
+  gap: 10px;
+}
+
+.butler-bubble {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #F2F2F7;
+  font-size: 15px;
+  line-height: 21px;
+}
+
+.butler-bubble.user {
+  background: #2F6F57;
+  color: #fff;
+  justify-self: end;
+}
+
+.butler-composer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.butler-composer input {
+  flex: 1;
+  min-width: 0;
+}
+
+.butler-composer button {
+  flex: 0 0 auto;
+}
+
 @media (max-width: 375px) {
   .profile-page,
   .life-page,

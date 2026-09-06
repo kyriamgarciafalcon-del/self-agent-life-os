@@ -29,14 +29,15 @@ class MainActivity : Activity() {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.databaseEnabled = true
-            settings.allowFileAccess = false
-            settings.allowContentAccess = false
+            settings.allowFileAccess = true
+            settings.allowContentAccess = true
             settings.setSupportZoom(false)
             settings.builtInZoomControls = false
             settings.displayZoomControls = false
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     val uri = request.url
+                    if (uri.scheme == "file") return false
                     val host = trustedHost()
                     val allowedScheme = uri.scheme == "https" || uri.scheme == "http"
                     return if (allowedScheme && host != null && uri.host == host) {
@@ -55,7 +56,7 @@ class MainActivity : Activity() {
             pendingTransactions.add(transaction)
             runOnUiThread { flushPendingTransactions() }
         }
-        webView.loadUrl(BuildConfig.WEB_APP_URL)
+        webView.loadUrl("file:///android_asset/www/index.html")
     }
 
     override fun onResume() {

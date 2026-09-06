@@ -85,7 +85,7 @@ const inboxLedger = {
 test('inbox currency change clears incompatible account and filters options', async ({ page }) => {
   await page.addInitScript(({ key, value }) => window.localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: inboxLedger });
   await page.goto('/');
-  await page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: /收件箱$/ }).click();
+  await page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: /记录$/ }).click();
 
   const card = page.locator('.inbox-card');
   await expect(card.locator('.inbox-card-amount')).toHaveText('CNY 36.80');

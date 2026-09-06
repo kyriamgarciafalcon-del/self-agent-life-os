@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import './components/ui/shell.css';
 import './finance.css';
 import './editing.css';
 import './feature-hub.css';

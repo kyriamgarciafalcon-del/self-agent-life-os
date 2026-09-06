@@ -24,7 +24,8 @@ const healthData = {
 test('health dashboard presents real metrics, sources and editable body profile', async ({ page }) => {
   await page.addInitScript(({ key, value }) => window.localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: healthData });
   await page.goto('/');
-  await page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: /生活$/ }).click();
+  await page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: /我的$/ }).click();
+  await page.getByRole('button', { name: /生活/ }).click();
   await page.getByRole('button', { name: /健康/ }).click();
 
   await expect(page.getByRole('heading', { name: '今日状态' })).toBeVisible();

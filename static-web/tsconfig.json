@@ -21,6 +21,8 @@
     "../app/finance-query.ts",
     "../app/finance-schema.ts",
     "../app/money.ts",
-    "../app/ui.tsx"
+    "../app/ui.tsx",
+    "../app/components/ui/**/*.ts",
+    "../app/components/ui/**/*.tsx"
   ]
 }

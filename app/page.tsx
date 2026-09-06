@@ -1455,7 +1455,6 @@ export default function Home() {
     {tab === 'vault' && <VaultPage items={nativeOn && vaultMeta.length ? vaultMeta : data.vaultItems} nativeOn={nativeOn} onReveal={(id) => (window as Window & { SelfAgentNative?: { revealPassword?: (id: string) => void } }).SelfAgentNative?.revealPassword?.(id)} />}
     {tab === 'audit' && <AuditPage entries={data.auditLog} />}
 
-    {tab === 'finance' && <button className="add-button" onClick={() => { setEditingTransactionId(null); setSheet('transaction'); }} aria-label="新建流水">＋</button>}
     <BottomNav active={primaryNavActiveId(tab)} onChange={(id) => navigate(id)} badge={inboxPendingCount} hidden={tab === 'capture' && Boolean(editingInboxId)} />
 
     {sheet === 'transaction' && <TransactionComposer accounts={data.accounts} currency={financeCurrency} editing={editingTransaction} onClose={() => setSheet(null)} onSubmit={addTransaction} onDelete={() => deleteTransaction(editingTransaction?.id)} />}

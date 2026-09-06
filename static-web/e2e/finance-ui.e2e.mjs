@@ -33,7 +33,10 @@ test('375px finance keeps five sections and ledger-backed account actions', asyn
   await expect(tabs.getByRole('tab')).toHaveCount(5);
   await expect(page.getByText('净资产', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '手动汇率' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '编辑' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '删除' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '每日更新' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '新建流水' })).toBeVisible();
 
   await tabs.getByRole('tab', { name: '账户' }).click();
   await expect(page.getByRole('button', { name: '编辑 理财账户' })).toBeVisible();

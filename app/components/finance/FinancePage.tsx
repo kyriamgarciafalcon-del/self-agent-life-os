@@ -120,6 +120,7 @@ export function FinancePage({
           <select aria-label="月度收支币种" value={currency} onChange={(event) => onCurrency(event.target.value as Currency)}>
             {FINANCE_CURRENCIES.map((item) => <option key={item}>{item}</option>)}
           </select>
+          <button type="button" className="finance-new-transaction" aria-label="新建流水" onClick={onNewTransaction}>记一笔</button>
         </div>
       </header>
 
@@ -166,10 +167,12 @@ export function FinancePage({
                 <strong>1 {rate.currency} = ¥ {money(rate.cnyRate)}</strong>
                 <small>{rate.source === 'daily' ? '每日参考 · Frankfurter' : '手动确认'} · 适用 {rate.asOf}</small>
               </span>
-              <div className="row-ops">
-                <button type="button" className="edit" onClick={() => onEditRate(rate.currency)}>编辑</button>
-                <button type="button" className="del" onClick={() => onDeleteRate(rate.currency)}>删除</button>
-              </div>
+              {rate.source !== 'daily' ? (
+                <div className="row-ops">
+                  <button type="button" className="edit" onClick={() => onEditRate(rate.currency)}>编辑</button>
+                  <button type="button" className="del" onClick={() => onDeleteRate(rate.currency)}>删除</button>
+                </div>
+              ) : null}
             </div>
           )) : <div className="sa-row"><span className="sa-row-text"><strong>还没有网络汇率</strong><small>点「每日更新」，或手动补充。</small></span></div>}
         </div>

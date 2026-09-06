@@ -632,7 +632,8 @@ describe('finance UI structure', () => {
     const shipped = `${page}\n${finance}`;
     expect(finance).toMatch(/role="tablist"/);
     for (const tab of FINANCE_TABS) expect(finance).toContain(tab);
-    expect(page).toContain('aria-label="新建流水"');
+    expect(finance).toContain('aria-label="新建流水"');
+    expect(page).not.toContain('className="add-button"');
     expect(page).toContain('settle-reimbursement');
     expect(page).toContain('normalizeFinanceRecords');
     expect(page).toContain('canDeleteAccount');

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { HOME_SHORTCUTS, homeHasAuthoritativeData, schedulesOnDate } from '../app/components/daily/home';
+import { HOME_SHORTCUTS, homeHasAuthoritativeData, homeHasFinanceData, schedulesOnDate } from '../app/components/daily/home';
 
 describe('home daily logic', () => {
   it('treats missing schedules, accounts and ledger as empty authoritative data', () => {
@@ -18,6 +18,20 @@ describe('home daily logic', () => {
       healthRecords: [],
       travels: [],
     })).toBe(true);
+  });
+
+  it('requires accounts or transactions before showing net worth', () => {
+    expect(homeHasFinanceData({ accounts: [], transactions: [] })).toBe(false);
+    expect(homeHasFinanceData({ accounts: [], transactions: [{ id: 't1' }] })).toBe(true);
+    expect(homeHasFinanceData({ accounts: [{ id: 'a1' }], transactions: [] })).toBe(true);
+    expect(homeHasAuthoritativeData({
+      schedules: [{ id: 's1' }],
+      accounts: [],
+      transactions: [],
+      healthRecords: [{ id: 'h1' }],
+      travels: [],
+    })).toBe(true);
+    expect(homeHasFinanceData({ accounts: [], transactions: [] })).toBe(false);
   });
 
   it('keeps only same-day schedules sorted by time', () => {
@@ -52,6 +66,7 @@ describe('home daily source', () => {
     expect(home).toContain('待确认');
     expect(home).toContain('最近入账');
     expect(home).toContain('今天暂无日程');
+    expect(home).toContain('hasFinanceData');
   });
 
   it('keeps demo, permission, empty onboarding, and real pending inbox on home', () => {

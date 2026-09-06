@@ -15,12 +15,12 @@ describe('inbox finance editor', () => {
   });
 
   it('ships a real currency selector and notification card hierarchy', () => {
-    const page = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8');
+    const records = readFileSync(new URL('../app/components/daily/RecordsPage.tsx', import.meta.url), 'utf8');
     const css = readFileSync(new URL('../app/globals.css', import.meta.url), 'utf8');
-    expect(page).toContain('aria-label="币种"');
-    expect(page).not.toContain('<label>币种<input');
-    expect(page).toContain('inbox-card-amount');
-    expect(page).toContain('inbox-card-source');
+    expect(records).toContain('aria-label="币种"');
+    expect(records).not.toContain('<label>币种<input');
+    expect(records).toContain('inbox-card-amount');
+    expect(records).toContain('inbox-card-source');
     expect(css).toContain('.inbox-card-amount');
     expect(css).toContain('.inbox-card-source');
   });

@@ -630,7 +630,7 @@ describe('finance UI structure', () => {
     const page = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8');
     expect(page).toMatch(/role="tablist"/);
     for (const tab of FINANCE_TABS) expect(page).toContain(tab);
-    expect(page).toMatch(/aria-label=\{tab === 'schedule' \? '新建日程' : '新建流水'\}/);
+    expect(page).toContain('aria-label="新建流水"');
     expect(page).toContain('settle-reimbursement');
     expect(page).toContain('normalizeFinanceRecords');
     expect(page).toContain('canDeleteAccount');

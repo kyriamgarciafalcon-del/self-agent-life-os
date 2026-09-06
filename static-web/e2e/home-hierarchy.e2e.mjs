@@ -120,3 +120,38 @@ test('375px home empty state when there is no authoritative data', async ({ page
   await expect(home).toContainText('暂无入账');
   await expect(home.getByText('账本脉搏')).toHaveCount(0);
 });
+
+test('375px home hides net worth when only schedules exist', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.addInitScript(({ key, value }) => {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  }, {
+    key: STORAGE_KEY,
+    value: {
+      schemaVersion: 4,
+      demoMode: false,
+      accounts: [],
+      transactions: [],
+      recurringRules: [],
+      schedules: [{ id: 's1', date: shanghaiDateKey(), time: '15:00', title: '只有日程', detail: '无账本', color: 'blue', done: false }],
+      healthRecords: [],
+      travels: [],
+      investments: [],
+      exchangeRates: [],
+      memories: [],
+      privacy: { health: false, finance: false, schedule: false, memory: false },
+      vaultItems: [],
+      auditLog: [],
+      lastConfirmedInboxId: null,
+      theme: 'light',
+      permissionOnboarding: { version: 2, dismissed: true, completedAt: null, settingsOpened: false },
+      inboxItems: [],
+    },
+  });
+  await page.goto('/');
+  const home = page.locator('.home-page');
+  await expect(home).toContainText('只有日程');
+  await expect(home.getByText('今日支出')).toHaveCount(0);
+  await expect(home.getByText('净资产')).toHaveCount(0);
+  await expect(home.getByText('这里还没有你的数据')).toHaveCount(0);
+});

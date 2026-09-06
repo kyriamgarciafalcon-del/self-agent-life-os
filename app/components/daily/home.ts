@@ -19,6 +19,13 @@ export function homeHasAuthoritativeData(input: {
   return input.schedules.length + input.accounts.length + input.transactions.length + input.healthRecords.length + input.travels.length > 0;
 }
 
+export function homeHasFinanceData(input: {
+  accounts: unknown[];
+  transactions: unknown[];
+}): boolean {
+  return input.accounts.length > 0 || input.transactions.length > 0;
+}
+
 export function schedulesOnDate<T extends { date: string; time: string }>(items: T[], date: string): T[] {
   return items.filter((item) => item.date === date).sort((left, right) => left.time.localeCompare(right.time));
 }

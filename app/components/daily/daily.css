@@ -25,3 +25,29 @@
 .home-page .section-title{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .home-page .section-title button{border:0;background:transparent;color:#2F6F57;font-weight:600}
 .home-page .transaction-list{border-radius:12px;overflow:hidden;background:#FFFFFF}
+.schedule-page,.capture-page{overflow-x:hidden;padding:12px 0 28px;background:#F2F2F7}
+.schedule-page button{min-height:44px;min-width:44px}
+.capture-page button{min-height:44px;min-width:44px}
+.daily-segment{display:flex;margin:0 16px 8px;padding:2px;border-radius:10px;background:rgba(118,118,128,0.12)}
+.daily-segment button{flex:1;min-height:44px;border:0;border-radius:8px;background:transparent;color:#1C1C1E;font-weight:600}
+.daily-segment button.on{background:#FFFFFF;color:#2F6F57}
+.daily-day-nav{display:flex;gap:8px;margin:0 16px 8px}
+.daily-day-nav button,.daily-plain{flex:1;min-height:44px;border:0;border-radius:10px;background:#FFFFFF;color:#2F6F57;font-weight:600}
+.daily-plain{display:block;width:calc(100% - 32px);margin:0 16px 8px}
+.daily-timeline{min-width:0}
+.daily-row-main{display:flex;align-items:center;gap:12px;min-width:0;flex:1;border:0;background:transparent;text-align:left;color:inherit;padding:0}
+.daily-delete{flex:none;border:0;background:transparent;color:#8E8E93}
+.daily-fab{position:fixed;right:max(16px, calc(50% - 390px / 2 + 16px));bottom:calc(var(--nav-height, 49px) + env(safe-area-inset-bottom, 0px) + 16px);width:44px;height:44px;border:0;border-radius:22px;background:#2F6F57;color:#fff;font-size:22px;z-index:15}
+.daily-kicker{margin:4px 16px 12px;color:#8E8E93;font-size:13px}
+.capture-page .capture-box,.capture-page .suggestion-row,.capture-page .inbox-undo{margin-left:16px;margin-right:16px}
+.capture-page .inbox-list{display:flex;flex-direction:column;gap:12px;margin:0 16px 16px}
+.inbox-card-body{padding:14px 16px 12px}
+.inbox-card-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.inbox-kind{border-radius:999px;background:rgba(47,111,87,0.12);color:#2F6F57;padding:2px 8px;font-size:11px;font-weight:700}
+.inbox-card-time{margin:8px 0 0;color:#8E8E93;font-size:12px}
+.inbox-card-actions{border-top:0.5px solid rgba(60,60,67,0.12)}
+.inbox-edit{width:100%;border:0;background:transparent;color:#2F6F57;font-weight:600}
+.capture-page .inbox-ops{display:flex;align-items:stretch}
+.capture-page .inbox-ops .ghost{flex:1;border:0;background:transparent;color:#C0392B;font-weight:600}
+.capture-page .inbox-ops .confirm-button{flex:1.4;border:0;border-radius:0;background:#2F6F57;color:#fff;font-weight:700}
+.daily-footnote{margin:8px 24px 16px;text-align:center;color:#8E8E93;font-size:12px;line-height:1.5}

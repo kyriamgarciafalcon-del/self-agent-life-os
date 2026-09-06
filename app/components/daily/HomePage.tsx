@@ -24,6 +24,7 @@ export function HomePage({
   inboxPending,
   inboxPendingCount,
   hasBusinessData,
+  hasFinanceData,
   nativeOn,
   caps,
   todaySchedules,
@@ -42,6 +43,7 @@ export function HomePage({
   inboxPending: HomeInboxPreview[];
   inboxPendingCount: number;
   hasBusinessData: boolean;
+  hasFinanceData: boolean;
   nativeOn: boolean;
   caps: { accessibility?: boolean | null; notificationListener?: boolean | null; autofill?: boolean | null };
   todaySchedules: HomeSchedulePreview[];
@@ -126,7 +128,7 @@ export function HomePage({
             </button>
           ))
         )}
-        {hasBusinessData ? (
+        {hasFinanceData ? (
           <button type="button" className={`daily-row ${todaySchedules.length ? 'daily-row-sep' : ''}`} onClick={() => onNavigate('finance')}>
             <div className="daily-row-body">
               <span>今日支出</span>

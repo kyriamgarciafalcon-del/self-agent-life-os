@@ -5,13 +5,15 @@ import { getConvertedNetWorth, getMonthlyReport, getNetWorth, getOutstandingReim
 import { migrateToSchemaV4, createSchemaV4MigrationBackup, applySchemaV4Migration, SCHEMA_V3_BACKUP_KEY } from './finance-schema';
 import { LargeTitle, GroupedList } from './ui';
 import { HomePage } from './components/daily/HomePage';
-import { homeHasAuthoritativeData, schedulesOnDate } from './components/daily/home';
+import { homeHasAuthoritativeData, homeHasFinanceData, schedulesOnDate } from './components/daily/home';
+import { SchedulePage } from './components/daily/SchedulePage';
+import { RecordsPage } from './components/daily/RecordsPage';
 import { AppHeader } from './components/ui/AppHeader';
 import { AppShell } from './components/ui/AppShell';
 import { BottomNav } from './components/ui/BottomNav';
 import { primaryNavActiveId } from './components/ui/nav';
 import { buildHealthMetricSeries, formatCompactSleepDuration, formatSleepDuration, sleepDurationParts, type HealthCoreKind, type HealthMetricSeries } from './health-dashboard';
-import { accountRole, addDaysKey, applyDailyFxRates, applyDailyPriceQuotes, applyInboxLifecycle, AI_CONFIG_EVENT, AI_CONFIG_STORAGE_KEY, AI_REPLY_EVENT, AUDIT_OUTCOMES, auditOutcomeLabel, auditReasonLabel, buildButlerSystemPrompt, buildHealthBriefing, buildAiSendPreview, canUndoInboxConfirm, cnyWealthTotal, confirmByokHost, classifyAiProviderError, interpretAiConnectionTest, consumeCallBudget, createCallBudget, defaultCashId, describeButlerDataScope, detectLegacyDemoData, dialogShouldDismiss, dismissPermissionOnboarding, filterAuditLog, generateRecurringDrafts, healthRecordsFromSnapshots, inboxConfidenceLabel, inboxConfirmBlockReason, inboxAccountsForCurrency, inboxItemFromAiTool, inboxItemFromButlerAction, inboxItemFromNaturalCapture, inboxItemFromPayment, inboxItemFromTravelNotice, inboxSourceLabel, ledgerIdempotencyKeyForInboxItem, INBOX_ACTION_LABELS, isBackupPayload, isDebtRole, latestHealthByKind, loadBrowserAiConfig, localDateKey, markPermissionSettingsOpened, migrateAuditLog, migrateInboxStore, migrateLegacyAiLocalStorage, migratePrivacySettings, normalizeAccountBalance, normalizeMemory, normalizePermissionOnboarding, parseAiProviderResponse, parseButlerModelOutput, parseCapabilityStatus, parseNaturalCapture, pendingInboxItems, persistBrowserAiConfig, permissionOnboardingProgress, planAccountSettlement, planInvestmentMigrations, confirmInvestmentMigration, prepareOutboundAiPayload, reconcileRecurringConfirmations, releaseRecurringConfirmation, resolveInboxFinanceConfirmation, resolvePaymentAccountId, shouldShowPermissionOnboarding, summarizeHealth, TOAST_ARIA_LIVE, updateInboxItemPayload, upsertByExternalKey, validateByokTarget, weekDates, ACCOUNT_TYPES, buildReimbursementSettlement, canDeleteAccount, FINANCE_TABS, financeTransactionFields, transactionFormPhases, previewPostedImpact, investmentAccountSnapshot, normalizeFinanceRecords, postBalanceAdjustment, postFinanceTransaction, refreshHoldingsValuation, reimbursementOutstandingAmount, removePostedTransaction, settlePostedReimbursement, resolveTransferAmounts, type AuditEntry, type ButlerAction, type CapabilityStatusSnapshot, type HealthMetric, type InboxItem, type InboxLifecycleEvent, type InboxSource, type PermissionCardId, type PermissionOnboardingState, type TravelKind } from './product-logic';
+import { accountRole, applyDailyFxRates, applyDailyPriceQuotes, applyInboxLifecycle, AI_CONFIG_EVENT, AI_CONFIG_STORAGE_KEY, AI_REPLY_EVENT, AUDIT_OUTCOMES, auditOutcomeLabel, auditReasonLabel, buildButlerSystemPrompt, buildHealthBriefing, buildAiSendPreview, canUndoInboxConfirm, cnyWealthTotal, confirmByokHost, classifyAiProviderError, interpretAiConnectionTest, consumeCallBudget, createCallBudget, defaultCashId, describeButlerDataScope, detectLegacyDemoData, dialogShouldDismiss, dismissPermissionOnboarding, filterAuditLog, generateRecurringDrafts, healthRecordsFromSnapshots, inboxConfidenceLabel, inboxConfirmBlockReason, inboxItemFromAiTool, inboxItemFromButlerAction, inboxItemFromNaturalCapture, inboxItemFromPayment, inboxItemFromTravelNotice, inboxSourceLabel, ledgerIdempotencyKeyForInboxItem, INBOX_ACTION_LABELS, isBackupPayload, isDebtRole, latestHealthByKind, loadBrowserAiConfig, localDateKey, markPermissionSettingsOpened, migrateAuditLog, migrateInboxStore, migrateLegacyAiLocalStorage, migratePrivacySettings, normalizeAccountBalance, normalizeMemory, normalizePermissionOnboarding, parseAiProviderResponse, parseButlerModelOutput, parseCapabilityStatus, parseNaturalCapture, pendingInboxItems, persistBrowserAiConfig, permissionOnboardingProgress, planAccountSettlement, planInvestmentMigrations, confirmInvestmentMigration, prepareOutboundAiPayload, reconcileRecurringConfirmations, releaseRecurringConfirmation, resolveInboxFinanceConfirmation, resolvePaymentAccountId, shouldShowPermissionOnboarding, summarizeHealth, TOAST_ARIA_LIVE, updateInboxItemPayload, upsertByExternalKey, validateByokTarget, ACCOUNT_TYPES, buildReimbursementSettlement, canDeleteAccount, FINANCE_TABS, financeTransactionFields, transactionFormPhases, previewPostedImpact, investmentAccountSnapshot, normalizeFinanceRecords, postBalanceAdjustment, postFinanceTransaction, refreshHoldingsValuation, reimbursementOutstandingAmount, removePostedTransaction, settlePostedReimbursement, resolveTransferAmounts, type AuditEntry, type ButlerAction, type CapabilityStatusSnapshot, type HealthMetric, type InboxItem, type InboxLifecycleEvent, type InboxSource, type PermissionCardId, type PermissionOnboardingState, type TravelKind } from './product-logic';
 
 type Tab = 'home' | 'schedule' | 'capture' | 'finance' | 'profile' | 'life' | 'health' | 'travel' | 'data' | 'butler' | 'privacy' | 'memory' | 'vault' | 'audit';
 type ScheduleColor = 'blue' | 'green' | 'orange';
@@ -661,20 +663,12 @@ export default function Home() {
     };
   }, [data.accounts]);
 
-  const dateOptions = useMemo(() => weekDates(selectedDate), [selectedDate]);
-  const weekTitle = useMemo(() => {
-    const first = dateOptions[0].value;
-    const last = dateOptions[6].value;
-    const firstLabel = `${Number(first.slice(0, 4))}年${Number(first.slice(5, 7))}月${Number(first.slice(8, 10))}日`;
-    const lastLabel = first.slice(0, 7) === last.slice(0, 7) ? `${Number(last.slice(8, 10))}日` : `${Number(last.slice(5, 7))}月${Number(last.slice(8, 10))}日`;
-    return `${firstLabel} — ${lastLabel}`;
-  }, [dateOptions]);
-  const selectedSchedules = useMemo(() => data.schedules.filter((item) => item.date === selectedDate).sort((a, b) => a.time.localeCompare(b.time)), [data.schedules, selectedDate]);
   const editingSchedule = editingScheduleId ? data.schedules.find((item) => item.id === editingScheduleId) : undefined;
   const todaySpend = useMemo(() => transactionsInPeriod(data.transactions, TODAY).filter((item) => item.kind === 'expense' && item.currency === 'CNY').reduce((sum, item) => sum + item.amount, 0), [data.transactions]);
   const investmentPlans = useMemo(() => planInvestmentMigrations(data.accounts, data.investments), [data.accounts, data.investments]);
   const totalBalanceLabel = useMemo(() => formatCnyWealthSummary(data.accounts, data.transactions, data.exchangeRates, data.investments), [data.accounts, data.transactions, data.exchangeRates, data.investments]);
   const hasBusinessData = homeHasAuthoritativeData(data);
+  const hasFinanceData = homeHasFinanceData(data);
   const inboxPending = useMemo(() => pendingInboxItems(data.inboxItems), [data.inboxItems]);
   const inboxPendingCount = inboxPending.length;
   const lastConfirmedInbox = data.inboxItems.find((item) => item.id === data.lastConfirmedInboxId);
@@ -708,7 +702,6 @@ export default function Home() {
       notify(interpretAiConnectionTest({ ok: false, error: String(error) }).label);
     }
   }
-  function toggleSchedule(id: string) { setData((current) => ({ ...current, schedules: current.schedules.map((item) => item.id === id ? { ...item, done: !item.done } : item) })); }
   function addSchedule(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = new FormData(event.currentTarget);
     const editing = editingScheduleId;
@@ -1363,7 +1356,7 @@ export default function Home() {
     setData((current) => ({ ...current, permissionOnboarding: dismissPermissionOnboarding(current.permissionOnboarding, localStamp()) }));
     setPermissionOnboardingOpen(false);
   }
-  function pageTitle() { return tab === 'schedule' ? '日程与行动' : tab === 'capture' ? '收件箱' : tab === 'finance' ? selectedHoldingId ? '收益详情' : selectedAccountId ? '账户账单' : '我的财务' : tab === 'profile' ? '我的' : tab === 'life' ? '生活' : tab === 'health' ? '健康记录' : tab === 'travel' ? '我的出行' : tab === 'data' ? '数据中心' : tab === 'butler' ? '本机管家' : tab === 'privacy' ? '隐私与权限' : tab === 'memory' ? '记忆管理' : tab === 'vault' ? '密码库' : tab === 'audit' ? '操作历史' : '首页'; }
+  function pageTitle() { return tab === 'schedule' ? '日程与行动' : tab === 'capture' ? '记录' : tab === 'finance' ? selectedHoldingId ? '收益详情' : selectedAccountId ? '账户账单' : '我的财务' : tab === 'profile' ? '我的' : tab === 'life' ? '生活' : tab === 'health' ? '健康记录' : tab === 'travel' ? '我的出行' : tab === 'data' ? '数据中心' : tab === 'butler' ? '本机管家' : tab === 'privacy' ? '隐私与权限' : tab === 'memory' ? '记忆管理' : tab === 'vault' ? '密码库' : tab === 'audit' ? '操作历史' : '首页'; }
 
   return <AppShell theme={data.theme}>
     {permissionOnboardingOpen && <PermissionOnboardingPanel caps={caps} nativeOn={nativeOn} onOpen={openPermissionSettings} onLater={finishPermissionOnboarding} />}
@@ -1383,6 +1376,7 @@ export default function Home() {
       }))}
       inboxPendingCount={inboxPendingCount}
       hasBusinessData={hasBusinessData}
+      hasFinanceData={hasFinanceData}
       nativeOn={nativeOn}
       caps={caps}
       todaySchedules={schedulesOnDate(data.schedules, TODAY).map((item) => ({ id: item.id, time: item.time, title: item.title, detail: item.detail }))}
@@ -1392,13 +1386,40 @@ export default function Home() {
       recentLedger={<TransactionList items={data.transactions.slice(0, 3)} accounts={data.accounts} onEdit={(id) => { setEditingTransactionId(id); setSheet('transaction'); }} onDelete={(id) => deleteTransaction(id)} onSettle={(id) => settleReimbursement(id)} />}
       onClearDemo={clearLocalData}
       onNavigate={(id) => navigate(id)}
-      onAddFirstSchedule={() => { setEditingScheduleId(null); setSheet('schedule'); }}
+      onAddFirstSchedule={() => { setEditingScheduleId(null); navigate('schedule'); setSheet('schedule'); }}
       onAddFirstAccount={() => { navigate('finance'); setEditingAccountId(null); setSheet('account'); }}
     />}
 
-    {tab === 'schedule' && <div className="page schedule-page"><section className="calendar"><div className="week-title"><button aria-label="上一周" onClick={() => setSelectedDate(addDaysKey(selectedDate, -7))}>‹</button><strong>{weekTitle}</strong><button aria-label="下一周" onClick={() => setSelectedDate(addDaysKey(selectedDate, 7))}>›</button></div><div className="dates">{dateOptions.map((date) => <button key={date.value} onClick={() => setSelectedDate(date.value)} className={selectedDate === date.value ? 'active' : ''}><span>{date.weekday}</span><b>{date.day}</b>{date.value === TODAY && <i />}</button>)}</div></section><section className="day-section"><div className="day-heading"><div><span>{selectedDate === TODAY ? '今天' : `${Number(selectedDate.slice(-2))}日`} · 星期{dateOptions.find((date) => date.value === selectedDate)?.weekday}</span><h2>{selectedSchedules.length ? '这一天的安排' : '给这一天留点空白'}</h2></div><small>{selectedSchedules.filter((item) => item.done).length}/{selectedSchedules.length} 完成</small></div>{selectedSchedules.length ? <div className="timeline">{selectedSchedules.map((item, index) => <article className={item.done ? 'done' : ''} key={item.id}><time>{item.time}</time><div className="track"><i className={item.color} />{index < selectedSchedules.length - 1 && <span />}</div><SwipeScheduleRow item={item} onToggle={() => toggleSchedule(item.id)} onEdit={() => { setEditingScheduleId(item.id); setSheet('schedule'); }} onDelete={() => deleteSchedule(item.id)} /></article>)}</div> : <div className="empty"><span>○</span><h3>没有日程</h3><p>给这一天留点空白，或添加一件事。</p><button onClick={() => setSheet('schedule')}>添加日程</button></div>}</section></div>}
+    {tab === 'schedule' && <SchedulePage
+      today={TODAY}
+      selectedDate={selectedDate}
+      schedules={data.schedules}
+      editing={editingSchedule}
+      formOpen={sheet === 'schedule'}
+      onSelectDate={setSelectedDate}
+      onNew={() => { setEditingScheduleId(null); setSheet('schedule'); }}
+      onEdit={(id) => { setEditingScheduleId(id); setSheet('schedule'); }}
+      onCloseForm={() => { setSheet(null); setEditingScheduleId(null); }}
+      onSubmit={addSchedule}
+      onDelete={deleteSchedule}
+    />}
 
-    {tab === 'capture' && <div className="page capture-page"><section className="capture-intro"><span>INBOX</span><h2>先整理，再确认写入。</h2><p>支付通知、行程更新、语音/图片和管家建议都会进入收件箱。确认后才会保存。</p></section><form className="capture-box" onSubmit={organizeCapture}><textarea aria-label="一句话记录" maxLength={400} value={captureText} onChange={(event) => setCaptureText(event.target.value)} placeholder={'例如：明天 9 点提醒我交水电费\n午饭 36 元，微信支付\n明天 G11 北京南到上海虹桥 9:00\n今天走了 8000 步'} /><div className="capture-tools"><button type="button" onClick={startVoiceCapture}><span aria-hidden="true">🎤</span>语音</button><button type="button" onClick={pickCaptureImage}><span aria-hidden="true">🖼</span>图片</button></div><div><small>{captureText.length}/400</small><button type="submit">放入收件箱</button></div></form><div className="suggestion-row"><button onClick={() => setCaptureText('午饭 36 元，微信支付')}>午饭 36 元</button><button onClick={() => setCaptureText('明天 9 点提醒我交水电费')}>明天 9 点提醒</button><button onClick={() => setCaptureText('明天 G11 北京南到上海虹桥 9:00')}>G11 出行</button><button onClick={() => setCaptureText('今天走了 8000 步')}>8000 步</button></div>{canUndoInboxConfirm(lastConfirmedInbox) && <button type="button" className="inbox-undo" onClick={undoLastInboxConfirm}>撤销最近一次入账</button>}<section className="inbox-list">{inboxPendingCount ? inboxPending.map((item) => <article className="inbox-card" key={item.id}><header><div><span className="inbox-card-source">{inboxSourceLabel(item.source)} · 置信度 {inboxConfidenceLabel(item.confidence)}</span><h3>{INBOX_ACTION_LABELS[item.proposedAction]}</h3></div><small>{item.status === 'pending' ? '待确认' : item.status}</small></header>{(item.proposedAction === 'create_expense' || item.proposedAction === 'create_income' || item.proposedAction === 'create_transfer') && <strong className="inbox-card-amount">{String(item.payload.currency || 'CNY')} {money(Math.abs(Number(item.payload.amount || 0)))}</strong>}<p className="inbox-card-preview">{item.preview}</p>{editingInboxId === item.id && <InboxEditFields item={item} accounts={data.accounts} onPatch={(payload) => patchInboxPayload(item.id, payload)} />}<div className="inbox-ops"><button type="button" className="confirm-button" onClick={() => confirmInbox(item.id)}>确认</button>{item.proposedAction !== 'pause_memory' && item.proposedAction !== 'delete_memory' && <button type="button" onClick={() => setEditingInboxId(editingInboxId === item.id ? null : item.id)}>{editingInboxId === item.id ? '收起' : '修改'}</button>}<button type="button" className="ghost" onClick={() => ignoreInbox(item.id)}>忽略</button></div></article>) : <div className="list-empty">收件箱是空的。说一句话、拍一张图，或等支付/行程通知。</div>}</section></div>}
+    {tab === 'capture' && <RecordsPage
+      captureText={captureText}
+      onCaptureText={setCaptureText}
+      onOrganize={organizeCapture}
+      onVoice={startVoiceCapture}
+      onImage={pickCaptureImage}
+      items={inboxPending}
+      accounts={data.accounts}
+      editingId={editingInboxId}
+      canUndo={canUndoInboxConfirm(lastConfirmedInbox)}
+      onEdit={setEditingInboxId}
+      onPatch={patchInboxPayload}
+      onConfirm={confirmInbox}
+      onIgnore={ignoreInbox}
+      onUndo={undoLastInboxConfirm}
+    />}
 
     {tab === 'finance' && <FinancePanel data={data} currency={financeCurrency} selectedAccountId={selectedAccountId} selectedHoldingId={selectedHoldingId} onCurrency={setFinanceCurrency} onSelectAccount={(id) => { setSelectedAccountId(id); setSelectedHoldingId(null); }} onSelectHolding={setSelectedHoldingId} onBackAccount={() => setSelectedAccountId(null)} onBackHolding={() => setSelectedHoldingId(null)} onNewTransaction={() => { setEditingTransactionId(null); setSheet('transaction'); }} onEditTransaction={(id) => { setEditingTransactionId(id); setSheet('transaction'); }} onNewAccount={() => { setEditingAccountId(null); setSheet('account'); }} onEditAccount={(id) => { setEditingAccountId(id); setSheet('account'); }} onNewHolding={() => { setEditingHoldingId(null); setSheet('holding'); }} onEditHolding={(id) => { setEditingHoldingId(id); setSheet('holding'); }} onNewRecurring={() => { setEditingRecurringId(null); setSheet('recurring'); }} onEditRecurring={(id) => { setEditingRecurringId(id); setSheet('recurring'); }} onDeleteRecurring={(id) => deleteRecurringRule(id)} onDeleteTransaction={(id) => deleteTransaction(id)} onRunRecurring={runRecurringRule} onSettleReimbursement={settleReimbursement} onSettleAccount={settleAccount} onNewRate={() => { setEditingRateCurrency(null); setSheet('exchange-rate'); }} onEditRate={(currency) => { setEditingRateCurrency(currency); setSheet('exchange-rate'); }} onDeleteRate={deleteExchangeRate} onRefreshQuotes={requestQuoteRefresh} />}
 
@@ -1414,10 +1435,9 @@ export default function Home() {
     {tab === 'vault' && <VaultPanel items={nativeOn && vaultMeta.length ? vaultMeta : data.vaultItems} nativeOn={nativeOn} onReveal={(id) => (window as Window & { SelfAgentNative?: { revealPassword?: (id: string) => void } }).SelfAgentNative?.revealPassword?.(id)} />}
     {tab === 'audit' && <AuditHistoryPanel entries={data.auditLog} />}
 
-    {(tab === 'schedule' || tab === 'finance') && <button className="add-button" onClick={() => { if (tab === 'finance') setEditingTransactionId(null); if (tab === 'schedule') setEditingScheduleId(null); setSheet(tab === 'schedule' ? 'schedule' : 'transaction'); }} aria-label={tab === 'schedule' ? '新建日程' : '新建流水'}>＋</button>}
+    {tab === 'finance' && <button className="add-button" onClick={() => { setEditingTransactionId(null); setSheet('transaction'); }} aria-label="新建流水">＋</button>}
     <BottomNav active={primaryNavActiveId(tab)} onChange={(id) => navigate(id)} badge={inboxPendingCount} hidden={tab === 'capture' && Boolean(editingInboxId)} />
 
-    {sheet === 'schedule' && <div className="overlay" role="dialog" aria-modal="true" onMouseDown={(event) => event.currentTarget === event.target && setSheet(null)}><form key={editingSchedule?.id ?? 'new-schedule'} onSubmit={addSchedule} className="sheet"><div className="handle" /><header><div><span>{editingSchedule ? 'EDIT SCHEDULE' : 'NEW SCHEDULE'}</span><h2>{editingSchedule ? '编辑日程' : '新建日程'}</h2></div><button type="button" onClick={() => { setSheet(null); setEditingScheduleId(null); }}>×</button></header><label>日程名称<input required autoFocus name="title" placeholder="例如：准备周末徒步装备" defaultValue={editingSchedule?.title} /></label><div className="row"><label>日期<input required name="date" type="date" defaultValue={editingSchedule?.date ?? selectedDate} /></label><label>时间<input required name="time" type="time" defaultValue={editingSchedule?.time ?? '10:00'} /></label></div><label>类型<input name="detail" placeholder="个人、工作或健康" defaultValue={editingSchedule?.detail?.split(' · ')[0] ?? '个人'} /></label><small className="form-tip">会提前 10 分钟弹一次，到点再弹一次。请允许通知。</small><button className="save" type="submit">{editingSchedule ? '保存修改' : '确认添加'}</button>{editingSchedule && <button className="danger-button" type="button" onClick={() => deleteSchedule(editingSchedule.id)}>删除这条日程</button>}</form></div>}
     {sheet === 'transaction' && <TransactionComposer accounts={data.accounts} currency={financeCurrency} editing={editingTransaction} onClose={() => setSheet(null)} onSubmit={addTransaction} onDelete={() => deleteTransaction(editingTransaction?.id)} />}
     {sheet === 'account' && <div className="overlay" role="dialog" aria-modal="true" onMouseDown={(event) => event.currentTarget === event.target && setSheet(null)}><form key={editingAccount?.id ?? 'new-account'} onSubmit={addAccount} className="sheet"><div className="handle" /><header><div><span>{editingAccount ? 'EDIT ACCOUNT' : 'NEW ACCOUNT'}</span><h2>{editingAccount ? '编辑账户' : '添加自定义账户'}</h2></div><button type="button" onClick={() => setSheet(null)}>×</button></header><label>账户名称<input required autoFocus name="name" placeholder="例如：港币旅行卡" defaultValue={editingAccount?.name} /></label><div className="row"><label>账户类型<select name="type" defaultValue={editingAccount?.type}>{accountTypes.map((type) => <option key={type} value={type}>{type}{accountRole(type) === 'receivable' ? ' · 债务应收' : isDebtRole(accountRole(type)) ? ' · 债务应付' : ''}</option>)}</select></label><label>币种<select name="currency" defaultValue={editingAccount?.currency}>{currencies.map((currency) => <option key={currency}>{currency}</option>)}</select></label></div><label>{editingAccount && isDebtRole(accountRole(editingAccount.type)) ? '当前欠款' : accountRole(editingAccount?.type || '') === 'receivable' ? '应收余额' : '当前余额'}<input name="balance" type="number" step="0.01" defaultValue={editingAccount?.balance ?? 0} /></label><small className="form-tip">{editingAccount && isDebtRole(accountRole(editingAccount.type)) ? '欠款和信用卡是债务·应付，填你还欠多少。' : accountRole(editingAccount?.type || '') === 'receivable' ? '待收回是债务·应收，别人欠你的钱。报销不用单独开账户。' : '新建时填写期初余额；已有账户改余额会生成一笔「余额调整」流水，不会直接改期初。'}</small><button className="save" type="submit">{editingAccount ? '保存修改' : '保存账户'}</button>{editingAccount && <button className="danger-button" type="button" onClick={() => deleteAccount(editingAccount.id)}>删除这个账户</button>}</form></div>}
     {sheet === 'settle-account' && settlingAccount && <div className="overlay" role="dialog" aria-modal="true" onMouseDown={(event) => event.currentTarget === event.target && setSheet(null)}><form key={settlingAccount.id} onSubmit={confirmAccountSettlement} className="sheet"><div className="handle" /><header><div><span>SETTLE ACCOUNT</span><h2>{isDebtRole(accountRole(settlingAccount.type)) ? '还多少、用哪个账户' : '收回多少、进哪个账户'}</h2></div><button type="button" onClick={() => { setSheet(null); setSettlingAccountId(null); }}>×</button></header><p className="form-tip">{settlingAccount.name} 当前{isDebtRole(accountRole(settlingAccount.type)) ? '欠款' : '应收'} {currencyMark(settlingAccount.currency)} {money(settlingAccount.balance)}</p><label>{isDebtRole(accountRole(settlingAccount.type)) ? '还款金额' : '收回金额'}<input required name="amount" type="number" min="0.01" max={settlingAccount.balance} step="0.01" defaultValue={settlingAccount.balance} /></label><label>{isDebtRole(accountRole(settlingAccount.type)) ? '用哪个资金账户还' : '收到哪个资金账户'}<select name="counterpartId" defaultValue={defaultCashId(data.accounts, settlingAccount.currency)}>{data.accounts.filter((account) => canHoldMoney(account) && account.currency === settlingAccount.currency && account.id !== settlingAccount.id).map((account) => <option key={account.id} value={account.id}>{account.name} · 余额 {currencyMark(account.currency)}{money(account.balance)}</option>)}</select></label><small className="form-tip">{isDebtRole(accountRole(settlingAccount.type)) ? '不会自动还清。你填多少、选哪个账户，就从那个账户扣多少。' : '不会自动全部收回。你填多少、选哪个账户，钱就进那个账户。'}</small><button className="save" type="submit">{isDebtRole(accountRole(settlingAccount.type)) ? '确认还款' : '确认收回'}</button></form></div>}
@@ -1439,68 +1459,6 @@ function PermissionOnboardingPanel({ caps, nativeOn, onOpen, onLater }: { caps: 
     <div className="permission-onboarding-list">{cards.map((card) => <article key={card.id} className={card.enabled ? 'enabled' : ''}><div className="permission-state">{card.enabled ? '✓ 已开启' : '○ 未检测到'}</div><h3>{card.title}</h3><p><strong>为什么需要：</strong>{card.why}</p><p><strong>可以读取：</strong>{card.reads}</p><p><strong>不会读取：</strong>{card.cannotRead}</p><div><button type="button" onClick={() => onOpen(card.id)}>{card.id === 'health' ? '选择健康授权' : '打开系统设置'}</button>{card.id === 'payment' && <button type="button" className="ghost" onClick={() => onOpen(card.id, true)}>打开无障碍</button>}</div></article>)}</div>
     <footer><button type="button" className="later" onClick={onLater}>稍后设置</button><button type="button" className="done" onClick={onLater}>完成并进入</button></footer>
   </div></div>;
-}
-
-function InboxEditFields({ item, accounts, onPatch }: { item: InboxItem; accounts: Account[]; onPatch: (payload: Record<string, unknown>) => void }) {
-  const payload = item.payload;
-  const selectedCurrency = String(payload.currency || '');
-  const compatibleAccounts = inboxAccountsForCurrency(accounts, selectedCurrency);
-  const selectedAccountId = compatibleAccounts.some((account) => account.id === payload.accountId) ? String(payload.accountId) : '';
-  if (item.proposedAction === 'create_expense' || item.proposedAction === 'create_income') {
-    return <div className="draft-fields">
-      <label>金额<input inputMode="decimal" value={String(payload.amount ?? '')} onChange={(event) => onPatch({ amount: Number(event.target.value) })} /></label>
-      <label>商家 / 用途<input value={String(payload.merchant ?? '')} onChange={(event) => onPatch({ merchant: event.target.value })} /></label>
-      <label>分类<select value={String(payload.category || '其他')} onChange={(event) => onPatch({ category: event.target.value })}><option>餐饮</option><option>交通</option><option>生活</option><option>医疗</option><option>其他</option><option>收入</option></select></label>
-      <label>币种<select aria-label="币种" value={selectedCurrency} onChange={(event) => { const currency = event.target.value; const selected = accounts.find((account) => account.id === payload.accountId); onPatch({ currency, accountId: selected && String(selected.currency || '').toUpperCase() === currency.toUpperCase() ? selected.id : '' }); }}><option value="">请选择币种</option>{currencies.map((currency) => <option key={currency} value={currency}>{currency}</option>)}</select></label>
-      <label>账户<select aria-label="账户" value={selectedAccountId} onChange={(event) => onPatch({ accountId: event.target.value })}><option value="">请选择{selectedCurrency || '同币种'}账户</option>{compatibleAccounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {account.currency}</option>)}</select></label>
-      {item.proposedAction === 'create_expense' && <label>报销<select value={payload.reimbursable === true ? 'yes' : payload.reimbursable === false ? 'no' : ''} onChange={(event) => onPatch({ reimbursable: event.target.value === '' ? null : event.target.value === 'yes' })}><option value="">请选择</option><option value="no">不报销</option><option value="yes">待收回</option></select></label>}
-    </div>;
-  }
-  if (item.proposedAction === 'create_schedule') {
-    return <div className="draft-fields">
-      <label>日程名称<input value={String(payload.title ?? '')} onChange={(event) => onPatch({ title: event.target.value })} /></label>
-      <label>日期<input type="date" value={String(payload.date ?? '')} onChange={(event) => onPatch({ date: event.target.value })} /></label>
-      <label>时间<input type="time" value={String(payload.time ?? '')} onChange={(event) => onPatch({ time: event.target.value })} /></label>
-    </div>;
-  }
-  if (item.proposedAction === 'create_travel' || item.proposedAction === 'update_travel') {
-    return <div className="draft-fields">
-      <label>类型<select value={String(payload.travelKind || 'train')} onChange={(event) => onPatch({ travelKind: event.target.value })}><option value="train">火车</option><option value="flight">航班</option></select></label>
-      <label>车次 / 航班<input value={String(payload.number ?? '')} onChange={(event) => onPatch({ number: event.target.value })} /></label>
-      <label>出发地<input value={String(payload.from ?? '')} onChange={(event) => onPatch({ from: event.target.value })} /></label>
-      <label>目的地<input value={String(payload.to ?? '')} onChange={(event) => onPatch({ to: event.target.value })} /></label>
-      <label>日期<input type="date" value={String(payload.date ?? '')} onChange={(event) => onPatch({ date: event.target.value })} /></label>
-      <label>出发时间<input type="time" value={String(payload.departTime ?? '')} onChange={(event) => onPatch({ departTime: event.target.value })} /></label>
-    </div>;
-  }
-  if (item.proposedAction === 'create_health') {
-    return <div className="draft-fields">
-      <label>指标<select value={String(payload.metric || 'steps')} onChange={(event) => onPatch({ metric: event.target.value })}>{(Object.keys(HEALTH_METRIC_LABELS) as HealthMetric[]).map((metric) => <option key={metric} value={metric}>{HEALTH_METRIC_LABELS[metric]}</option>)}</select></label>
-      <label>数值<input inputMode="decimal" value={String(payload.value ?? '')} onChange={(event) => onPatch({ value: Number(event.target.value) })} /></label>
-    </div>;
-  }
-  if (item.proposedAction === 'add_memory' || item.proposedAction === 'update_memory') {
-    return <div className="draft-fields">
-      <label>标题<input value={String(payload.title ?? '')} onChange={(event) => onPatch({ title: event.target.value })} /></label>
-      <label>备注<input value={String(payload.note ?? '')} onChange={(event) => onPatch({ note: event.target.value })} /></label>
-    </div>;
-  }
-  return <p className="form-tip">这条建议只能确认或忽略。</p>;
-}
-
-function SwipeScheduleRow({ item, onToggle, onEdit, onDelete }: { item: ScheduleItem; onToggle: () => void; onEdit: () => void; onDelete: () => void }) {
-  return (
-    <div className="schedule-row">
-      <button type="button" className="schedule-card" onClick={onToggle}>
-        <div><strong>{item.title}</strong><small>{item.detail}</small></div>
-        <span className="check">{item.done ? '✓' : ''}</span>
-      </button>
-      <div className="row-ops">
-        <button type="button" className="edit" onClick={(event) => { event.stopPropagation(); onEdit(); }}>编辑</button>
-        <button type="button" className="del" onClick={(event) => { event.stopPropagation(); onDelete(); }}>删除</button>
-      </div>
-    </div>
-  );
 }
 
 function HealthTrendBars({ series }: { series: HealthMetricSeries }) {

@@ -14,6 +14,9 @@ import { ProfilePage } from './components/mine/ProfilePage';
 import { LifePage } from './components/mine/LifePage';
 import { HealthPage } from './components/mine/surfaces/HealthPage';
 import { TravelPage } from './components/mine/surfaces/TravelPage';
+import { PrivacyPage } from './components/mine/surfaces/PrivacyPage';
+import { MemoryPage } from './components/mine/surfaces/MemoryPage';
+import { VaultPage } from './components/mine/surfaces/VaultPage';
 import { primaryNavActiveId } from './components/ui/nav';
 import { accountRole, applyDailyFxRates, applyDailyPriceQuotes, applyInboxLifecycle, AI_CONFIG_EVENT, AI_CONFIG_STORAGE_KEY, AI_REPLY_EVENT, AUDIT_OUTCOMES, auditOutcomeLabel, auditReasonLabel, buildButlerSystemPrompt, buildHealthBriefing, buildAiSendPreview, canUndoInboxConfirm, cnyWealthTotal, confirmByokHost, classifyAiProviderError, interpretAiConnectionTest, consumeCallBudget, createCallBudget, defaultCashId, describeButlerDataScope, detectLegacyDemoData, dialogShouldDismiss, dismissPermissionOnboarding, filterAuditLog, generateRecurringDrafts, healthRecordsFromSnapshots, inboxConfidenceLabel, inboxConfirmBlockReason, inboxItemFromAiTool, inboxItemFromButlerAction, inboxItemFromNaturalCapture, inboxItemFromPayment, inboxItemFromTravelNotice, inboxSourceLabel, ledgerIdempotencyKeyForInboxItem, INBOX_ACTION_LABELS, isBackupPayload, isDebtRole, latestHealthByKind, loadBrowserAiConfig, localDateKey, markPermissionSettingsOpened, migrateAuditLog, migrateInboxStore, migrateLegacyAiLocalStorage, migratePrivacySettings, normalizeAccountBalance, normalizeMemory, normalizePermissionOnboarding, parseAiProviderResponse, parseButlerModelOutput, parseCapabilityStatus, parseNaturalCapture, pendingInboxItems, persistBrowserAiConfig, permissionOnboardingProgress, planAccountSettlement, planInvestmentMigrations, confirmInvestmentMigration, prepareOutboundAiPayload, reconcileRecurringConfirmations, releaseRecurringConfirmation, resolveInboxFinanceConfirmation, resolvePaymentAccountId, shouldShowPermissionOnboarding, summarizeHealth, TOAST_ARIA_LIVE, updateInboxItemPayload, upsertByExternalKey, validateByokTarget, ACCOUNT_TYPES, buildReimbursementSettlement, canDeleteAccount, FINANCE_TABS, financeTransactionFields, transactionFormPhases, previewPostedImpact, investmentAccountSnapshot, normalizeFinanceRecords, postBalanceAdjustment, postFinanceTransaction, refreshHoldingsValuation, reimbursementOutstandingAmount, removePostedTransaction, settlePostedReimbursement, resolveTransferAmounts, type AuditEntry, type ButlerAction, type CapabilityStatusSnapshot, type HealthMetric, type InboxItem, type InboxLifecycleEvent, type InboxSource, type PermissionCardId, type PermissionOnboardingState, type TravelKind } from './product-logic';
 
@@ -1443,9 +1446,9 @@ export default function Home() {
     {tab === 'travel' && <TravelPage items={data.travels} onSync={requestTravelSync} onAdd={() => setSheet('travel')} onDelete={(id) => { setData((current) => ({ ...current, travels: current.travels.filter((item) => item.id !== id) })); notify('行程已删除'); }} />}
     {tab === 'data' && <DataPanel data={data} />}
     {tab === 'butler' && <ButlerPanel data={data} ai={aiConfig} onQueueActions={queueButlerActions} onQueueTools={queueAiTools} />}
-    {tab === 'privacy' && <PrivacyPanel settings={data.privacy} onToggle={togglePrivacy} />}
-    {tab === 'memory' && <MemoryPanel items={data.memories} onToggle={toggleMemory} onToggleSend={toggleMemorySend} onDelete={deleteMemory} />}
-    {tab === 'vault' && <VaultPanel items={nativeOn && vaultMeta.length ? vaultMeta : data.vaultItems} nativeOn={nativeOn} onReveal={(id) => (window as Window & { SelfAgentNative?: { revealPassword?: (id: string) => void } }).SelfAgentNative?.revealPassword?.(id)} />}
+    {tab === 'privacy' && <PrivacyPage settings={data.privacy} onToggle={togglePrivacy} />}
+    {tab === 'memory' && <MemoryPage items={data.memories} onToggle={toggleMemory} onToggleSend={toggleMemorySend} onDelete={deleteMemory} />}
+    {tab === 'vault' && <VaultPage items={nativeOn && vaultMeta.length ? vaultMeta : data.vaultItems} nativeOn={nativeOn} onReveal={(id) => (window as Window & { SelfAgentNative?: { revealPassword?: (id: string) => void } }).SelfAgentNative?.revealPassword?.(id)} />}
     {tab === 'audit' && <AuditHistoryPanel entries={data.auditLog} />}
 
     {tab === 'finance' && <button className="add-button" onClick={() => { setEditingTransactionId(null); setSheet('transaction'); }} aria-label="新建流水">＋</button>}
@@ -1646,56 +1649,6 @@ function AuditHistoryPanel({ entries }: { entries: AuditEntry[] }) {
     </section>
     <section className="audit-list">{visible.length ? visible.map((entry) => <article key={entry.id} className={`audit-${entry.outcome}`}><header><strong>{auditOutcomeLabel(entry.outcome)}</strong><time>{entry.timestamp ? entry.timestamp.replace('T', ' ').slice(0, 16) : '时间未知'}</time></header><h3>{entry.summary}</h3><p>{inboxSourceLabel(entry.source)} · {INBOX_ACTION_LABELS[entry.action]}</p>{entry.reason && <small>原因：{auditReasonLabel(entry.reason)}</small>}{entry.dataScope && <small>数据范围：{entry.dataScope}</small>}</article>) : <div className="list-empty">没有符合条件的操作记录</div>}</section>
   </div>;
-}
-
-function MemoryPanel({ items, onToggle, onToggleSend, onDelete }: { items: MemoryItem[]; onToggle: (id: string) => void; onToggleSend: (id: string) => void; onDelete: (id: string) => void }) {
-  return <div className="page feature-page"><section className="feature-heading"><span>MEMORY</span><h2>你决定管家记住什么。</h2><p>记忆默认只留在本机。允许发送给 AI 需要单独打开，且记忆摘要权限也要开启。</p></section><div className="memory-list">{items.map((item) => { const memory = normalizeMemory(item); return <article key={item.id} className={!memory.active ? 'inactive' : ''}><header><span>{memory.kind}</span><b>{memory.status}</b></header><h3>{memory.title}</h3><p>{memory.note}</p><dl className="memory-meta"><div><dt>来源</dt><dd>{memory.source || '本机已有记忆'}</dd></div><div><dt>用途</dt><dd>{memory.purpose}</dd></div><div><dt>发送</dt><dd>{memory.sendAllowed ? '允许进入 AI 摘要' : '仅本机，不发送'}</dd></div><div><dt>更新</dt><dd>{memory.updatedAt || '尚未更新'}</dd></div></dl><div><button onClick={() => onToggle(item.id)}>{memory.active ? '暂停使用' : '重新启用'}</button><button onClick={() => onToggleSend(item.id)}>{memory.sendAllowed ? '禁止发送给 AI' : '允许发送给 AI'}</button><button className="danger-text" onClick={() => onDelete(item.id)}>删除</button></div></article>; })}</div></div>;
-}
-
-function PrivacyPanel({ settings, onToggle }: { settings: PrivacySettings; onToggle: (key: keyof PrivacySettings) => void }) {
-  const rows: { key: keyof PrivacySettings; title: string; note: string }[] = [{ key: 'health', title: '健康摘要', note: '身高、体重、心率、压力、睡眠和 PAI' }, { key: 'finance', title: '财务摘要', note: '收入、支出、分类和未来扣款' }, { key: 'schedule', title: '日程与行动', note: '用于排序、提醒与完成情况' }, { key: 'memory', title: '记忆摘要', note: '仅发送已单独允许的记忆，默认关闭' }];
-  return <div className="page feature-page"><section className="security-hero"><span>当前保护状态</span><h2>本机优先</h2><p>每类摘要可以单独关闭；密码权限永久不开放。</p></section><section className="permission-list">{rows.map((row) => <article key={row.key}><div><strong>{row.title}</strong><small>{row.note}</small></div><button className={settings[row.key] ? 'on' : ''} onClick={() => onToggle(row.key)} aria-label={`${row.title}权限`}><i /></button></article>)}<article><div><strong>密码与恢复码</strong><small>密码、验证码、私钥、助记词永久禁止</small></div><button disabled aria-label="密码权限永久关闭"><i /></button></article></section><p className="security-copy">当前开关会真实影响本机管家回答时可使用的摘要范围，不只是界面状态。</p></div>;
-}
-
-function HowToNative() {
-  return (
-    <>
-      <section className="howto">
-        <h3>怎么自动记账</h3>
-        <ol>
-          <li>打开手机 <b>设置 → 无障碍 / 已安装的应用</b></li>
-          <li>打开 <b>Self Agent</b>（和钱迹一样，用来读支付成功页）</li>
-          <li>再用搜索打开 <b>通知使用权</b>，也打开 Self Agent</li>
-          <li>微信或支付宝付款成功后，会直接弹出通知</li>
-          <li>点通知里的 <b>确认入账</b> 即可，点忽略则不记账</li>
-        </ol>
-      </section>
-      <section className="howto">
-        <h3>怎么自动记住密码</h3>
-        <ol>
-          <li>打开手机 <b>设置</b></li>
-          <li>搜索“<b>自动填充</b>”</li>
-          <li>自动填充服务选 <b>Self Agent</b></li>
-          <li>去别的 App 登录，弹出“保存密码？”时点保存</li>
-          <li>下次登录选 Self Agent 填充。密码不会进网页和 AI</li>
-          <li>Chrome 还要：设置 → 自动填充服务 → 使用其他服务，然后重启 Chrome</li>
-          <li>在登录页输入账号密码后点登录，系统应弹出「保存密码？」</li>
-        </ol>
-      </section>
-      <section className="howto">
-        <h3>12306 和航班</h3>
-        <ol>
-          <li>打开通知使用权给 Self Agent</li>
-          <li>12306 / 航司短信来了会自动识别</li>
-          <li>也可以在行程页粘贴短信</li>
-        </ol>
-      </section>
-    </>
-  );
-}
-
-function VaultPanel({ items, nativeOn, onReveal }: { items: { id?: string; title: string; usernameHint: string; note?: string }[]; nativeOn: boolean; onReveal?: (id: string) => void }) {
-  return <div className="page feature-page"><section className="vault-safe"><span>钥</span><h2>{nativeOn ? 'Keystore 密码库已连接' : '安全密码库入口'}</h2><p>密码明文只在本机 Keystore。点「查看」后需指纹或锁屏验证，不会写入网页存储，也不会进 AI。</p><b>{nativeOn ? '指纹验证后可查看' : '请在 Android App 中查看密码'}</b></section><section className="feature-section"><div className="feature-title"><div><span>METADATA</span><h2>账号目录</h2></div><small>{items.length} 项</small></div><div className="plain-list">{items.map((item) => <article key={item.id || item.title}><span>{item.title.slice(0, 1)}</span><div><strong>{item.title}</strong><small>{item.usernameHint}{item.note ? ` · ${item.note}` : ''}</small></div>{nativeOn && <div className="row-ops"><button type="button" className="edit" onClick={() => onReveal?.(item.id || item.title)}>查看</button></div>}</article>)}</div></section>{nativeOn && <div className="native-actions"><button type="button" onClick={() => (window as Window & { SelfAgentNative?: { openAutofillSettings?: () => void } }).SelfAgentNative?.openAutofillSettings?.()}>打开系统自动填充设置</button></div>}<HowToNative /><section className="vault-warning"><strong>密码不会进入 AI</strong><p>导出和管家问答只有账号名。查看明文必须通过指纹或锁屏验证，并只显示在系统弹窗里。</p></section></div>;
 }
 
 type FinancePanelProps = { data: AppData; currency: Currency; selectedAccountId: string | null; selectedHoldingId: string | null; onCurrency: (currency: Currency) => void; onSelectAccount: (id: string) => void; onSelectHolding: (id: string) => void; onBackAccount: () => void; onBackHolding: () => void; onNewTransaction: () => void; onEditTransaction: (id: string) => void; onDeleteTransaction: (id: string) => void; onNewAccount: () => void; onEditAccount: (id: string) => void; onNewHolding: () => void; onEditHolding: (id: string) => void; onNewRecurring: () => void; onEditRecurring: (id: string) => void; onDeleteRecurring: (id: string) => void; onRunRecurring: (id: string) => void; onSettleReimbursement: (id: string) => void; onSettleAccount: (id: string) => void; onNewRate: () => void; onEditRate: (currency: string) => void; onDeleteRate: (currency: string) => void; onRefreshQuotes: () => void };

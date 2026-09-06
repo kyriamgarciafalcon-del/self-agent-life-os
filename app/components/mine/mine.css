@@ -464,6 +464,90 @@
   resize: vertical;
 }
 
+.sa-switch {
+  position: relative;
+  flex: 0 0 51px;
+  width: 51px;
+  min-width: 51px;
+  min-height: 44px;
+  height: 44px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.sa-switch i {
+  display: block;
+  width: 51px;
+  height: 31px;
+  margin: 0 auto;
+  border-radius: 16px;
+  background: #E9E9EA;
+  position: relative;
+}
+
+.sa-switch i::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+
+.sa-switch.on i {
+  background: #2F6F57;
+}
+
+.sa-switch.on i::after {
+  left: 22px;
+}
+
+.sa-switch:disabled {
+  opacity: 0.45;
+}
+
+.memory-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.memory-card-head small,
+.memory-meta {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.memory-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 12px 0 0;
+}
+
+.memory-meta dt {
+  font-size: 12px;
+}
+
+.memory-meta dd {
+  margin: 0;
+  color: var(--ink);
+}
+
+.memory-card.inactive {
+  opacity: 0.72;
+}
+
+.vault-reveal {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+}
+
 @media (max-width: 375px) {
   .profile-page,
   .life-page,
@@ -476,7 +560,8 @@
   .health-status small,
   .health-status em,
   .trip-card-head strong,
-  .trip-route strong {
+  .trip-route strong,
+  .memory-card-head strong {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

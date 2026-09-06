@@ -23,6 +23,8 @@
     "../app/money.ts",
     "../app/ui.tsx",
     "../app/components/ui/**/*.ts",
-    "../app/components/ui/**/*.tsx"
+    "../app/components/ui/**/*.tsx",
+    "../app/components/daily/**/*.ts",
+    "../app/components/daily/**/*.tsx"
   ]
 }

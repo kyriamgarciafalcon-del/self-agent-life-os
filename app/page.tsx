@@ -4,6 +4,8 @@ import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 're
 import { getConvertedNetWorth, getMonthlyReport, getNetWorth, getOutstandingReimbursements, transactionsInPeriod } from './finance-query';
 import { migrateToSchemaV4, createSchemaV4MigrationBackup, applySchemaV4Migration, SCHEMA_V3_BACKUP_KEY } from './finance-schema';
 import { LargeTitle, GroupedList } from './ui';
+import { HomePage } from './components/daily/HomePage';
+import { homeHasAuthoritativeData, schedulesOnDate } from './components/daily/home';
 import { AppHeader } from './components/ui/AppHeader';
 import { AppShell } from './components/ui/AppShell';
 import { BottomNav } from './components/ui/BottomNav';
@@ -672,8 +674,7 @@ export default function Home() {
   const todaySpend = useMemo(() => transactionsInPeriod(data.transactions, TODAY).filter((item) => item.kind === 'expense' && item.currency === 'CNY').reduce((sum, item) => sum + item.amount, 0), [data.transactions]);
   const investmentPlans = useMemo(() => planInvestmentMigrations(data.accounts, data.investments), [data.accounts, data.investments]);
   const totalBalanceLabel = useMemo(() => formatCnyWealthSummary(data.accounts, data.transactions, data.exchangeRates, data.investments), [data.accounts, data.transactions, data.exchangeRates, data.investments]);
-  const hasBusinessData = data.schedules.length + data.accounts.length + data.transactions.length + data.healthRecords.length + data.travels.length > 0;
-  const nextSchedule = useMemo(() => data.schedules.filter((item) => item.date === TODAY && !item.done).sort((left, right) => left.time.localeCompare(right.time))[0], [data.schedules]);
+  const hasBusinessData = homeHasAuthoritativeData(data);
   const inboxPending = useMemo(() => pendingInboxItems(data.inboxItems), [data.inboxItems]);
   const inboxPendingCount = inboxPending.length;
   const lastConfirmedInbox = data.inboxItems.find((item) => item.id === data.lastConfirmedInboxId);
@@ -1362,24 +1363,38 @@ export default function Home() {
     setData((current) => ({ ...current, permissionOnboarding: dismissPermissionOnboarding(current.permissionOnboarding, localStamp()) }));
     setPermissionOnboardingOpen(false);
   }
-  function pageTitle() { return tab === 'schedule' ? '日程与行动' : tab === 'capture' ? '收件箱' : tab === 'finance' ? selectedHoldingId ? '收益详情' : selectedAccountId ? '账户账单' : '我的财务' : tab === 'profile' ? '我的' : tab === 'life' ? '生活' : tab === 'health' ? '健康记录' : tab === 'travel' ? '我的出行' : tab === 'data' ? '数据中心' : tab === 'butler' ? '本机管家' : tab === 'privacy' ? '隐私与权限' : tab === 'memory' ? '记忆管理' : tab === 'vault' ? '密码库' : tab === 'audit' ? '操作历史' : '今天'; }
+  function pageTitle() { return tab === 'schedule' ? '日程与行动' : tab === 'capture' ? '收件箱' : tab === 'finance' ? selectedHoldingId ? '收益详情' : selectedAccountId ? '账户账单' : '我的财务' : tab === 'profile' ? '我的' : tab === 'life' ? '生活' : tab === 'health' ? '健康记录' : tab === 'travel' ? '我的出行' : tab === 'data' ? '数据中心' : tab === 'butler' ? '本机管家' : tab === 'privacy' ? '隐私与权限' : tab === 'memory' ? '记忆管理' : tab === 'vault' ? '密码库' : tab === 'audit' ? '操作历史' : '首页'; }
 
   return <AppShell theme={data.theme}>
     {permissionOnboardingOpen && <PermissionOnboardingPanel caps={caps} nativeOn={nativeOn} onOpen={openPermissionSettings} onLater={finishPermissionOnboarding} />}
     {investmentPlans[0] && <div className="overlay" role="dialog" aria-modal="true" aria-label="理财余额确认"><form className="sheet" onSubmit={(event) => event.preventDefault()}><div className="handle" /><header><div><span>INVESTMENT MIGRATION</span><h2>旧余额代表什么</h2></div></header><p className="form-tip">{data.accounts.find((item) => item.id === investmentPlans[0].accountId)?.name || '理财账户'} 旧余额 {currencyMark(investmentPlans[0].currency as Currency)}{money(investmentPlans[0].oldBalance)} · 持仓市值 {currencyMark(investmentPlans[0].currency as Currency)}{money(investmentPlans[0].marketValue)} · 差额 {currencyMark(investmentPlans[0].currency as Currency)}{money(investmentPlans[0].inferredDelta)}</p><div className="native-actions"><button type="button" onClick={() => confirmInvestmentMeaning(investmentPlans[0].accountId, 'cash')}>是现金</button><button type="button" onClick={() => confirmInvestmentMeaning(investmentPlans[0].accountId, 'market')}>是持仓市值</button><button type="button" onClick={() => confirmInvestmentMeaning(investmentPlans[0].accountId, 'total')}>是现金加市值</button></div></form></div>}
     <AppHeader title={pageTitle()} onBack={() => { if (!goBack()) notify('已经在首页'); }} onSettings={() => navigate('profile')} />
 
-    {tab === 'home' && <div className="page home-page">
-      {data.demoMode && <section className="demo-banner"><strong>当前为演示数据</strong><span>以下资产、日程和健康记录不代表你的真实信息。</span><button onClick={clearLocalData}>退出演示并清空</button></section>}
-      <LargeTitle kicker={TODAY_LABEL} title={GREETING}><p>所有内容先整理、确认后再保存。</p></LargeTitle>
-      {inboxPendingCount > 0 && <section className="inbox-home"><div className="section-title"><div><span>INBOX</span><h2>待确认 {inboxPendingCount} 条</h2></div><button type="button" onClick={() => navigate('capture')}>去处理</button></div>{inboxPending.slice(0, 3).map((item) => <button type="button" className="inbox-home-card" key={item.id} onClick={() => navigate('capture')}><strong>{item.preview}</strong><small>{inboxSourceLabel(item.source)} · 置信度 {inboxConfidenceLabel(item.confidence)} · {INBOX_ACTION_LABELS[item.proposedAction]}</small></button>)}</section>}
-      {!hasBusinessData && <section className="onboarding-card"><span>从一件真实的事开始</span><h2>这里还没有你的数据</h2><p>不用一次授权全部功能。先添加一个日程或账户，其他能力需要时再开启。</p><div><button onClick={() => { setEditingScheduleId(null); setSheet('schedule'); }}>添加第一条日程</button><button onClick={() => { navigate('finance'); setEditingAccountId(null); setSheet('account'); }}>添加第一个账户</button></div></section>}
-      {nativeOn && (!caps.accessibility || !caps.notificationListener || !caps.autofill) && <section className="capability-card"><strong>系统能力状态</strong><p>无障碍自动记账：{caps.accessibility ? '已开启' : '未开启'}。通知读取：{caps.notificationListener ? '已开启' : '未开启'}。自动填充：{caps.autofill ? '已设为 Self Agent' : '未选择'}。打开设置后回到这里会重新检测，不会把“已打开设置页”当成已启用。</p><button onClick={() => navigate('profile')}>去授权并复查</button></section>}
-      <section className="section-block"><div className="section-title"><div><h2>今日概况</h2></div></div><GroupedList><section className="summary-grid"><button onClick={() => navigate('schedule')}><span>下一项 · {nextSchedule?.time ?? '空闲'}</span><strong>{nextSchedule?.title ?? '今天没有更多日程'}</strong><small>{data.schedules.filter((item) => item.date === TODAY && item.done).length}/{data.schedules.filter((item) => item.date === TODAY).length} 已完成</small></button><button onClick={() => navigate('finance')}><span>今日支出</span><strong>¥ {money(todaySpend)}</strong><small>净资产 {totalBalanceLabel}</small></button></section></GroupedList></section>
-      <section className="section-block"><div className="section-title"><div><h2>快速记录</h2></div></div><button className="capture-callout" onClick={() => navigate('capture')}><span>＋</span><div><strong>记录一件事</strong><small>例如“午饭 36 元，微信支付”</small></div><b>›</b></button></section>
-      <section className="section-block"><div className="section-title"><div><h2>生活工具</h2></div></div><div className="feature-grid"><button onClick={() => navigate('travel')}><span>行</span><strong>出行</strong><small>火车与航班</small></button><button onClick={() => navigate('health')}><span>健</span><strong>健康</strong><small>身高体重心率</small></button><button onClick={() => navigate('butler')}><span>管</span><strong>管家</strong><small>本机摘要问答</small></button><button onClick={() => navigate('data')}><span>数</span><strong>数据</strong><small>统一趋势</small></button><button onClick={() => navigate('vault')}><span>钥</span><strong>密码库</strong><small>安全元数据</small></button></div></section>
-      <section className="section-block"><div className="section-title"><div><h2>最近入账</h2></div><button onClick={() => navigate('finance')}>查看全部</button></div><TransactionList items={data.transactions.slice(0, 3)} accounts={data.accounts} onEdit={(id) => { setEditingTransactionId(id); setSheet('transaction'); }} onDelete={(id) => deleteTransaction(id)} onSettle={(id) => settleReimbursement(id)} /></section>
-    </div>}
+    {tab === 'home' && <HomePage
+      demoMode={data.demoMode}
+      todayLabel={TODAY_LABEL}
+      greeting={GREETING}
+      inboxPending={inboxPending.slice(0, 3).map((item) => ({
+        id: item.id,
+        preview: item.preview,
+        sourceLabel: inboxSourceLabel(item.source),
+        actionLabel: INBOX_ACTION_LABELS[item.proposedAction],
+        confidenceLabel: inboxConfidenceLabel(item.confidence),
+      }))}
+      inboxPendingCount={inboxPendingCount}
+      hasBusinessData={hasBusinessData}
+      nativeOn={nativeOn}
+      caps={caps}
+      todaySchedules={schedulesOnDate(data.schedules, TODAY).map((item) => ({ id: item.id, time: item.time, title: item.title, detail: item.detail }))}
+      todaySpendLabel={`¥ ${money(todaySpend)}`}
+      netWorthLabel={totalBalanceLabel}
+      recentCount={data.transactions.filter((item) => item.status !== 'reversed' && item.status !== 'superseded' && !item.reversesId).slice(0, 3).length}
+      recentLedger={<TransactionList items={data.transactions.slice(0, 3)} accounts={data.accounts} onEdit={(id) => { setEditingTransactionId(id); setSheet('transaction'); }} onDelete={(id) => deleteTransaction(id)} onSettle={(id) => settleReimbursement(id)} />}
+      onClearDemo={clearLocalData}
+      onNavigate={(id) => navigate(id)}
+      onAddFirstSchedule={() => { setEditingScheduleId(null); setSheet('schedule'); }}
+      onAddFirstAccount={() => { navigate('finance'); setEditingAccountId(null); setSheet('account'); }}
+    />}
 
     {tab === 'schedule' && <div className="page schedule-page"><section className="calendar"><div className="week-title"><button aria-label="上一周" onClick={() => setSelectedDate(addDaysKey(selectedDate, -7))}>‹</button><strong>{weekTitle}</strong><button aria-label="下一周" onClick={() => setSelectedDate(addDaysKey(selectedDate, 7))}>›</button></div><div className="dates">{dateOptions.map((date) => <button key={date.value} onClick={() => setSelectedDate(date.value)} className={selectedDate === date.value ? 'active' : ''}><span>{date.weekday}</span><b>{date.day}</b>{date.value === TODAY && <i />}</button>)}</div></section><section className="day-section"><div className="day-heading"><div><span>{selectedDate === TODAY ? '今天' : `${Number(selectedDate.slice(-2))}日`} · 星期{dateOptions.find((date) => date.value === selectedDate)?.weekday}</span><h2>{selectedSchedules.length ? '这一天的安排' : '给这一天留点空白'}</h2></div><small>{selectedSchedules.filter((item) => item.done).length}/{selectedSchedules.length} 完成</small></div>{selectedSchedules.length ? <div className="timeline">{selectedSchedules.map((item, index) => <article className={item.done ? 'done' : ''} key={item.id}><time>{item.time}</time><div className="track"><i className={item.color} />{index < selectedSchedules.length - 1 && <span />}</div><SwipeScheduleRow item={item} onToggle={() => toggleSchedule(item.id)} onEdit={() => { setEditingScheduleId(item.id); setSheet('schedule'); }} onDelete={() => deleteSchedule(item.id)} /></article>)}</div> : <div className="empty"><span>○</span><h3>没有日程</h3><p>给这一天留点空白，或添加一件事。</p><button onClick={() => setSheet('schedule')}>添加日程</button></div>}</section></div>}
 

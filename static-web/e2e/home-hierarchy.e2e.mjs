@@ -52,7 +52,7 @@ const homeLedger = {
   }],
 };
 
-test('home hierarchy is large-title plus 今日概况 without mock pulse cards', async ({ page }) => {
+test('375px home is large-title, summary, shortcuts, pending and recent ledger', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await page.addInitScript(({ key, value }) => {
     window.localStorage.setItem(key, JSON.stringify(value));
@@ -62,22 +62,20 @@ test('home hierarchy is large-title plus 今日概况 without mock pulse cards',
   const home = page.locator('.home-page');
   await expect(home.locator('.large-title')).toBeVisible();
   await expect(home.locator('.large-title')).toContainText('所有内容先整理、确认后再保存。');
-  await expect(home.locator('.hero-card')).toHaveCount(0);
-  await expect(home.getByRole('heading', { name: '今日概况' })).toBeVisible();
+  await expect(home.getByRole('heading', { name: '今日摘要' })).toBeVisible();
   await expect(home).toContainText('整理季度预算');
-  await expect(home).toContainText('今日支出');
-  await expect(home).toContainText('净资产');
-  await expect(home).not.toContainText('本月收入');
-  await expect(home.getByRole('heading', { name: '快速记录' })).toBeVisible();
-  await expect(home.getByRole('heading', { name: '生活工具' })).toBeVisible();
+  await expect(home).toContainText('15:00');
+  await expect(home.getByRole('heading', { name: '快捷入口' })).toBeVisible();
   await expect(home.getByRole('heading', { name: '最近入账' })).toBeVisible();
-  await expect(home.getByText('QUICK CAPTURE')).toHaveCount(0);
-  await expect(home.getByText('FEATURES', { exact: true })).toHaveCount(0);
-  await expect(home.getByText('RECENT', { exact: true })).toHaveCount(0);
   await expect(home).toContainText('待确认');
+  await expect(home).toContainText('午餐');
   await expect(home.getByText('账本脉搏')).toHaveCount(0);
   await expect(home.getByText('健康一览')).toHaveCount(0);
+  await expect(home.getByText('本月收入')).toHaveCount(0);
+  await expect(home.getByText('本月支出')).toHaveCount(0);
+  await expect(home.locator('.hero-card')).toHaveCount(0);
   await expect(home.locator('.pulse-card')).toHaveCount(0);
+  await expect(home.getByText('QUICK CAPTURE')).toHaveCount(0);
 
   const overflow = await page.evaluate(() => {
     const node = document.querySelector('.home-page');
@@ -89,4 +87,36 @@ test('home hierarchy is large-title plus 今日概况 without mock pulse cards',
     .filter((button) => button.getBoundingClientRect().height > 0 && button.getBoundingClientRect().height < 44)
     .map((button) => (button.textContent || '').trim().slice(0, 24)));
   expect(shortActions).toEqual([]);
+});
+
+test('375px home empty state when there is no authoritative data', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.addInitScript(({ key }) => {
+    window.localStorage.setItem(key, JSON.stringify({
+      schemaVersion: 4,
+      demoMode: false,
+      accounts: [],
+      transactions: [],
+      recurringRules: [],
+      schedules: [],
+      healthRecords: [],
+      travels: [],
+      investments: [],
+      exchangeRates: [],
+      memories: [],
+      privacy: { health: false, finance: false, schedule: false, memory: false },
+      vaultItems: [],
+      auditLog: [],
+      lastConfirmedInboxId: null,
+      theme: 'light',
+      permissionOnboarding: { version: 2, dismissed: true, completedAt: null, settingsOpened: false },
+      inboxItems: [],
+    }));
+  }, { key: STORAGE_KEY });
+  await page.goto('/');
+  const home = page.locator('.home-page');
+  await expect(home).toContainText('这里还没有你的数据');
+  await expect(home).toContainText('今天暂无日程');
+  await expect(home).toContainText('暂无入账');
+  await expect(home.getByText('账本脉搏')).toHaveCount(0);
 });

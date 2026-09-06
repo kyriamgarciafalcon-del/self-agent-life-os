@@ -1,0 +1,27 @@
+.home-page{overflow-x:hidden;padding:12px 0 28px;background:#F2F2F7}
+.home-page .large-title{margin:0 16px 12px;padding:18px 16px;border-radius:16px;background:#e7f6ee;border:1px solid var(--line,#E5E5EA)}
+.home-page button{min-height:44px;min-width:44px}
+.home-page .demo-banner,
+.home-page .onboarding-card,
+.home-page .capability-card{margin:0 16px 12px}
+.daily-group-header{margin:16px 16px 8px;font-size:13px;font-weight:600;color:#8E8E93}
+.daily-group{margin:0 16px 16px;border-radius:12px;background:#FFFFFF;overflow:hidden}
+.daily-row{display:flex;align-items:center;gap:12px;width:100%;min-height:44px;padding:10px 16px;border:0;background:#FFFFFF;text-align:left;color:inherit}
+.daily-row-sep{border-top:0.5px solid rgba(60,60,67,0.12)}
+.daily-time{flex:none;width:52px}
+.daily-time strong{display:block;color:#2F6F57;font-size:15px;font-variant-numeric:tabular-nums}
+.daily-row-body{min-width:0;flex:1}
+.daily-row-body strong,
+.daily-row-body span{display:block;font-size:15px;font-weight:600}
+.daily-row-body small{display:block;margin-top:2px;color:#8E8E93;font-size:12px}
+.daily-empty{padding:24px 16px;text-align:center;color:#8E8E93}
+.daily-empty p{margin:0}
+.daily-empty p + p{margin-top:6px;font-size:12px}
+.daily-empty button{margin-top:12px;border:0;background:transparent;color:#2F6F57;font-weight:600}
+.home-page .inbox-home{margin:0}
+.home-page .inbox-home-card{width:100%}
+.home-page .section-block{margin:0 16px}
+.home-page .section-block .daily-group-header{margin:16px 0 8px}
+.home-page .section-title{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.home-page .section-title button{border:0;background:transparent;color:#2F6F57;font-weight:600}
+.home-page .transaction-list{border-radius:12px;overflow:hidden;background:#FFFFFF}

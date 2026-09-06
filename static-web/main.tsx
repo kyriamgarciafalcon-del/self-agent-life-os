@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import App from '../app/page';
 import './globals.css';
 import '../app/components/ui/shell.css';
+import '../app/components/daily/daily.css';
 import '../app/finance.css';
 import '../app/editing.css';
 import '../app/feature-hub.css';

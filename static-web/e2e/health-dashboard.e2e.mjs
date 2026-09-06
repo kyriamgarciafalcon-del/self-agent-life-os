@@ -46,7 +46,7 @@ test('health dashboard presents real metrics, sources and editable body profile'
 
   const management = page.locator('.health-data-management');
   await expect(management.getByRole('button', { name: /Health Connect/ })).toBeVisible();
-  await expect(management.getByRole('button', { name: /^G Gadgetbridge/ })).toBeVisible();
+  await expect(management.getByRole('button', { name: /^Gadgetbridge / })).toBeVisible();
   await expect(management.getByRole('button', { name: /导出导入排障/ })).toContainText('不是医疗诊断');
 
   const body = page.locator('.health-body-panel');

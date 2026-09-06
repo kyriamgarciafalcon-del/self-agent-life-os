@@ -3,7 +3,6 @@
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { getConvertedNetWorth, getMonthlyReport, getNetWorth, getOutstandingReimbursements, transactionsInPeriod } from './finance-query';
 import { migrateToSchemaV4, createSchemaV4MigrationBackup, applySchemaV4Migration, SCHEMA_V3_BACKUP_KEY } from './finance-schema';
-import { LargeTitle, GroupedList } from './ui';
 import { HomePage } from './components/daily/HomePage';
 import { homeHasAuthoritativeData, homeHasFinanceData, schedulesOnDate } from './components/daily/home';
 import { SchedulePage } from './components/daily/SchedulePage';
@@ -13,8 +12,9 @@ import { AppShell } from './components/ui/AppShell';
 import { BottomNav } from './components/ui/BottomNav';
 import { ProfilePage } from './components/mine/ProfilePage';
 import { LifePage } from './components/mine/LifePage';
+import { HealthPage } from './components/mine/surfaces/HealthPage';
+import { TravelPage } from './components/mine/surfaces/TravelPage';
 import { primaryNavActiveId } from './components/ui/nav';
-import { buildHealthMetricSeries, formatCompactSleepDuration, formatSleepDuration, sleepDurationParts, type HealthCoreKind, type HealthMetricSeries } from './health-dashboard';
 import { accountRole, applyDailyFxRates, applyDailyPriceQuotes, applyInboxLifecycle, AI_CONFIG_EVENT, AI_CONFIG_STORAGE_KEY, AI_REPLY_EVENT, AUDIT_OUTCOMES, auditOutcomeLabel, auditReasonLabel, buildButlerSystemPrompt, buildHealthBriefing, buildAiSendPreview, canUndoInboxConfirm, cnyWealthTotal, confirmByokHost, classifyAiProviderError, interpretAiConnectionTest, consumeCallBudget, createCallBudget, defaultCashId, describeButlerDataScope, detectLegacyDemoData, dialogShouldDismiss, dismissPermissionOnboarding, filterAuditLog, generateRecurringDrafts, healthRecordsFromSnapshots, inboxConfidenceLabel, inboxConfirmBlockReason, inboxItemFromAiTool, inboxItemFromButlerAction, inboxItemFromNaturalCapture, inboxItemFromPayment, inboxItemFromTravelNotice, inboxSourceLabel, ledgerIdempotencyKeyForInboxItem, INBOX_ACTION_LABELS, isBackupPayload, isDebtRole, latestHealthByKind, loadBrowserAiConfig, localDateKey, markPermissionSettingsOpened, migrateAuditLog, migrateInboxStore, migrateLegacyAiLocalStorage, migratePrivacySettings, normalizeAccountBalance, normalizeMemory, normalizePermissionOnboarding, parseAiProviderResponse, parseButlerModelOutput, parseCapabilityStatus, parseNaturalCapture, pendingInboxItems, persistBrowserAiConfig, permissionOnboardingProgress, planAccountSettlement, planInvestmentMigrations, confirmInvestmentMigration, prepareOutboundAiPayload, reconcileRecurringConfirmations, releaseRecurringConfirmation, resolveInboxFinanceConfirmation, resolvePaymentAccountId, shouldShowPermissionOnboarding, summarizeHealth, TOAST_ARIA_LIVE, updateInboxItemPayload, upsertByExternalKey, validateByokTarget, ACCOUNT_TYPES, buildReimbursementSettlement, canDeleteAccount, FINANCE_TABS, financeTransactionFields, transactionFormPhases, previewPostedImpact, investmentAccountSnapshot, normalizeFinanceRecords, postBalanceAdjustment, postFinanceTransaction, refreshHoldingsValuation, reimbursementOutstandingAmount, removePostedTransaction, settlePostedReimbursement, resolveTransferAmounts, type AuditEntry, type ButlerAction, type CapabilityStatusSnapshot, type HealthMetric, type InboxItem, type InboxLifecycleEvent, type InboxSource, type PermissionCardId, type PermissionOnboardingState, type TravelKind } from './product-logic';
 
 type Tab = 'home' | 'schedule' | 'capture' | 'finance' | 'profile' | 'life' | 'health' | 'travel' | 'data' | 'butler' | 'privacy' | 'memory' | 'vault' | 'audit';
@@ -1439,8 +1439,8 @@ export default function Home() {
 
     {tab === 'profile' && <ProfilePage theme={data.theme} nativeOn={nativeOn} aiConfig={aiConfig} onNavigate={navigate} onOpenPermissions={() => setPermissionOnboardingOpen(true)} onChooseZip={chooseGadgetbridgeExport} onSaveAi={saveAiConfig} onTestAi={() => void testAiConnection()} onOpenAccessibility={() => (window as Window & { SelfAgentNative?: { openAccessibilitySettings?: () => void } }).SelfAgentNative?.openAccessibilitySettings?.()} onOpenNotification={() => (window as Window & { SelfAgentNative?: { openNotificationAccess?: () => void } }).SelfAgentNative?.openNotificationAccess?.()} onOpenAutofill={() => (window as Window & { SelfAgentNative?: { openAutofillSettings?: () => void } }).SelfAgentNative?.openAutofillSettings?.()} onToggleTheme={toggleTheme} onExport={exportLocalData} onImport={importLocalData} onLoadDemo={loadDemoData} onClear={clearLocalData} />}
     {tab === 'life' && <LifePage onNavigate={navigate} />}
-    {tab === 'health' && <HealthPanel records={data.healthRecords} onAdd={() => setSheet('health')} onImportHealthConnect={importHealthConnect} onImportGadgetbridge={importGadgetbridgeHealth} onSelectExport={chooseGadgetbridgeExport} onExportDiagnostics={exportHealthDiagnostics} onSaveBody={saveBodyMetrics} />}
-    {tab === 'travel' && <TravelPanel items={data.travels} onSync={requestTravelSync} onAdd={() => setSheet('travel')} onDelete={(id) => { setData((current) => ({ ...current, travels: current.travels.filter((item) => item.id !== id) })); notify('行程已删除'); }} />}
+    {tab === 'health' && <HealthPage records={data.healthRecords} onAdd={() => setSheet('health')} onImportHealthConnect={importHealthConnect} onImportGadgetbridge={importGadgetbridgeHealth} onSelectExport={chooseGadgetbridgeExport} onExportDiagnostics={exportHealthDiagnostics} onSaveBody={saveBodyMetrics} />}
+    {tab === 'travel' && <TravelPage items={data.travels} onSync={requestTravelSync} onAdd={() => setSheet('travel')} onDelete={(id) => { setData((current) => ({ ...current, travels: current.travels.filter((item) => item.id !== id) })); notify('行程已删除'); }} />}
     {tab === 'data' && <DataPanel data={data} />}
     {tab === 'butler' && <ButlerPanel data={data} ai={aiConfig} onQueueActions={queueButlerActions} onQueueTools={queueAiTools} />}
     {tab === 'privacy' && <PrivacyPanel settings={data.privacy} onToggle={togglePrivacy} />}
@@ -1472,169 +1472,6 @@ function PermissionOnboardingPanel({ caps, nativeOn, onOpen, onLater }: { caps: 
     <div className="permission-onboarding-list">{cards.map((card) => <article key={card.id} className={card.enabled ? 'enabled' : ''}><div className="permission-state">{card.enabled ? '✓ 已开启' : '○ 未检测到'}</div><h3>{card.title}</h3><p><strong>为什么需要：</strong>{card.why}</p><p><strong>可以读取：</strong>{card.reads}</p><p><strong>不会读取：</strong>{card.cannotRead}</p><div><button type="button" onClick={() => onOpen(card.id)}>{card.id === 'health' ? '选择健康授权' : '打开系统设置'}</button>{card.id === 'payment' && <button type="button" className="ghost" onClick={() => onOpen(card.id, true)}>打开无障碍</button>}</div></article>)}</div>
     <footer><button type="button" className="later" onClick={onLater}>稍后设置</button><button type="button" className="done" onClick={onLater}>完成并进入</button></footer>
   </div></div>;
-}
-
-function HealthTrendBars({ series }: { series: HealthMetricSeries }) {
-  if (!series.points.length) return <div className="health-trend-empty">暂无趋势数据。同步或手动添加记录后，这里会显示真实日期。</div>;
-  const values = series.points.map((point) => point.value);
-  const max = Math.max(...values);
-  const min = Math.min(...values);
-  const span = max - min;
-  return <div className="health-trend-bars" role="img" aria-label={`${series.label}最近 7 个有记录日期的趋势`}>
-    {series.points.map((point) => {
-      const height = span === 0 ? 58 : 28 + ((point.value - min) / span) * 58;
-      return <div className="health-trend-point" key={point.date}>
-        <strong aria-label={series.kind === 'sleep' ? formatSleepDuration(point.value) : undefined}>{series.kind === 'sleep' ? formatCompactSleepDuration(point.value) : point.value}</strong>
-        <i style={{ height: `${height}%` }} />
-        <small>{point.date.slice(5).replace('-', '/')}</small>
-      </div>;
-    })}
-  </div>;
-}
-
-function HealthMetricValue({ series }: { series: HealthMetricSeries }) {
-  if (!series.latest) return <strong>暂无数据</strong>;
-  if (series.kind !== 'sleep') return <strong>{series.displayValue}</strong>;
-  const { hours, minutes } = sleepDurationParts(series.latest.value);
-  return <strong className="sleep-duration" aria-label={series.displayValue}>
-    <span className="sleep-number">{hours}</span><span className="sleep-unit">小时</span>
-    <span className="sleep-number">{minutes}</span><span className="sleep-unit">分钟</span>
-  </strong>;
-}
-
-function HealthPanel({ records, onAdd, onImportHealthConnect, onImportGadgetbridge, onSelectExport, onExportDiagnostics, onSaveBody }: { records: HealthRecord[]; onAdd: () => void; onImportHealthConnect: () => void; onImportGadgetbridge: () => void; onSelectExport: () => void; onExportDiagnostics: () => void; onSaveBody: (height: number, weight: number) => void }) {
-  const kinds: HealthCoreKind[] = ['steps', 'sleep', 'heartRate', 'stress', 'pai'];
-  const marks: Record<string, string> = { height: '高', weight: '重', heartRate: '心', stress: '压', sleep: '睡', pai: 'P', steps: '步', exercise: '动', meal: '食' };
-  const series = kinds.map((kind) => buildHealthMetricSeries(records, kind));
-  const [selectedKind, setSelectedKind] = useState<HealthCoreKind>('steps');
-  const selected = series.find((item) => item.kind === selectedKind) ?? series[0];
-  const currentHeight = latestHealthByKind(records, 'height');
-  const currentWeight = latestHealthByKind(records, 'weight');
-  const [editingBody, setEditingBody] = useState(false);
-  const history = [...records].filter((item) => Number.isFinite(item.value)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 8);
-  const latestDate = series.map((item) => item.latest?.date || '').sort().at(-1) || '';
-
-  function formatRecord(kind: string, value: number) {
-    if (kind === 'height') return `${value} cm`;
-    if (kind === 'weight') return `${value} kg`;
-    if (kind === 'heartRate') return `${value} 次/分`;
-    if (kind === 'sleep') return formatSleepDuration(value);
-    if (kind === 'exercise') return `${value} 分钟`;
-    if (kind === 'meal') return `${value} 餐`;
-    if (kind === 'steps') return `${value} 步`;
-    if (kind === 'stress' || kind === 'pai') return `${value} 原始分`;
-    return String(value);
-  }
-  function dateLabel(value: string) {
-    if (!value) return '暂无记录';
-    if (value === TODAY) return '今天';
-    return `${Number(value.slice(5, 7))}月${Number(value.slice(8, 10))}日`;
-  }
-  function submitBody(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const height = Number(form.get('height'));
-    const weight = Number(form.get('weight'));
-    if (!(height > 0) || !(weight > 0)) return;
-    onSaveBody(height, weight);
-    setEditingBody(false);
-  }
-
-  return <div className="page feature-page health-page">
-    <header className="health-heading">
-      <span>健康总览</span>
-      <h1>今日状态</h1>
-      <p>{latestDate ? `最近数据更新于 ${dateLabel(latestDate)}` : '暂无今日记录，先同步设备或添加一条记录。'}</p>
-    </header>
-
-    <section className="health-status" aria-label="今日健康状态">
-      {series.slice(0, 3).map((item) => <article key={item.kind}>
-        <span aria-hidden="true">{marks[item.kind]}</span>
-        <div><small>{item.label}</small><HealthMetricValue series={item} /><em>{item.latest ? `${item.unit ? `${item.unit} · ` : ''}${dateLabel(item.latest.date)}` : '待记录'}</em></div>
-      </article>)}
-    </section>
-
-    <section className="health-panel health-trend-section">
-      <div className="health-section-title"><div><span>真实记录</span><h2>7 日趋势</h2></div><small>仅显示有记录的日期</small></div>
-      <div className="health-metric-tabs" role="tablist" aria-label="选择趋势指标">
-        {series.map((item) => <button key={item.kind} type="button" role="tab" aria-selected={selectedKind === item.kind} aria-controls="health-trend-panel" className={selectedKind === item.kind ? 'active' : ''} onClick={() => setSelectedKind(item.kind)}>{item.label}</button>)}
-      </div>
-      <div id="health-trend-panel" role="tabpanel"><div className="health-trend-summary"><div><HealthMetricValue series={selected} /><span>{selected.latest ? selected.unit : ''}</span></div><small>{selected.latest ? `最近一次 · ${dateLabel(selected.latest.date)} · ${selected.latest.source} · 本机保存` : '暂无数据，不会补零或推测'}</small></div>
-        <HealthTrendBars series={selected} />
-      </div>
-    </section>
-
-    <section className="health-panel">
-      <div className="health-section-title"><div><span>设备指标</span><h2>核心指标</h2></div></div>
-      <div className="health-core-grid">{series.map((item) => <button type="button" key={item.kind} onClick={() => setSelectedKind(item.kind)} aria-label={`查看${item.label}趋势`}>
-        <span aria-hidden="true">{marks[item.kind]}</span><small>{item.label}</small><HealthMetricValue series={item} /><em>{item.latest ? `${item.unit ? `${item.unit} · ` : ''}${dateLabel(item.latest.date)}` : '待记录'}</em>{(item.kind === 'stress' || item.kind === 'pai') && <b>手环原始分 · 无医学单位</b>}
-      </button>)}</div>
-    </section>
-
-    <section className="health-panel">
-      <div className="health-section-title"><div><span>时间线</span><h2>最近记录</h2></div></div>
-      <div className="health-history">{history.length ? history.map((item) => <article key={item.id}><span aria-hidden="true">{marks[item.kind] || '健'}</span><div><strong>{item.note || '健康记录'}</strong><small>{dateLabel(item.createdAt.slice(0, 10))} · {item.createdAt.slice(11, 16) || '全天'}</small></div><b>{formatRecord(item.kind, item.value)}</b></article>) : <div className="health-empty"><strong>还没有健康记录</strong><p>可从 Health Connect、Gadgetbridge 导入，或手动添加。</p></div>}</div>
-    </section>
-
-    <section className="health-panel health-data-management">
-      <div className="health-section-title"><div><span>来源与同步</span><h2>数据管理</h2></div></div>
-      <div className="health-source-actions">
-        <button type="button" onClick={onImportHealthConnect}><span>H</span><div><strong>Health Connect</strong><small>同步身高、体重、心率、睡眠和步数</small></div><b>同步</b></button>
-        <button type="button" onClick={onImportGadgetbridge}><span>G</span><div><strong>Gadgetbridge</strong><small>读取已授权的数据库或完整 ZIP</small></div><b>导入</b></button>
-        <button type="button" onClick={onSelectExport}><span>夹</span><div><strong>选择 ZIP 文件夹</strong><small>跟踪新生成的 Gadgetbridge.zip</small></div><b>选择</b></button>
-        <button type="button" onClick={onExportDiagnostics}><span>查</span><div><strong>导出导入排障</strong><small>仅排查导入，不是医疗诊断</small></div><b>导出</b></button>
-      </div>
-      <button type="button" className="health-manual-add" onClick={onAdd}>＋ 手动添加健康记录</button>
-    </section>
-
-    <section className="health-panel health-body-panel">
-      <div className="health-section-title"><div><span>个人基础数据</span><h2>身体资料</h2></div></div>
-      {currentHeight != null && currentWeight != null && !editingBody ? <div className="body-profile-summary"><div><small>身高</small><strong>{currentHeight} cm</strong></div><div><small>体重</small><strong>{currentWeight} kg</strong></div><button type="button" onClick={() => setEditingBody(true)}>修改</button></div> : <form className="body-profile-form" onSubmit={submitBody}><label>身高（cm）<input required name="height" type="number" min="50" max="250" step="0.1" defaultValue={currentHeight ?? ''} /></label><label>体重（kg）<input required name="weight" type="number" min="10" max="400" step="0.1" defaultValue={currentWeight ?? ''} /></label><button className="save" type="submit">保存身体资料</button></form>}
-    </section>
-
-    <aside className="health-privacy-note"><strong>本机健康记录</strong><p>这些数据不是诊断，不能替代医疗意见。只有在“健康摘要”隐私权限开启时，管家才可读取摘要；密码和原始数据库不会发送给 AI。</p></aside>
-  </div>;
-}
-
-function parseTravelText(text: string): TravelItem | null {
-  const raw = text.replace(/\s+/g, ' ').trim();
-  if (!raw) return null;
-  const train = raw.match(/([GDCZTK]\d{1,5})次?/);
-  const flight = raw.match(/\b([A-Z]{2}\d{3,4})\b/i);
-  const resolvedKind: TravelItem['kind'] | null = train ? 'train' : (flight && /航班|起飞|登机|机场/.test(raw) ? 'flight' : null);
-  if (!resolvedKind) return null;
-  const number = (train?.[1] || flight?.[1] || '').toUpperCase();
-  const route = raw.match(/([\u4e00-\u9fa5]{2,12}?)(?:站|机场)?\s*[-—至到]\s*([\u4e00-\u9fa5]{2,12}?)(?:站|机场)?/);
-  const dateMatch = raw.match(/(?:(\d{4})年)?(\d{1,2})月(\d{1,2})日/);
-  const year = dateMatch?.[1] || TODAY.slice(0, 4);
-  const month = dateMatch ? String(dateMatch[2]).padStart(2, '0') : TODAY.slice(5, 7);
-  const day = dateMatch ? String(dateMatch[3]).padStart(2, '0') : TODAY.slice(8, 10);
-  const times = [...raw.matchAll(/(\d{1,2}:\d{2})/g)].map((item) => item[1]);
-  const date = `${year}-${month}-${day}`;
-  const seat = raw.match(/(\d{1,2}车\s*\d{1,3}[A-F]?)/)?.[1] || '待分配';
-  const terminal = raw.match(/检票口\s*([A-Z]?\d{1,3}[A-Z]?)/)?.[1] || raw.match(/(?:航站楼|登机口)\s*([A-Z]?\d{1,2}[A-Z]?)/)?.[1] || '待确认';
-  return { id: uid('travel'), kind: resolvedKind, number, from: route?.[1] || '待确认', to: route?.[2] || '待确认', departAt: `${date}T${times[0] || '08:00'}`, arriveAt: `${date}T${times[1] || times[0] || '12:00'}`, seat, terminal, status: 'upcoming', source: 'import', verified: false };
-}
-
-function TravelPanel({ items, onSync, onAdd, onDelete }: { items: TravelItem[]; onSync: () => void; onAdd: () => void; onDelete: (id: string) => void }) {
-  const sorted = [...items].sort((a, b) => a.departAt.localeCompare(b.departAt));
-  const next = sorted.find((item) => item.status !== 'completed');
-  const [paste, setPaste] = useState('');
-  function time(value: string) { const date = new Date(value); return Number.isNaN(date.getTime()) ? value.replace('T', ' ') : new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', weekday: 'short', hour: '2-digit', minute: '2-digit' }).format(date); }
-  function submitPaste(event: FormEvent) {
-    event.preventDefault();
-    const trip = parseTravelText(paste);
-    if (!trip) return;
-    window.dispatchEvent(new CustomEvent('self-agent:travel-updated', { detail: [trip] }));
-    setPaste('');
-  }
-  return <div className="page feature-page travel-page">
-    <section className="travel-hero"><div><span>NEXT TRIP</span><h2>{next ? `${next.from} → ${next.to}` : '暂无后续行程'}</h2><p>{next ? `${next.number} · ${time(next.departAt)}` : '可以粘贴 12306/航司短信，或授权通知读取。'}</p></div><b>{next?.kind === 'flight' ? '航' : '铁'}</b></section>
-    <section className="travel-actions"><button onClick={onSync}><span>↻</span><div><strong>读取通知里的行程</strong><small>12306、航旅纵横、短信通知</small></div></button><button onClick={onAdd}><span>＋</span><div><strong>手动添加</strong><small>补充车次、航班和座位</small></div></button></section>
-    <form className="howto" onSubmit={submitPaste}><h3>粘贴 12306 / 航班短信</h3><textarea value={paste} onChange={(event) => setPaste(event.target.value)} rows={3} placeholder="例如：您已购8月29日G123次北京南站-上海虹桥站" style={{ width: '100%', minHeight: 72, border: '1px solid var(--line)', borderRadius: 10, padding: 8 }} /><button className="save" type="submit" style={{ marginTop: 8 }}>识别并放入收件箱</button></form>
-    <section className="feature-section"><div className="feature-title"><div><span>ITINERARY</span><h2>火车与航班</h2></div><small>{sorted.length} 段</small></div><div className="trip-list">{sorted.length ? sorted.map((item) => <article key={item.id} className={item.status}><header><span>{item.kind === 'flight' ? '航班' : '火车'} · {item.number}</span><b>{item.source === 'notification' ? '通知识别' : item.source === 'manual' ? '手动添加' : '粘贴识别'}</b></header><div className="trip-route"><div><strong>{item.from}</strong><small>{time(item.departAt)}</small></div><i>→</i><div><strong>{item.to}</strong><small>{time(item.arriveAt)}</small></div></div><footer><span>{item.seat}</span><span>{item.terminal}</span><span>{item.source === 'manual' ? '手动' : item.source === 'notification' ? '通知' : '导入'}</span></footer><div className="trip-ops"><button type="button" onClick={() => onDelete(item.id)}>删除</button></div></article>) : <div className="list-empty">还没有行程。粘贴短信或打开通知使用权后等待识别。</div>}</div></section>
-    <section className="howto"><h3>为什么没有直接登录 12306</h3><p>铁路 12306 没有对第三方开放「我的车票」官方接口。不能用破解或模拟登录去拉你的订单。公开余票查询也不是你的行程。</p><p>航班动态可用航旅纵横、飞常准等官方渠道；本 App 先识别你已经收到的出票通知。</p></section>
-  </div>;
 }
 
 function DataPanel({ data }: { data: AppData }) {

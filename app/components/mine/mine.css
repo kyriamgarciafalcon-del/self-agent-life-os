@@ -266,9 +266,202 @@
 }
 
 .profile-page button,
-.life-page button {
+.life-page button,
+.mine-surface button {
   min-height: 44px;
   min-width: 44px;
+}
+
+.sa-card-kicker {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.mine-surface-actions {
+  margin: 12px 16px 0;
+}
+
+.health-status {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.health-status article {
+  min-width: 0;
+  padding: 8px 6px;
+  border-radius: 10px;
+  background: #F2F2F7;
+}
+
+.health-status small,
+.health-status em {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.health-status strong,
+.health-core-value,
+.health-history-value {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.sleep-duration {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  align-items: baseline;
+}
+
+.sleep-unit {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.health-metric-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  margin-bottom: 12px;
+}
+
+.health-metric-tabs button {
+  flex: 1 0 auto;
+  min-height: 44px;
+  min-width: 44px;
+  border: 0;
+  border-radius: 10px;
+  background: #F2F2F7;
+  color: var(--ink);
+}
+
+.health-metric-tabs button.active {
+  background: #2F6F57;
+  color: #fff;
+}
+
+.health-trend-summary small {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.health-trend-empty {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.health-trend-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  min-height: 120px;
+  margin-top: 12px;
+}
+
+.health-trend-point {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.health-trend-point i {
+  display: block;
+  width: 10px;
+  border-radius: 6px 6px 2px 2px;
+  background: #2F6F57;
+}
+
+.health-trend-point strong,
+.health-trend-point small {
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.health-core-value,
+.health-history-value {
+  flex: 0 1 auto;
+  min-width: 0;
+  text-align: right;
+}
+
+.body-profile-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  min-width: 0;
+}
+
+.body-profile-summary div {
+  min-width: 0;
+}
+
+.body-profile-summary small {
+  display: block;
+  color: var(--muted);
+}
+
+.body-profile-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.trip-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.trip-card-head small {
+  color: var(--muted);
+}
+
+.trip-route {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+  min-width: 0;
+}
+
+.trip-route div {
+  min-width: 0;
+}
+
+.trip-route small,
+.trip-meta {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.sa-card textarea {
+  width: 100%;
+  min-height: 72px;
+  border: 0;
+  border-radius: 12px;
+  background: #F2F2F7;
+  padding: 10px 14px;
+  font-size: 17px;
+  resize: vertical;
 }
 
 @media (max-width: 375px) {
@@ -279,7 +472,11 @@
   }
 
   .sa-row-text strong,
-  .sa-row-text small {
+  .sa-row-text small,
+  .health-status small,
+  .health-status em,
+  .trip-card-head strong,
+  .trip-route strong {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

@@ -1,12 +1,12 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 describe('health dashboard UI contract', () => {
   it('uses a sports-health layout with separate import actions and no fake score hero', () => {
     const page = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8');
-    const panelStart = page.indexOf('function HealthPanel');
-    const panelEnd = page.indexOf('function parseTravelText');
-    const healthPanel = page.slice(panelStart, panelEnd);
+    const healthUrl = new URL('../app/components/mine/surfaces/HealthPage.tsx', import.meta.url);
+    expect(existsSync(healthUrl)).toBe(true);
+    const healthPanel = readFileSync(healthUrl, 'utf8');
 
     expect(healthPanel).toContain('今日状态');
     expect(healthPanel).toContain('7 日趋势');

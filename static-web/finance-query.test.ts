@@ -80,12 +80,13 @@ describe('finance query service', () => {
 
 describe('finance query call sites', () => {
   it('keeps account viewing and editing as separate accessible buttons', () => {
-    const page = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8');
-    const cards = page.split('\n').find((line) => line.includes('className="section-block account-section"'))!;
-    expect(cards).not.toContain('role="button"');
-    expect(cards).toContain('className="account-open-button"');
-    expect(cards).toContain('aria-label={`编辑 ${account.name}`}');
-    expect(cards).toContain('aria-label={`查看 ${account.name} 的账单`}');
+    const finance = readFileSync(new URL('../app/components/finance/FinancePage.tsx', import.meta.url), 'utf8');
+    const accountsStart = finance.indexOf('className="account-section"');
+    const accountsEnd = finance.indexOf('className="finance-legacy-block investment-section"', accountsStart);
+    const accounts = finance.slice(accountsStart, accountsEnd);
+    expect(accounts).not.toContain('role="button"');
+    expect(accounts).toContain('aria-label={`编辑 ${account.name}`}');
+    expect(accounts).toContain('aria-label={`查看 ${account.name} 的账单`}');
   });
   it('stops DataPanel and butler from recomputing monthly totals with raw amount reduces', () => {
     const page = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8');

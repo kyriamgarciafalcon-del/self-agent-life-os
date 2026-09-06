@@ -25,6 +25,8 @@
     "../app/components/ui/**/*.ts",
     "../app/components/ui/**/*.tsx",
     "../app/components/daily/**/*.ts",
-    "../app/components/daily/**/*.tsx"
+    "../app/components/daily/**/*.tsx",
+    "../app/components/finance/**/*.ts",
+    "../app/components/finance/**/*.tsx"
   ]
 }

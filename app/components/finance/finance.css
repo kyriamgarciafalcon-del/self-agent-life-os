@@ -1,0 +1,251 @@
+.finance-page.sa-page {
+  --accent: #2F6F57;
+  --page-bg: #F2F2F7;
+  --surface: #FFFFFF;
+  --ink: #1C1C1E;
+  --muted: #8E8E93;
+  --separator: rgba(60, 60, 67, 0.12);
+  background: #F2F2F7;
+  overflow-x: hidden;
+  min-width: 0;
+  padding: 4px 0 28px;
+}
+
+.finance-page .sa-page-header {
+  padding: 8px 20px 12px;
+  min-width: 0;
+}
+
+.finance-page .sa-page-header h1 {
+  margin: 0;
+  font-size: 34px;
+  line-height: 41px;
+  font-weight: 700;
+  color: #000;
+}
+
+.finance-page .sa-page-header p {
+  margin: 2px 0 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--muted);
+}
+
+.finance-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.finance-toolbar-row select,
+.finance-page button,
+.finance-page .sa-row {
+  min-height:44px;
+}
+
+.finance-toolbar-row select {
+  min-width: 88px;
+  border: 0;
+  border-radius: 10px;
+  background: #fff;
+  padding: 0 12px;
+  color: var(--ink);
+}
+
+.finance-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 16px 8px;
+  overflow-x: hidden;
+}
+
+.finance-tabs button {
+  flex: 1 1 auto;
+  min-width: 64px;
+  min-height:44px;
+  border: 0;
+  border-radius: 10px;
+  background: #fff;
+  color: var(--muted);
+  padding: 0 12px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.finance-tabs button.active {
+  background: #2F6F57;
+  color: #fff;
+}
+
+.finance-page [role='tabpanel'][hidden] {
+  display: none;
+}
+
+.finance-networth strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 28px;
+  line-height: 34px;
+  font-weight: 700;
+  color: #1C1C1E;
+  word-break: break-word;
+}
+
+.finance-networth p,
+.finance-page .sa-page-footer {
+  margin: 8px 20px 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--muted);
+}
+
+.finance-month-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 16px 0;
+}
+
+.finance-month-grid article {
+  min-width: 0;
+  background: #fff;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.finance-month-grid span {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.finance-month-grid strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 15px;
+  word-break: break-word;
+}
+
+.finance-month-grid .income {
+  color: #2F6F57;
+}
+
+.finance-spend {
+  height: 96px;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.finance-spend > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.finance-spend > div > span {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.finance-spend i {
+  display: block;
+  width: 10px;
+  min-height: 5px;
+  max-height: 100%;
+  border-radius: 4px;
+  background: #2F6F57;
+}
+
+.finance-spend small {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.account-hero-ops,
+.row-ops {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.account-hero-ops button,
+.row-ops button,
+.finance-page .sa-btn {
+  min-width: 44px;
+  min-height:44px;
+  border: 0;
+  border-radius: 10px;
+  background: #2F6F57;
+  color: #fff;
+  padding: 0 12px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.row-ops .del {
+  background: #8E8E93;
+}
+
+.finance-account-balance {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+  color: #1C1C1E;
+}
+
+.finance-empty {
+  margin: 16px;
+  padding: 28px 16px;
+  border-radius: 12px;
+  background: #fff;
+  text-align: center;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.finance-inline-back {
+  min-height:44px;
+  margin: 0 16px;
+  border: 0;
+  background: transparent;
+  color: #2F6F57;
+  font-size: 15px;
+  font-weight: 600;
+  padding: 0;
+}
+
+.finance-legacy-block {
+  margin: 0 16px 16px;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.finance-legacy-block .section-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.finance-legacy-block .section-title h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.finance-legacy-block .section-title button,
+.finance-legacy-block .section-actions button {
+  min-height:44px;
+}

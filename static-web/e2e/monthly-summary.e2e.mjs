@@ -54,7 +54,7 @@ test('monthly summary excludes reimbursements and account transfers', async ({ p
   await primaryNavigation.getByRole('button', { name: /财务$/ }).click();
 
   await expect(page.getByRole('heading', { name: '财务', exact: true })).toBeVisible();
-  const summary = page.locator('.monthly-summary');
+  const summary = page.locator('.finance-month-grid');
   const income = summary.locator('article').filter({ hasText: '本月收入' });
   const expense = summary.locator('article').filter({ hasText: '本月支出' });
   const balance = summary.locator('article').filter({ hasText: '本月结余' });

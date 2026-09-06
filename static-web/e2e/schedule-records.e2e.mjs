@@ -91,6 +91,23 @@ test('375px schedule empty state, segments, and native reminder bridge on save',
   const payloads = await page.evaluate(() => window.__reminderPayloads || []);
   expect(payloads.length).toBeGreaterThan(0);
   expect(payloads.some((payload) => Array.isArray(payload.schedules) && payload.schedules.some((item) => item.title === '桥接提醒会议'))).toBe(true);
+
+  await schedule.getByRole('button', { name: '标记完成 桥接提醒会议' }).click();
+  const completed = await page.evaluate((key) => {
+    const saved = JSON.parse(localStorage.getItem(key) || '{}');
+    return saved.schedules?.find((item) => item.title === '桥接提醒会议')?.done;
+  }, STORAGE_KEY);
+  expect(completed).toBe(true);
+  const afterComplete = await page.evaluate(() => window.__reminderPayloads || []);
+  expect(afterComplete.at(-1)?.schedules?.some((item) => item.title === '桥接提醒会议')).toBe(false);
+
+  await schedule.getByRole('button', { name: '恢复未完成 桥接提醒会议' }).click();
+  const afterRestore = await page.evaluate(() => window.__reminderPayloads || []);
+  expect(afterRestore.at(-1)?.schedules?.some((item) => item.title === '桥接提醒会议')).toBe(true);
+  await schedule.getByRole('button', { name: '删除 桥接提醒会议' }).click();
+  await expect(schedule.getByText('桥接提醒会议')).toHaveCount(0);
+  const afterDelete = await page.evaluate(() => window.__reminderPayloads || []);
+  expect(afterDelete.at(-1)?.schedules?.some((item) => item.title === '桥接提醒会议')).toBe(false);
 });
 
 test('375px records confirm loop does not write until confirm and can undo', async ({ page }) => {

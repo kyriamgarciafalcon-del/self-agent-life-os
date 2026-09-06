@@ -36,7 +36,11 @@
 .daily-plain{display:block;width:calc(100% - 32px);margin:0 16px 8px}
 .daily-timeline{min-width:0}
 .daily-row-main{display:flex;align-items:center;gap:12px;min-width:0;flex:1;border:0;background:transparent;text-align:left;color:inherit;padding:0}
-.daily-delete{flex:none;border:0;background:transparent;color:#8E8E93}
+.daily-row.done .daily-row-body strong{text-decoration:line-through;color:#636366}
+.daily-row-ops{display:flex;align-items:center;gap:4px;flex:none}
+.daily-complete,.daily-delete{min-width:44px;flex:none;border:0;background:transparent;font-weight:600}
+.daily-complete{color:#2F6F57}
+.daily-delete{color:#8E8E93}
 .daily-fab{position:fixed;right:max(16px, calc(50% - 390px / 2 + 16px));bottom:calc(var(--nav-height, 49px) + env(safe-area-inset-bottom, 0px) + 16px);width:44px;height:44px;border:0;border-radius:22px;background:#2F6F57;color:#fff;font-size:22px;z-index:15}
 .daily-kicker{margin:4px 16px 12px;color:#8E8E93;font-size:13px}
 .capture-page .capture-box,.capture-page .suggestion-row,.capture-page .inbox-undo{margin-left:16px;margin-right:16px}

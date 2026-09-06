@@ -8,6 +8,7 @@ export type DailyScheduleItem = {
   time: string;
   title: string;
   detail: string;
+  done: boolean;
 };
 
 export function SchedulePage({
@@ -21,6 +22,7 @@ export function SchedulePage({
   onEdit,
   onCloseForm,
   onSubmit,
+  onToggle,
   onDelete,
 }: {
   today: string;
@@ -33,6 +35,7 @@ export function SchedulePage({
   onEdit: (id: string) => void;
   onCloseForm: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onToggle: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
   const offset = dayOffsetFromToday(selectedDate, today);
@@ -64,7 +67,7 @@ export function SchedulePage({
         ) : (
           <div className="daily-timeline">
             {dayItems.map((item, index) => (
-              <div className={`daily-row ${index > 0 ? 'daily-row-sep' : ''}`} key={item.id}>
+              <div className={`daily-row ${item.done ? 'done' : ''} ${index > 0 ? 'daily-row-sep' : ''}`} key={item.id}>
                 <button type="button" className="daily-row-main" onClick={() => onEdit(item.id)}>
                   <div className="daily-time">
                     <strong>{item.time}</strong>
@@ -74,7 +77,10 @@ export function SchedulePage({
                     <small>{item.detail}</small>
                   </div>
                 </button>
-                <button type="button" className="daily-delete" onClick={() => onDelete(item.id)} aria-label="删除">删除</button>
+                <div className="daily-row-ops">
+                  <button type="button" className="daily-complete" onClick={() => onToggle(item.id)} aria-label={`${item.done ? '恢复未完成' : '标记完成'} ${item.title}`}>{item.done ? '恢复' : '完成'}</button>
+                  <button type="button" className="daily-delete" onClick={() => onDelete(item.id)} aria-label={`删除 ${item.title}`}>删除</button>
+                </div>
               </div>
             ))}
           </div>

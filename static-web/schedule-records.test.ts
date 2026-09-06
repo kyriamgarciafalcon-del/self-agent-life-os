@@ -43,6 +43,8 @@ describe('schedule and records source', () => {
     expect(page).toContain("from './components/daily/SchedulePage'");
     expect(page).toContain('<SchedulePage');
     expect(page).toContain('onSubmit={addSchedule}');
+    expect(page).toContain('onToggle={toggleSchedule}');
+    expect(page).toContain('function toggleSchedule');
     expect(page).toContain('pushReminders');
     expect(page).toContain('提前 10 分钟');
     expect(page).not.toMatch(/\{tab === 'schedule' && <div className="page schedule-page">/);

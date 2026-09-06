@@ -749,8 +749,18 @@ export default function Home() {
       notify('提醒没有设置成功');
     }
   }
+  function toggleSchedule(id: string) {
+    const current = data.schedules.find((item) => item.id === id);
+    if (!current) return;
+    const nextSchedules = data.schedules.map((item) => item.id === id ? { ...item, done: !item.done } : item);
+    setData((state) => ({ ...state, schedules: nextSchedules }));
+    pushReminders(nextSchedules, data.recurringRules);
+    notify(current.done ? '日程已恢复为未完成' : '日程已完成，提醒已取消');
+  }
   function deleteSchedule(id: string) {
-    setData((current) => ({ ...current, schedules: current.schedules.filter((item) => item.id !== id) }));
+    const nextSchedules = data.schedules.filter((item) => item.id !== id);
+    setData((current) => ({ ...current, schedules: nextSchedules }));
+    pushReminders(nextSchedules, data.recurringRules);
     setEditingScheduleId(null); setSheet(null); notify('日程已删除');
   }
   function saveTransaction(input: ExpenseDraft & { transactionKind?: 'expense' | 'income'; accountAmount?: number }) {
@@ -1422,6 +1432,7 @@ export default function Home() {
       onEdit={(id) => { setEditingScheduleId(id); setSheet('schedule'); }}
       onCloseForm={() => { setSheet(null); setEditingScheduleId(null); }}
       onSubmit={addSchedule}
+      onToggle={toggleSchedule}
       onDelete={deleteSchedule}
     />}
 

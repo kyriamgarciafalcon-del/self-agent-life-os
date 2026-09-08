@@ -63,12 +63,18 @@ body {
 
 .bottom-nav {
   position: fixed;
-  left: 50%;
+  left: 0;
+  right: 0;
   bottom: 0;
   z-index: 30;
   width: 100%;
-  max-width: 390px;
-  transform: translateX(-50%);
+  max-width: none;
+  display: block;
+  grid-template-columns: none;
+  height: auto;
+  min-height: var(--nav-height);
+  transform: none;
+  border-radius: 0;
   border-top: 0.5px solid rgba(0, 0, 0, 0.08);
   background: rgba(255, 255, 255, 0.72);
   backdrop-filter: saturate(180%) blur(20px);
@@ -81,8 +87,10 @@ body {
 .bottom-nav ul {
   display: grid;
   grid-template-columns: repeat(5, minmax(44px, 1fr));
+  width: 100%;
+  max-width: 390px;
   height: var(--nav-height);
-  margin: 0;
+  margin: 0 auto;
   padding: 0;
   list-style: none;
 }

@@ -87,3 +87,20 @@ test('375px shell nav contract: five tabs, mint, badge, back, life under profile
   await page.getByRole('button', { name: /生活/ }).click();
   await expect(page.getByRole('heading', { name: '健康、出行和记忆' })).toBeVisible();
 });
+
+test('430px bottom bar fills the viewport while controls stay aligned', async ({ page }) => {
+  await page.setViewportSize({ width: 430, height: 932 });
+  await page.addInitScript(({ key, value }) => window.localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: ledger });
+  await page.goto('/');
+  const nav = page.getByRole('navigation', { name: '主导航' });
+  const boxes = await nav.evaluate((node) => {
+    const outer = node.getBoundingClientRect();
+    const inner = node.querySelector('ul')?.getBoundingClientRect();
+    return { outer: { left: outer.left, right: outer.right, width: outer.width }, inner: inner ? { left: inner.left, right: inner.right, width: inner.width } : null };
+  });
+  expect(boxes.outer.left).toBe(0);
+  expect(boxes.outer.right).toBe(430);
+  expect(boxes.outer.width).toBe(430);
+  expect(boxes.inner?.width).toBeLessThanOrEqual(390);
+  expect(boxes.inner?.left).toBe(boxes.inner ? (430 - boxes.inner.width) / 2 : -1);
+});

@@ -21,6 +21,7 @@ import { ButlerPage } from './components/mine/surfaces/ButlerPage';
 import { AuditPage } from './components/mine/surfaces/AuditPage';
 import { DataPage } from './components/mine/surfaces/DataPage';
 import { FinancePage, TransactionList } from './components/finance/FinancePage';
+import { hideMoney } from './components/finance/format';
 import { primaryNavActiveId } from './components/ui/nav';
 import { accountRole, applyDailyFxRates, applyDailyPriceQuotes, applyInboxLifecycle, AI_CONFIG_EVENT, AI_CONFIG_STORAGE_KEY, AI_REPLY_EVENT, AUDIT_OUTCOMES, auditOutcomeLabel, auditReasonLabel, buildButlerSystemPrompt, buildHealthBriefing, buildAiSendPreview, canUndoInboxConfirm, cnyWealthTotal, confirmByokHost, classifyAiProviderError, interpretAiConnectionTest, consumeCallBudget, createCallBudget, defaultCashId, describeButlerDataScope, detectLegacyDemoData, dialogShouldDismiss, dismissPermissionOnboarding, filterAuditLog, generateRecurringDrafts, healthRecordsFromSnapshots, inboxConfidenceLabel, inboxConfirmBlockReason, inboxItemFromAiTool, inboxItemFromButlerAction, inboxItemFromNaturalCapture, inboxItemFromPayment, inboxItemFromTravelNotice, inboxSourceLabel, ledgerIdempotencyKeyForInboxItem, INBOX_ACTION_LABELS, isBackupPayload, sanitizeBackupVaultItems, isDebtRole, latestHealthByKind, loadBrowserAiConfig, localDateKey, markPermissionSettingsOpened, migrateAuditLog, migrateInboxStore, migrateLegacyAiLocalStorage, migratePrivacySettings, normalizeAccountBalance, normalizeMemory, normalizePermissionOnboarding, parseAiProviderResponse, parseButlerModelOutput, parseCapabilityStatus, parseNaturalCapture, pendingInboxItems, persistBrowserAiConfig, persistJson, permissionOnboardingProgress, planAccountSettlement, planInvestmentMigrations, confirmInvestmentMigration, prepareOutboundAiPayload, reconcileRecurringConfirmations, releaseRecurringConfirmation, resolveInboxFinanceConfirmation, resolvePaymentAccountId, shouldShowPermissionOnboarding, summarizeHealth, TOAST_ARIA_LIVE, updateInboxItemPayload, upsertByExternalKey, validateByokTarget, ACCOUNT_TYPES, buildReimbursementSettlement, canDeleteAccount, FINANCE_TABS, financeTransactionFields, transactionFormPhases, previewPostedImpact, investmentAccountSnapshot, normalizeFinanceRecords, postBalanceAdjustment, postFinanceTransaction, refreshHoldingsValuation, reimbursementOutstandingAmount, removePostedTransaction, settlePostedReimbursement, resolveTransferAmounts, type AuditEntry, type ButlerAction, type CapabilityStatusSnapshot, type HealthMetric, type InboxItem, type InboxLifecycleEvent, type InboxSource, type PermissionCardId, type PermissionOnboardingState, type TravelKind } from './product-logic';
 
@@ -52,7 +53,7 @@ type InvestmentKind = 'fund' | 'stock' | 'crypto' | 'meme';
 type PricePoint = { date: string; price: number };
 type InvestmentHolding = { id: string; accountId: string; kind: InvestmentKind; name: string; code: string; contract: string; network: string; quantity: number; averageCost: number; currentPrice: number; currency: Currency; updatedAt: string; quoteStatus: 'sample' | 'manual' | 'live'; history: PricePoint[] };
 type ExchangeRate = { currency: string; cnyRate: number; asOf: string; source: 'manual' | 'daily'; updatedAt: string };
-type AppData = { schemaVersion: 3 | 4; demoMode: boolean; schedules: ScheduleItem[]; accounts: Account[]; transactions: Transaction[]; recurringRules: RecurringRule[]; healthRecords: HealthRecord[]; travels: TravelItem[]; investments: InvestmentHolding[]; exchangeRates: ExchangeRate[]; memories: MemoryItem[]; privacy: PrivacySettings; vaultItems: VaultItem[]; inboxItems: InboxItem[]; lastConfirmedInboxId: string | null; auditLog: AuditEntry[]; theme: 'light' | 'dark'; permissionOnboarding: PermissionOnboardingState };
+type AppData = { schemaVersion: 3 | 4; demoMode: boolean; hideAmounts: boolean; schedules: ScheduleItem[]; accounts: Account[]; transactions: Transaction[]; recurringRules: RecurringRule[]; healthRecords: HealthRecord[]; travels: TravelItem[]; investments: InvestmentHolding[]; exchangeRates: ExchangeRate[]; memories: MemoryItem[]; privacy: PrivacySettings; vaultItems: VaultItem[]; inboxItems: InboxItem[]; lastConfirmedInboxId: string | null; auditLog: AuditEntry[]; theme: 'light' | 'dark'; permissionOnboarding: PermissionOnboardingState };
 type ExpenseDraft = { kind: 'expense'; amount: number; merchant: string; category: string; accountId: string; source: string; currency: Currency; reimbursable: boolean };
 type ScheduleDraft = { kind: 'schedule'; title: string; date: string; time: string };
 type TravelDraft = { kind: 'travel'; travelKind: TravelKind; number: string; from: string; to: string; date: string; departTime: string; arriveTime?: string };
@@ -90,6 +91,7 @@ function canHoldMoney(account: Account | undefined) {
 const demoData: AppData = {
   schemaVersion: 4,
   demoMode: true,
+  hideAmounts: false,
   schedules: [
     { id: 's1', date: TODAY, time: '09:30', title: '项目周会', detail: '线上会议 · 45 分钟', color: 'blue', done: true },
     { id: 's2', date: TODAY, time: '12:20', title: '午饭后散步', detail: '健康 · 20 分钟', color: 'green', done: false },
@@ -150,6 +152,7 @@ const demoData: AppData = {
 const emptyData: AppData = {
   schemaVersion: 4,
   demoMode: false,
+  hideAmounts: false,
   schedules: [],
   accounts: [],
   transactions: [],
@@ -281,6 +284,7 @@ function normalizeData(raw: Partial<AppData>): AppData {
   return {
     schemaVersion: 4,
     demoMode: raw.demoMode ?? detectLegacyDemoData(raw),
+    hideAmounts: raw.hideAmounts === true,
     schedules: raw.schedules ?? [],
     accounts,
     transactions,
@@ -1455,10 +1459,10 @@ export default function Home() {
       nativeOn={nativeOn}
       caps={caps}
       todaySchedules={schedulesOnDate(data.schedules, TODAY).map((item) => ({ id: item.id, time: item.time, title: item.title, detail: item.detail }))}
-      todaySpendLabel={`¥ ${money(todaySpend)}`}
-      netWorthLabel={totalBalanceLabel}
+      todaySpendLabel={hideMoney(`¥ ${money(todaySpend)}`, data.hideAmounts)}
+      netWorthLabel={hideMoney(totalBalanceLabel, data.hideAmounts)}
       recentCount={recentTransactions.length}
-      recentLedger={<TransactionList items={recentTransactions} accounts={data.accounts} onEdit={(id) => { setEditingTransactionId(id); setSheet('transaction'); }} onDelete={(id) => deleteTransaction(id)} onSettle={(id) => settleReimbursement(id)} />}
+      recentLedger={<TransactionList hideAmounts={data.hideAmounts} items={recentTransactions} accounts={data.accounts} onEdit={(id) => { setEditingTransactionId(id); setSheet('transaction'); }} onDelete={(id) => deleteTransaction(id)} onSettle={(id) => settleReimbursement(id)} />}
       onClearDemo={clearLocalData}
       onNavigate={(id) => navigate(id)}
       onAddFirstSchedule={() => { setEditingScheduleId(null); navigate('schedule'); setSheet('schedule'); }}
@@ -1497,7 +1501,7 @@ export default function Home() {
       onUndo={undoLastInboxConfirm}
     />}
 
-    {tab === 'finance' && <FinancePage data={data} currency={financeCurrency} selectedAccountId={selectedAccountId} selectedHoldingId={selectedHoldingId} onCurrency={setFinanceCurrency} onSelectAccount={(id) => { setSelectedAccountId(id); setSelectedHoldingId(null); }} onSelectHolding={setSelectedHoldingId} onBackAccount={() => setSelectedAccountId(null)} onBackHolding={() => setSelectedHoldingId(null)} onNewTransaction={() => { setEditingTransactionId(null); setSheet('transaction'); }} onEditTransaction={(id) => { setEditingTransactionId(id); setSheet('transaction'); }} onNewAccount={() => { setEditingAccountId(null); setSheet('account'); }} onEditAccount={(id) => { setEditingAccountId(id); setSheet('account'); }} onNewHolding={() => { setEditingHoldingId(null); setSheet('holding'); }} onEditHolding={(id) => { setEditingHoldingId(id); setSheet('holding'); }} onNewRecurring={() => { setEditingRecurringId(null); setSheet('recurring'); }} onEditRecurring={(id) => { setEditingRecurringId(id); setSheet('recurring'); }} onDeleteRecurring={(id) => deleteRecurringRule(id)} onDeleteTransaction={(id) => deleteTransaction(id)} onRunRecurring={runRecurringRule} onSettleReimbursement={settleReimbursement} onSettleAccount={settleAccount} onNewRate={() => { setEditingRateCurrency(null); setSheet('exchange-rate'); }} onEditRate={(currency) => { setEditingRateCurrency(currency); setSheet('exchange-rate'); }} onDeleteRate={deleteExchangeRate} onRefreshQuotes={requestQuoteRefresh} />}
+    {tab === 'finance' && <FinancePage data={data} currency={financeCurrency} selectedAccountId={selectedAccountId} selectedHoldingId={selectedHoldingId} onCurrency={setFinanceCurrency} onSelectAccount={(id) => { setSelectedAccountId(id); setSelectedHoldingId(null); }} onSelectHolding={setSelectedHoldingId} onBackAccount={() => setSelectedAccountId(null)} onBackHolding={() => setSelectedHoldingId(null)} onNewTransaction={() => { setEditingTransactionId(null); setSheet('transaction'); }} onEditTransaction={(id) => { setEditingTransactionId(id); setSheet('transaction'); }} onNewAccount={() => { setEditingAccountId(null); setSheet('account'); }} onEditAccount={(id) => { setEditingAccountId(id); setSheet('account'); }} onNewHolding={() => { setEditingHoldingId(null); setSheet('holding'); }} onEditHolding={(id) => { setEditingHoldingId(id); setSheet('holding'); }} onNewRecurring={() => { setEditingRecurringId(null); setSheet('recurring'); }} onEditRecurring={(id) => { setEditingRecurringId(id); setSheet('recurring'); }} onDeleteRecurring={(id) => deleteRecurringRule(id)} onDeleteTransaction={(id) => deleteTransaction(id)} onRunRecurring={runRecurringRule} onSettleReimbursement={settleReimbursement} onSettleAccount={settleAccount} onNewRate={() => { setEditingRateCurrency(null); setSheet('exchange-rate'); }} onEditRate={(currency) => { setEditingRateCurrency(currency); setSheet('exchange-rate'); }} onDeleteRate={deleteExchangeRate} onRefreshQuotes={requestQuoteRefresh} hideAmounts={data.hideAmounts} onToggleHideAmounts={() => setData((current) => ({ ...current, hideAmounts: !current.hideAmounts }))} />}
 
     {tab === 'profile' && <ProfilePage theme={data.theme} nativeOn={nativeOn} aiConfig={aiConfig} onNavigate={navigate} onOpenPermissions={() => setPermissionOnboardingOpen(true)} onChooseZip={chooseGadgetbridgeExport} onSaveAi={saveAiConfig} onTestAi={() => void testAiConnection()} onOpenAccessibility={() => (window as Window & { SelfAgentNative?: { openAccessibilitySettings?: () => void } }).SelfAgentNative?.openAccessibilitySettings?.()} onOpenNotification={() => (window as Window & { SelfAgentNative?: { openNotificationAccess?: () => void } }).SelfAgentNative?.openNotificationAccess?.()} onOpenAutofill={() => (window as Window & { SelfAgentNative?: { openAutofillSettings?: () => void } }).SelfAgentNative?.openAutofillSettings?.()} onToggleTheme={toggleTheme} onExport={exportLocalData} onImport={importLocalData} onNativeImport={pickNativeBackup} onLoadDemo={loadDemoData} onClear={clearLocalData} />}
     {tab === 'life' && <LifePage onNavigate={navigate} />}

@@ -7,7 +7,7 @@ import {
   transactionsInPeriod,
 } from '../../finance-query';
 import { accountRole, investmentAccountSnapshot, isDebtRole, localDateKey, normalizeAccountBalance } from '../../product-logic';
-import { currencyMark, formatAssetAmount, holdingKindLabel, investmentProfit, investmentValue, money, roleLabel } from './format';
+import { currencyMark, formatAssetAmount, hideMoney, holdingKindLabel, investmentProfit, investmentValue, money, roleLabel } from './format';
 import { FINANCE_CURRENCIES, FINANCE_SECTIONS, type Account, type Currency, type FinanceData, type FinanceSection, type InvestmentHolding, type Transaction } from './types';
 import './finance.css';
 
@@ -41,6 +41,8 @@ export type FinancePageProps = {
   onEditRate: (currency: string) => void;
   onDeleteRate: (currency: string) => void;
   onRefreshQuotes: () => void;
+  hideAmounts?: boolean;
+  onToggleHideAmounts?: () => void;
 };
 
 export function FinancePage({
@@ -70,11 +72,13 @@ export function FinancePage({
   onEditRate,
   onDeleteRate,
   onRefreshQuotes,
+  hideAmounts = false,
+  onToggleHideAmounts,
 }: FinancePageProps) {
   const [financeSection, setFinanceSection] = useState<FinanceSection>('总览');
   const selectedHolding = selectedHoldingId ? data.investments.find((item) => item.id === selectedHoldingId) : undefined;
   if (selectedHolding) {
-    return <HoldingDetail holding={selectedHolding} account={data.accounts.find((item) => item.id === selectedHolding.accountId)} onBack={onBackHolding} onEdit={() => onEditHolding(selectedHolding.id)} />;
+    return <HoldingDetail hideAmounts={hideAmounts} holding={selectedHolding} account={data.accounts.find((item) => item.id === selectedHolding.accountId)} onBack={onBackHolding} onEdit={() => onEditHolding(selectedHolding.id)} />;
   }
 
   const selectedAccount = selectedAccountId ? data.accounts.find((item) => item.id === selectedAccountId) : undefined;
@@ -92,6 +96,7 @@ export function FinancePage({
         onEditTransaction={onEditTransaction}
         onDeleteTransaction={onDeleteTransaction}
         onSettleReimbursement={onSettleReimbursement}
+        hideAmounts={hideAmounts}
       />
     );
   }
@@ -107,6 +112,7 @@ export function FinancePage({
   }));
   const maxDay = Math.max(...chartDays.map((item) => item.amount), 1);
   const mark = currencyMark(currency);
+  const amt = (text: string) => hideMoney(text, hideAmounts);
   const wealth = getNetWorth(data.accounts, data.transactions, data.investments);
   const cnyWealth = getConvertedNetWorth(data.accounts, data.transactions, data.exchangeRates, data.investments);
   const hasDailyFx = data.exchangeRates.some((rate) => rate.source === 'daily');
@@ -120,6 +126,7 @@ export function FinancePage({
           <select aria-label="月度收支币种" value={currency} onChange={(event) => onCurrency(event.target.value as Currency)}>
             {FINANCE_CURRENCIES.map((item) => <option key={item}>{item}</option>)}
           </select>
+          <button type="button" className="finance-new-transaction" aria-pressed={hideAmounts} aria-label={hideAmounts ? '显示金额' : '隐藏金额'} onClick={() => onToggleHideAmounts?.()}>{hideAmounts ? '显示金额' : '隐藏金额'}</button>
           <button type="button" className="finance-new-transaction" aria-label="新建流水" onClick={onNewTransaction}>记一笔</button>
         </div>
       </header>
@@ -135,19 +142,19 @@ export function FinancePage({
       <div className="finance-tab-panel" role="tabpanel" hidden={financeSection !== '总览'}>
         <div className="sa-card finance-networth">
           <p className="sa-group-header" style={{ margin: 0, padding: 0 }}>净资产</p>
-          <strong>¥ {money(cnyWealth.convertedCny)}</strong>
+          <strong>{amt(`¥ ${money(cnyWealth.convertedCny)}`)}</strong>
           {cnyWealth.unresolved.length > 0 && (
-            <p style={{ margin: '8px 0 0' }}>待补汇率，暂未计入：{cnyWealth.unresolved.map((item) => `${item.currency} ${money(item.amount)}`).join(' · ')}</p>
+            <p style={{ margin: '8px 0 0' }}>待补汇率，暂未计入：{cnyWealth.unresolved.map((item) => amt(`${item.currency} ${money(item.amount)}`)).join(' · ')}</p>
           )}
           {wealth.map((line) => (
             <p key={`${line.currency}-break`} style={{ margin: '8px 0 0' }}>
-              {line.currency} 资产 {formatAssetAmount(line.currency, line.assets)} · 债务 · 应收 {formatAssetAmount(line.currency, line.receivable)} · 债务 · 应付 {formatAssetAmount(line.currency, line.payable)}
+              {line.currency} 资产 {amt(formatAssetAmount(line.currency, line.assets))} · 债务 · 应收 {amt(formatAssetAmount(line.currency, line.receivable))} · 债务 · 应付 {amt(formatAssetAmount(line.currency, line.payable))}
             </p>
           ))}
           <p style={{ margin: '8px 0 0' }}>
             {data.accounts.length
               ? '外币按每日参考汇率折算人民币；缺失汇率的币种不伪造总额。债务里有应收和应付，报销不是独立账户。'
-              : '还没有账户，净资产为 ¥ 0.00。'}
+              : `还没有账户，净资产为 ${amt('¥ 0.00')}。`}
           </p>
           {!data.accounts.length && <div className="account-hero-ops"><button type="button" onClick={onNewAccount}>添加第一个账户</button></div>}
         </div>
@@ -178,12 +185,12 @@ export function FinancePage({
         </div>
 
         <div className="finance-month-grid">
-          <article><span>本月收入</span><strong className="income">+{mark}{money(monthSummary.income)}</strong></article>
-          <article><span>本月支出</span><strong>−{mark}{money(monthSummary.expense)}</strong></article>
+          <article><span>本月收入</span><strong className="income">{amt(`+${mark}${money(monthSummary.income)}`)}</strong></article>
+          <article><span>本月支出</span><strong>{amt(`−${mark}${money(monthSummary.expense)}`)}</strong></article>
           <article>
             <span>本月结余</span>
             <strong className={monthSummary.balance >= 0 ? 'income' : ''}>
-              {monthSummary.balance >= 0 ? '+' : '−'}{mark}{money(Math.abs(monthSummary.balance))}
+              {amt(`${monthSummary.balance >= 0 ? '+' : '−'}${mark}${money(Math.abs(monthSummary.balance))}`)}
             </strong>
           </article>
         </div>
@@ -192,19 +199,19 @@ export function FinancePage({
           <p className="sa-group-header" style={{ margin: 0, padding: 0 }}>每日支出</p>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
             <span style={{ color: '#8E8E93', fontSize: 13 }}>今天</span>
-            <strong>{mark}{money(todayExpense)}</strong>
+            <strong>{amt(`${mark}${money(todayExpense)}`)}</strong>
           </div>
           <div className="finance-spend">
             {chartDays.map((item) => (
               <div key={item.day}>
-                <span><i style={{ height: `${Math.max(5, item.amount / maxDay * 100)}%` }} /></span>
+                <span><i style={{ height: `${hideAmounts ? 40 : Math.max(5, item.amount / maxDay * 100)}%` }} /></span>
                 <small>{item.day}日</small>
               </div>
             ))}
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12 }}>
             <span style={{ color: '#8E8E93', fontSize: 13 }}>待报销</span>
-            <strong>{mark}{money(reimburse)}</strong>
+            <strong>{amt(`${mark}${money(reimburse)}`)}</strong>
           </div>
         </div>
       </div>
@@ -222,11 +229,11 @@ export function FinancePage({
                     <strong>{account.name}</strong>
                     <small>
                       {roleLabel(account.type)} · {account.currency}
-                      {snap ? ` · 现金 ${currencyMark(account.currency)}${money(snap.cash)} · 市值 ${currencyMark(account.currency)}${money(snap.marketValue)}` : ''}
+                      {snap ? ` · 现金 ${amt(`${currencyMark(account.currency)}${money(snap.cash)}`)} · 市值 ${amt(`${currencyMark(account.currency)}${money(snap.marketValue)}`)}` : ''}
                     </small>
                   </span>
                   <strong className="finance-account-balance">
-                    {isDebtRole(accountRole(account.type)) ? '欠 ' : ''}{currencyMark(account.currency)} {money(shown)}
+                    {amt(`${isDebtRole(accountRole(account.type)) ? '欠 ' : ''}${currencyMark(account.currency)} ${money(shown)}`)}
                   </strong>
                   <div className="row-ops">
                     <button type="button" className="edit" aria-label={`编辑 ${account.name}`} onClick={() => onEditAccount(account.id)}>编辑</button>
@@ -250,7 +257,7 @@ export function FinancePage({
           <button type="button" onClick={onNewHolding}>添加产品</button>
         </div>
         <p className="sa-page-footer" style={{ margin: '0 0 12px' }}>每天 18:00 用收盘价重算收益，账户现金由流水产生，持仓市值单独估值</p>
-        <InvestmentList items={data.investments.filter((item) => item.currency === currency)} onSelect={onSelectHolding} />
+        <InvestmentList hideAmounts={hideAmounts} items={data.investments.filter((item) => item.currency === currency)} onSelect={onSelectHolding} />
         <p className="sa-page-footer">行情只覆盖今日价格点。历史流水和成本不变。</p>
       </section>
 
@@ -272,7 +279,7 @@ export function FinancePage({
                     {rule.lastRunPeriod === MONTH ? '本月已确认' : !rule.enabled ? '已暂停' : future ? `${rule.dueDay}日到期` : rule.kind === 'subscription' ? '生成扣款草稿' : '生成还款草稿'}
                   </button>
                 </div>
-                <b>{currencyMark(rule.currency)}{money(rule.amount)}</b>
+                <b>{amt(`${currencyMark(rule.currency)}${money(rule.amount)}`)}</b>
                 <div className="row-ops">
                   <button type="button" className="edit" onClick={() => onEditRecurring(rule.id)}>编辑</button>
                   <button type="button" className="del" onClick={() => onDeleteRecurring(rule.id)}>删除</button>
@@ -286,7 +293,7 @@ export function FinancePage({
 
       <section className="finance-legacy-block" role="tabpanel" hidden={financeSection !== '流水'}>
         <div className="section-title"><h2>本月流水 · {currency}</h2></div>
-        <TransactionList items={monthItems} accounts={data.accounts} onEdit={onEditTransaction} onDelete={onDeleteTransaction} onSettle={onSettleReimbursement} />
+        <TransactionList hideAmounts={hideAmounts} items={monthItems} accounts={data.accounts} onEdit={onEditTransaction} onDelete={onDeleteTransaction} onSettle={onSettleReimbursement} />
       </section>
     </div>
   );
@@ -304,6 +311,7 @@ function AccountDetail({
   onEditTransaction,
   onDeleteTransaction,
   onSettleReimbursement,
+  hideAmounts = false,
 }: {
   account: Account;
   data: FinanceData;
@@ -316,12 +324,14 @@ function AccountDetail({
   onEditTransaction: (id: string) => void;
   onDeleteTransaction: (id: string) => void;
   onSettleReimbursement: (id: string) => void;
+  hideAmounts?: boolean;
 }) {
   const accountItems = data.transactions.filter((item) => item.accountId === account.id || item.targetAccountId === account.id || item.postings?.some((posting) => posting.accountId === account.id));
   const accountHoldings = data.investments.filter((item) => item.accountId === account.id);
   const { income, expense } = getMonthlyReport(accountItems.filter((item) => item.accountId === account.id), account.currency);
   const investSnap = account.type === '理财账户' ? investmentAccountSnapshot(account, data.investments) : null;
   const role = accountRole(account.type);
+  const amt = (text: string) => hideMoney(text, hideAmounts);
   return (
     <div className="page sa-page finance-page account-detail-page">
       <button type="button" className="finance-inline-back" onClick={onBack}>‹ 返回全部账户</button>
@@ -329,11 +339,11 @@ function AccountDetail({
         <small>{roleLabel(account.type)} · {account.currency}</small>
         <h2 style={{ margin: '4px 0 8px', fontSize: 22 }}>{account.name}</h2>
         <strong className="finance-networth" style={{ display: 'block', fontSize: 28 }}>
-          {isDebtRole(role) ? '欠 ' : ''}{currencyMark(account.currency)} {money(investSnap ? investSnap.total : normalizeAccountBalance(account.type, account.balance))}
+          {amt(`${isDebtRole(role) ? '欠 ' : ''}${currencyMark(account.currency)} ${money(investSnap ? investSnap.total : normalizeAccountBalance(account.type, account.balance))}`)}
         </strong>
         {investSnap && (
           <p style={{ margin: '8px 0 0', color: '#8E8E93', fontSize: 13 }}>
-            现金 {currencyMark(account.currency)}{money(investSnap.cash)} · 市值 {currencyMark(account.currency)}{money(investSnap.marketValue)}
+            现金 {amt(`${currencyMark(account.currency)}${money(investSnap.cash)}`)} · 市值 {amt(`${currencyMark(account.currency)}${money(investSnap.marketValue)}`)}
           </p>
         )}
         <div className="account-hero-ops">
@@ -343,8 +353,8 @@ function AccountDetail({
         </div>
       </div>
       <div className="finance-month-grid">
-        <article><span>累计收入</span><strong className="income">+{currencyMark(account.currency)}{money(income)}</strong></article>
-        <article><span>累计支出</span><strong>−{currencyMark(account.currency)}{money(expense)}</strong></article>
+        <article><span>累计收入</span><strong className="income">{amt(`+${currencyMark(account.currency)}${money(income)}`)}</strong></article>
+        <article><span>累计支出</span><strong>{amt(`−${currencyMark(account.currency)}${money(expense)}`)}</strong></article>
         <article><span>账目</span><strong>{accountItems.length} 笔</strong></article>
       </div>
       {account.type === '理财账户' && (
@@ -353,7 +363,7 @@ function AccountDetail({
             <h2>该账户持仓</h2>
             <button type="button" onClick={onNewHolding}>添加产品</button>
           </div>
-          <InvestmentList items={accountHoldings} onSelect={onSelectHolding} />
+          <InvestmentList hideAmounts={hideAmounts} items={accountHoldings} onSelect={onSelectHolding} />
         </section>
       )}
       <section className="finance-legacy-block">
@@ -361,14 +371,15 @@ function AccountDetail({
           <h2>该账户全部账单</h2>
           <button type="button" onClick={onNewTransaction}>记一笔</button>
         </div>
-        <TransactionList items={accountItems} accounts={data.accounts} onEdit={onEditTransaction} onDelete={onDeleteTransaction} onSettle={onSettleReimbursement} />
+        <TransactionList hideAmounts={hideAmounts} items={accountItems} accounts={data.accounts} onEdit={onEditTransaction} onDelete={onDeleteTransaction} onSettle={onSettleReimbursement} />
       </section>
     </div>
   );
 }
 
-function InvestmentList({ items, onSelect }: { items: InvestmentHolding[]; onSelect: (id: string) => void }) {
+function InvestmentList({ items, onSelect, hideAmounts = false }: { items: InvestmentHolding[]; onSelect: (id: string) => void; hideAmounts?: boolean }) {
   if (!items.length) return <div className="finance-empty">该币种还没有理财产品</div>;
+  const amt = (text: string) => hideMoney(text, hideAmounts);
   return (
     <div className="sa-group">
       {items.map((item) => {
@@ -381,9 +392,9 @@ function InvestmentList({ items, onSelect }: { items: InvestmentHolding[]; onSel
               <small>{item.code || `${item.network} · ${item.contract.slice(0, 8)}…`} · {item.quoteStatus === 'live' ? '实时源' : item.quoteStatus === 'manual' ? '手动更新' : '示例'}</small>
             </span>
             <span className="finance-account-balance">
-              {currencyMark(item.currency)}{money(investmentValue(item))}
+              {amt(`${currencyMark(item.currency)}${money(investmentValue(item))}`)}
               <small style={{ display: 'block', color: profit >= 0 ? '#2F6F57' : '#8E8E93' }}>
-                {profit >= 0 ? '+' : '−'}{currencyMark(item.currency)}{money(Math.abs(profit))} · {rate.toFixed(2)}%
+                {amt(`${profit >= 0 ? '+' : '−'}${currencyMark(item.currency)}${money(Math.abs(profit))} · ${rate.toFixed(2)}%`)}
               </small>
             </span>
           </button>
@@ -393,10 +404,11 @@ function InvestmentList({ items, onSelect }: { items: InvestmentHolding[]; onSel
   );
 }
 
-function HoldingDetail({ holding, account, onBack, onEdit }: { holding: InvestmentHolding; account?: Account; onBack: () => void; onEdit: () => void }) {
+function HoldingDetail({ holding, account, onBack, onEdit, hideAmounts = false }: { holding: InvestmentHolding; account?: Account; onBack: () => void; onEdit: () => void; hideAmounts?: boolean }) {
   const profit = investmentProfit(holding);
   const cost = holding.quantity * holding.averageCost;
   const rate = cost ? profit / cost * 100 : 0;
+  const amt = (text: string) => hideMoney(text, hideAmounts);
   const values = holding.history.map((item) => item.price);
   const min = Math.min(...values, holding.currentPrice);
   const max = Math.max(...values, holding.currentPrice);
@@ -418,9 +430,9 @@ function HoldingDetail({ holding, account, onBack, onEdit }: { holding: Investme
       </div>
       <div className="sa-card">
         <span>当前市值</span>
-        <h3 style={{ margin: '6px 0' }}>{currencyMark(holding.currency)} {money(investmentValue(holding))}</h3>
-        <strong className={profit >= 0 ? 'income' : ''}>{profit >= 0 ? '+' : '−'}{currencyMark(holding.currency)}{money(Math.abs(profit))}（{rate.toFixed(2)}%）</strong>
-        <small style={{ display: 'block', marginTop: 8, color: '#8E8E93' }}>{holding.quantity.toLocaleString('zh-CN')} 份/枚 · 成本 {currencyMark(holding.currency)}{holding.averageCost.toLocaleString('zh-CN')} · {account?.name}</small>
+        <h3 style={{ margin: '6px 0' }}>{amt(`${currencyMark(holding.currency)} ${money(investmentValue(holding))}`)}</h3>
+        <strong className={profit >= 0 ? 'income' : ''}>{amt(`${profit >= 0 ? '+' : '−'}${currencyMark(holding.currency)}${money(Math.abs(profit))}（${rate.toFixed(2)}%）`)}</strong>
+        <small style={{ display: 'block', marginTop: 8, color: '#8E8E93' }}>{amt(`${holding.quantity.toLocaleString('zh-CN')} 份/枚 · 成本 ${currencyMark(holding.currency)}${holding.averageCost.toLocaleString('zh-CN')}`)} · {account?.name}</small>
       </div>
       <div className="sa-card">
         <header>
@@ -437,8 +449,8 @@ function HoldingDetail({ holding, account, onBack, onEdit }: { holding: Investme
         </footer>
       </div>
       <div className="finance-month-grid">
-        <article><span>当前价</span><strong>{currencyMark(holding.currency)}{holding.currentPrice.toLocaleString('zh-CN')}</strong></article>
-        <article><span>总成本</span><strong>{currencyMark(holding.currency)}{money(cost)}</strong></article>
+        <article><span>当前价</span><strong>{amt(`${currencyMark(holding.currency)}${holding.currentPrice.toLocaleString('zh-CN')}`)}</strong></article>
+        <article><span>总成本</span><strong>{amt(`${currencyMark(holding.currency)}${money(cost)}`)}</strong></article>
         <article><span>最近更新</span><strong>{holding.updatedAt}</strong></article>
       </div>
       <p className="sa-page-footer">收益由你保存或行情服务返回的价格计算，不代表交易所结算值；合约资产请核对网络和合约地址。</p>
@@ -446,7 +458,7 @@ function HoldingDetail({ holding, account, onBack, onEdit }: { holding: Investme
   );
 }
 
-export function TransactionList({ items, accounts, onEdit, onDelete, onSettle }: { items: Transaction[]; accounts: Account[]; onEdit: (id: string) => void; onDelete: (id: string) => void; onSettle?: (id: string) => void }) {
+export function TransactionList({ items, accounts, onEdit, onDelete, onSettle, hideAmounts = false }: { items: Transaction[]; accounts: Account[]; onEdit: (id: string) => void; onDelete: (id: string) => void; onSettle?: (id: string) => void; hideAmounts?: boolean }) {
   const visible = items.filter((item) => item.status !== 'reversed' && item.status !== 'superseded' && !item.reversesId);
   if (!visible.length) return <div className="finance-empty">还没有流水</div>;
   return (
@@ -458,7 +470,7 @@ export function TransactionList({ items, accounts, onEdit, onDelete, onSettle }:
             <small>{item.category} · {accounts.find((account) => account.id === item.accountId)?.name} · {item.source}</small>
           </span>
           <strong className="finance-account-balance">
-            {item.kind === 'income' ? '+' : item.kind === 'transfer' ? '↔' : '−'}{currencyMark(item.currency)}{money(item.amount)}
+            {hideMoney(`${item.kind === 'income' ? '+' : item.kind === 'transfer' ? '↔' : '−'}${currencyMark(item.currency)}${money(item.amount)}`, hideAmounts)}
           </strong>
           <div className="row-ops">
             {item.reimbursable && !item.reimbursed && onSettle && <button type="button" className="edit" onClick={() => onSettle(item.id)}>入账</button>}

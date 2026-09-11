@@ -82,6 +82,9 @@ describe('finance five-section extraction', () => {
     expect(finance).toContain('删除');
     expect(finance).toContain('收回');
     expect(finance).toContain('还款');
+    expect(finance).toContain('隐藏金额');
+    expect(finance).toContain('显示金额');
+    expect(finance).toContain('hideMoney');
   });
 
   it('keeps shipping ledger helpers and hides manual FX once network quotes exist', () => {

@@ -5,6 +5,10 @@ export function money(value: number) {
   return new Intl.NumberFormat('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
 }
 
+export function hideMoney(text: string, hidden: boolean) {
+  return hidden ? text.replace(/\d/g, '•') : text;
+}
+
 export function currencyMark(currency: Currency | string) {
   return currency === 'CNY' ? '¥' : currency === 'USD' ? '$' : currency === 'HKD' ? 'HK$' : currency === 'EUR' ? '€' : 'JP¥';
 }

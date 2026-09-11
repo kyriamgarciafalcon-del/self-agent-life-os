@@ -136,4 +136,11 @@ class HealthImportDiagnosticsTest {
             directory.deleteRecursively()
         }
     }
+
+    @Test
+    fun gadgetbridgeImportDoesNotToastOnSuccess() {
+        val source = File("src/main/java/app/selfagent/health/GadgetbridgeImportActivity.kt").readText()
+        assertFalse(source.contains("已导入"))
+        assertTrue(source.contains("HealthBus.post"))
+    }
 }

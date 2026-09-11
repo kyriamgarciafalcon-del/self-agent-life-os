@@ -530,9 +530,8 @@ export default function Home() {
       const snapshots = Array.isArray(detail.records) ? detail.records : [detail];
       const mapped = healthRecordsFromSnapshots(snapshots, detail.source || 'health-connect')
         .map((item) => ({ ...item, id: uid('health'), kind: item.kind as HealthRecord['kind'], note: item.note || item.kind, createdAt: item.createdAt || TODAY }));
-      if (!mapped.length) { notify('健康平台暂无近几日数据'); return; }
+      if (!mapped.length) return;
       setData((current) => ({ ...current, healthRecords: upsertByExternalKey(current.healthRecords, mapped) }));
-      notify('已导入身高体重心率睡眠等健康摘要');
     }
     window.addEventListener('self-agent:travel-updated', onTravel);
     window.addEventListener('self-agent:health-import', onHealth);

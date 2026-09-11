@@ -21,4 +21,15 @@ describe('health dashboard UI contract', () => {
     expect(page).toContain('native?.importHealthConnect');
     expect(page).toContain('native.importHealthConnect()');
   });
+
+  it('applies health imports without a success or empty-data popup', () => {
+    const page = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8');
+    const start = page.indexOf('function onHealth');
+    const end = page.indexOf('window.addEventListener(\'self-agent:travel-updated\'', start);
+    expect(start).toBeGreaterThan(0);
+    expect(end).toBeGreaterThan(start);
+    const onHealth = page.slice(start, end);
+    expect(onHealth).toContain('upsertByExternalKey');
+    expect(onHealth).not.toContain('notify(');
+  });
 });

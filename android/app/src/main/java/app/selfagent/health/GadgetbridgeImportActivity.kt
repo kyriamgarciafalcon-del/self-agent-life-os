@@ -165,9 +165,6 @@ class GadgetbridgeImportActivity : Activity() {
                     val records = if (kind == KIND_ZIP) parseZip(context, uri) else parseSqliteUri(context, uri)
                     HealthImportDiagnostics.appendRecords(context, "gadgetbridge-direct", records)
                     HealthBus.post(JSONObject().put("records", records).put("source", "gadgetbridge-direct"))
-                    android.os.Handler(android.os.Looper.getMainLooper()).post {
-                        Toast.makeText(context, "Gadgetbridge 数据库或 ZIP（含 v6 睡眠）已导入", Toast.LENGTH_SHORT).show()
-                    }
                     return
                 } catch (error: Exception) {
                     lastError = error

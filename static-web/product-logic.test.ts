@@ -7,6 +7,7 @@ import {
   cnyWealthTotal,
   detectLegacyDemoData,
   isBackupPayload,
+  sanitizeBackupVaultItems,
   localDateKey,
   migrateLegacyReimbursementAccounts,
   normalizeMemory,
@@ -293,10 +294,15 @@ describe('truthful product state', () => {
     expect(detectLegacyDemoData({ schedules: [], accounts: [] })).toBe(false);
   });
 
-  it('accepts a structured backup and rejects malformed data before replacement', () => {
+  it('accepts a structured backup and rejects malformed or secret-bearing data before replacement', () => {
     expect(isBackupPayload({ schedules: [], accounts: [], transactions: [] })).toBe(true);
     expect(isBackupPayload({ schedules: 'not-an-array', accounts: [], transactions: [] })).toBe(false);
+    expect(isBackupPayload({ schedules: [], accounts: [], transactions: [], vaultItems: [{ id: 'v1', password: 'synthetic-audit-value' }] })).toBe(false);
+    expect(isBackupPayload({ schedules: [], accounts: [], transactions: [], nested: { apiKey: 'synthetic-audit-value' } })).toBe(false);
     expect(isBackupPayload(null)).toBe(false);
+    expect(sanitizeBackupVaultItems([{ id: 'v1', title: '站点', usernameHint: 'u***', note: '2FA', ignored: 'drop' }])).toEqual([
+      { id: 'v1', title: '站点', usernameHint: 'u***', note: '2FA' },
+    ]);
   });
 
   it('sums every account into one total-assets view without dropping other currencies', () => {

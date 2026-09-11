@@ -431,8 +431,34 @@ export function detectLegacyDemoData(raw: { schedules?: { id?: string }[]; accou
   return Boolean(raw.schedules?.some((item) => item.id === 's1') && raw.accounts?.some((item) => item.id === 'wechat'));
 }
 
+const BACKUP_SECRET_KEYS = new Set(['password', 'passwd', 'apikey', 'token', 'accesstoken', 'refreshtoken', 'secret', 'privatekey', 'seedphrase', 'mnemonic', 'recoverycode', 'otp']);
+
+function backupContainsSecret(value: unknown, seen = new Set<object>()): boolean {
+  if (!value || typeof value !== 'object') return false;
+  if (seen.has(value as object)) return false;
+  seen.add(value as object);
+  if (Array.isArray(value)) return value.some((item) => backupContainsSecret(item, seen));
+  return Object.entries(value as Record<string, unknown>).some(([key, item]) => {
+    const normalized = key.toLowerCase().replace(/[^a-z]/g, '');
+    return BACKUP_SECRET_KEYS.has(normalized) || backupContainsSecret(item, seen);
+  });
+}
+
+export function sanitizeBackupVaultItems(value: unknown): Array<{ id: string; title: string; usernameHint: string; note?: string }> {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
+    const source = item as Record<string, unknown>;
+    const id = typeof source.id === 'string' ? source.id : '';
+    const title = typeof source.title === 'string' ? source.title : '';
+    const usernameHint = typeof source.usernameHint === 'string' ? source.usernameHint : '';
+    if (!id || !title) return [];
+    return [{ id, title, usernameHint, ...(typeof source.note === 'string' ? { note: source.note } : {}) }];
+  });
+}
+
 export function isBackupPayload(value: unknown): value is Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  if (!value || typeof value !== 'object' || Array.isArray(value) || backupContainsSecret(value)) return false;
   const raw = value as Record<string, unknown>;
   if (!Array.isArray(raw.schedules) || !Array.isArray(raw.accounts) || !Array.isArray(raw.transactions)) return false;
   const optionalArrays = ['recurringRules', 'healthRecords', 'travels', 'investments', 'memories', 'vaultItems', 'inboxItems', 'auditLog'];

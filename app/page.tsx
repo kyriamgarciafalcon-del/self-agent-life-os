@@ -1,7 +1,7 @@
 'use client';
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { getConvertedNetWorth, getMonthlyReport, getNetWorth, getOutstandingReimbursements, hasOutstandingReimbursementsForAccount, transactionsInPeriod } from './finance-query';
+import { getConvertedNetWorth, getDailySpend, getMonthlyReport, getNetWorth, getOutstandingReimbursements, hasOutstandingReimbursementsForAccount, transactionsInPeriod } from './finance-query';
 import { migrateToSchemaV4, createSchemaV4MigrationBackup, applySchemaV4Migration, SCHEMA_V3_BACKUP_KEY } from './finance-schema';
 import { HomePage } from './components/daily/HomePage';
 import { homeHasAuthoritativeData, homeHasFinanceData, schedulesOnDate } from './components/daily/home';
@@ -675,7 +675,7 @@ export default function Home() {
   }, [data.accounts]);
 
   const editingSchedule = editingScheduleId ? data.schedules.find((item) => item.id === editingScheduleId) : undefined;
-  const todaySpend = useMemo(() => transactionsInPeriod(data.transactions, TODAY).filter((item) => item.kind === 'expense' && item.currency === 'CNY').reduce((sum, item) => sum + item.amount, 0), [data.transactions]);
+  const todaySpend = useMemo(() => getDailySpend(data.transactions, TODAY, 'CNY'), [data.transactions]);
   const investmentPlans = useMemo(() => planInvestmentMigrations(data.accounts, data.investments), [data.accounts, data.investments]);
   const totalBalanceLabel = useMemo(() => formatCnyWealthSummary(data.accounts, data.transactions, data.exchangeRates, data.investments), [data.accounts, data.transactions, data.exchangeRates, data.investments]);
   const hasBusinessData = homeHasAuthoritativeData(data);
@@ -805,14 +805,20 @@ export default function Home() {
     const sourceCurrency = sourceAccount?.currency ?? String(form.get('currency') || 'CNY');
     const targetCurrency = (kind === 'transfer' ? targetAccount?.currency : reimburseAccount?.currency) ?? sourceCurrency;
     const explicitTarget = Number(form.get('targetAmount'));
-    const rateInput = Number(form.get('exchangeRate') || 1);
-    const amounts = resolveTransferAmounts({
-      sourceCurrency,
-      targetCurrency,
-      amount,
-      rate: rateInput,
-      targetAmount: Number.isFinite(explicitTarget) && explicitTarget > 0 ? explicitTarget : undefined,
-    });
+    const rateRaw = Number(form.get('exchangeRate'));
+    let amounts: { sourceAmount: number; targetAmount: number; rate: number };
+    try {
+      amounts = resolveTransferAmounts({
+        sourceCurrency,
+        targetCurrency,
+        amount,
+        rate: Number.isFinite(rateRaw) && rateRaw > 0 ? rateRaw : undefined,
+        targetAmount: Number.isFinite(explicitTarget) && explicitTarget > 0 ? explicitTarget : undefined,
+      });
+    } catch {
+      notify('跨币种请填写待收回金额或汇率，不能默认一比一');
+      return;
+    }
     const wasSettled = Boolean(previous?.reimbursementTransactionId);
     const draft: Transaction = {
       id: previous?.id ?? uid('transaction'),

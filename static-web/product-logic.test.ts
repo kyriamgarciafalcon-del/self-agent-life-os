@@ -439,6 +439,20 @@ describe('truthful product state', () => {
     expect(remaining[0]?.lastRunPeriod).toBe('2026-08');
   });
 
+  it('releases the monthly-bill lock after reverse postings remain in the ledger', () => {
+    const original = { recurringRuleId: 'netflix', createdAt: '2026-09-05T10:00:00', status: 'reversed' as const };
+    const reversal = { recurringRuleId: 'netflix', createdAt: '2026-09-05T10:01:00', reversesId: 'bill-tx', status: 'confirmed' as const };
+    expect(releaseRecurringConfirmation(
+      [{ id: 'netflix', lastRunPeriod: '2026-09' }],
+      [reversal, original],
+      original,
+    )[0]?.lastRunPeriod).toBeUndefined();
+    expect(reconcileRecurringConfirmations(
+      [{ id: 'netflix', lastRunPeriod: '2026-09' }],
+      [reversal, original],
+    )[0]?.lastRunPeriod).toBeUndefined();
+  });
+
   it('credits a 待收回 claim account when a reimbursable WeChat expense is posted', () => {
     const accounts = [
       { id: 'wechat', type: '资金账户', currency: 'CNY', balance: 200 },

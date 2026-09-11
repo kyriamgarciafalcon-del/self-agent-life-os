@@ -239,6 +239,27 @@ describe('explicit amounts and currencies', () => {
     });
   });
 
+  it('refuses a 1:1 fallback when currencies differ without an explicit target amount or rate', () => {
+    expect(() => resolveTransferAmounts({ sourceCurrency: 'USD', targetCurrency: 'CNY', amount: 100 })).toThrow(/explicit/);
+    const accounts = [
+      { id: 'usd', type: '资金账户', currency: 'USD', balance: 200, openingBalance: 200 },
+      { id: 'claim', type: '待收回', currency: 'CNY', balance: 0, openingBalance: 0 },
+    ];
+    const posted = postFinanceTransaction(accounts, [], {
+      id: 'fx-missing',
+      kind: 'expense',
+      accountId: 'usd',
+      amount: 100,
+      currency: 'USD',
+      accountAmount: 100,
+      reimbursable: true,
+      reimburseAccountId: 'claim',
+      source: 'manual',
+    });
+    expect(posted.accounts).toEqual(accounts);
+    expect(posted.transactions).toEqual([]);
+  });
+
   it('posts the explicit target amount for a cross-currency reimbursement', () => {
     const accounts = [
       { id: 'usd', type: '资金账户', currency: 'USD', balance: 20, openingBalance: 20 },

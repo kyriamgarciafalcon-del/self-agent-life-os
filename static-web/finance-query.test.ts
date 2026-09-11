@@ -8,6 +8,7 @@ import {
   getReceivables,
   getOutstandingReimbursements,
   hasOutstandingReimbursementsForAccount,
+  getDailySpend,
 } from '../app/finance-query';
 
 const accounts = [
@@ -60,6 +61,11 @@ describe('finance query service', () => {
       { ...expense, status: 'superseded' },
       { ...expense, reversesId: 'old' },
     ], 'CNY')).toEqual({ income: 0, expense: 10, balance: -10 });
+    expect(getDailySpend([
+      { ...expense, createdAt: '2026-09-11T09:00:00' },
+      { ...expense, createdAt: '2026-09-11T09:00:00', status: 'reversed' },
+      { ...expense, createdAt: '2026-09-11T09:00:00', reversesId: 'meal' },
+    ], '2026-09-11', 'CNY')).toBe(10);
   });
   it('makes getMonthlyReport the only monthly income/expense/balance used by home, finance, AI and export surfaces', () => {
     expect(getMonthlyReport(transactions, 'CNY')).toEqual(monthlyFinanceSummary(transactions, 'CNY'));
@@ -95,7 +101,9 @@ describe('finance query call sites', () => {
     const page = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8');
     expect(page).toContain('getMonthlyReport');
     expect(page).toContain('getNetWorth');
+    expect(page).toContain('getDailySpend');
     expect(page).not.toMatch(/filter\(\(item\) => item\.kind === 'income'\)\.reduce\(\(sum, item\) => sum \+ item\.amount/);
     expect(page).not.toMatch(/filter\(\(item\) => item\.kind === 'expense'\)\.reduce\(\(sum, item\) => sum \+ item\.amount/);
+    expect(page).not.toMatch(/kind === 'expense' && item\.currency === 'CNY'\)\.reduce/);
   });
 });

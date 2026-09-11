@@ -68,7 +68,12 @@ export function resolveTransferAmounts(input: { sourceCurrency: string; targetCu
   if (input.sourceCurrency === input.targetCurrency) {
     return { sourceAmount, targetAmount: sourceAmount, rate: 1 };
   }
-  const targetAmount = Number.isFinite(input.targetAmount) ? Math.abs(Number(input.targetAmount)) : sourceAmount * (input.rate && input.rate > 0 ? input.rate : 1);
+  const explicitTarget = Number.isFinite(input.targetAmount) && Number(input.targetAmount) > 0 ? Math.abs(Number(input.targetAmount)) : undefined;
+  const explicitRate = Number.isFinite(input.rate) && Number(input.rate) > 0 ? Number(input.rate) : undefined;
+  if (!explicitTarget && !explicitRate) {
+    throw new Error('Cross-currency amount requires an explicit target amount or rate');
+  }
+  const targetAmount = explicitTarget ?? sourceAmount * (explicitRate as number);
   const rate = sourceAmount ? targetAmount / sourceAmount : 1;
   return { sourceAmount, targetAmount, rate };
 }
@@ -99,7 +104,10 @@ export function composeTransactionPostings(accounts: LedgerAccount[], draft: Tra
     if (draft.reimbursable && draft.reimburseAccountId) {
       const claim = accounts.find((account) => account.id === draft.reimburseAccountId);
       const claimCurrency = draft.targetCurrency || claim?.currency || sourceCurrency;
-      const claimAmount = moneyAmount(draft.targetAmount, claimCurrency === sourceCurrency ? sourceAmount : draft.targetAmount, sourceAmount);
+      if (claimCurrency !== sourceCurrency && !(Number.isFinite(draft.targetAmount) && Number(draft.targetAmount) > 0)) {
+        return [];
+      }
+      const claimAmount = moneyAmount(draft.targetAmount, claimCurrency === sourceCurrency ? sourceAmount : draft.targetAmount);
       push(draft.reimburseAccountId, claimAmount, claimCurrency);
     }
     return postings;
@@ -221,7 +229,7 @@ export function postFinanceTransaction<TA extends LedgerAccount, TT extends Tran
     return current;
   }
   const postings = composeTransactionPostings(current.accounts, draft);
-  if (!canApplyPostings(current.accounts, postings)) {
+  if (!postings.length || !canApplyPostings(current.accounts, postings)) {
     return current;
   }
   const transaction = { ...draft, postings, accountAmount: moneyAmount(draft.accountAmount, draft.amount), kind: draft.kind, status: draft.status || 'confirmed', occurredAt: draft.occurredAt || draft.createdAt, ...(idempotencyKey ? { idempotencyKey } : {}) } as TT & { postings: LedgerPosting[] };
@@ -369,6 +377,8 @@ export type MonthlyFinanceTransaction = {
   accountAmount?: number;
   status?: 'draft' | 'confirmed' | 'reversed' | 'superseded';
   reversesId?: string;
+  occurredAt?: string;
+  createdAt?: string;
 };
 
 export function monthlyFinanceSummary(transactions: MonthlyFinanceTransaction[], currency: string): { income: number; expense: number; balance: number } {

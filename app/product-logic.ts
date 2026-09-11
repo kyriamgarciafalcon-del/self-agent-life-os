@@ -810,7 +810,11 @@ export function removeLedgerTransactionState<TA extends LedgerAccount, TT extend
 }
 
 export type RecurringRuleState = { id: string; lastRunPeriod?: string };
-export type RecurringPosting = { recurringRuleId?: string; createdAt?: string };
+export type RecurringPosting = { recurringRuleId?: string; createdAt?: string; status?: string; reversesId?: string };
+
+function isActiveRecurringPosting(item: RecurringPosting): boolean {
+  return (!item.status || item.status === 'confirmed') && !item.reversesId;
+}
 
 export function reconcileRecurringConfirmations<TR extends RecurringRuleState>(
   rules: TR[],
@@ -818,7 +822,7 @@ export function reconcileRecurringConfirmations<TR extends RecurringRuleState>(
 ): TR[] {
   return rules.map((rule) => {
     if (!rule.lastRunPeriod) return rule;
-    const posted = transactions.some((item) => item.recurringRuleId === rule.id && item.createdAt?.slice(0, 7) === rule.lastRunPeriod);
+    const posted = transactions.some((item) => isActiveRecurringPosting(item) && item.recurringRuleId === rule.id && item.createdAt?.slice(0, 7) === rule.lastRunPeriod);
     return posted ? rule : { ...rule, lastRunPeriod: undefined };
   });
 }
@@ -830,7 +834,7 @@ export function releaseRecurringConfirmation<TR extends RecurringRuleState>(
 ): TR[] {
   const period = deleted.createdAt?.slice(0, 7);
   if (!deleted.recurringRuleId || !period) return reconcileRecurringConfirmations(rules, remainingTransactions);
-  const stillPosted = remainingTransactions.some((item) => item.recurringRuleId === deleted.recurringRuleId && item.createdAt?.slice(0, 7) === period);
+  const stillPosted = remainingTransactions.some((item) => isActiveRecurringPosting(item) && item.recurringRuleId === deleted.recurringRuleId && item.createdAt?.slice(0, 7) === period);
   if (stillPosted) return rules;
   return rules.map((rule) => rule.id === deleted.recurringRuleId && rule.lastRunPeriod === period
     ? { ...rule, lastRunPeriod: undefined }

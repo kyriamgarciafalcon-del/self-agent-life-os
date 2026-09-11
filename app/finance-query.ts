@@ -62,6 +62,10 @@ export function transactionsInPeriod<T extends { occurredAt?: string; createdAt?
   return items.filter((item) => transactionOccurredAt(item).startsWith(period));
 }
 
+export function getDailySpend(transactions: MonthlyFinanceTransaction[], date: string, currency: string) {
+  return getMonthlyReport(transactions.filter((item) => transactionOccurredAt(item).startsWith(date)), currency).expense;
+}
+
 export function getReceivables(
   accounts: WealthAccount[],
   transactions: WealthTxn[] = [],

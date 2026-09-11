@@ -444,7 +444,7 @@ function backupContainsSecret(value: unknown, seen = new Set<object>()): boolean
   });
 }
 
-export function sanitizeBackupVaultItems(value: unknown): Array<{ id: string; title: string; usernameHint: string; note?: string }> {
+export function sanitizeBackupVaultItems(value: unknown): Array<{ id: string; title: string; usernameHint: string; note: string }> {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item) => {
     if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
@@ -453,7 +453,7 @@ export function sanitizeBackupVaultItems(value: unknown): Array<{ id: string; ti
     const title = typeof source.title === 'string' ? source.title : '';
     const usernameHint = typeof source.usernameHint === 'string' ? source.usernameHint : '';
     if (!id || !title) return [];
-    return [{ id, title, usernameHint, ...(typeof source.note === 'string' ? { note: source.note } : {}) }];
+    return [{ id, title, usernameHint, note: typeof source.note === 'string' ? source.note : '' }];
   });
 }
 

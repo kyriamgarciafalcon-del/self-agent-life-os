@@ -260,6 +260,37 @@ describe('explicit amounts and currencies', () => {
     expect(posted.transactions).toEqual([]);
   });
 
+  it('does not abort ledger migrate when a historical cross-currency transfer lacks rate and target amount', () => {
+    const accounts = [
+      { id: 'usd', type: '资金账户', currency: 'USD', balance: 50, openingBalance: 50 },
+      { id: 'cny', type: '资金账户', currency: 'CNY', balance: 100, openingBalance: 100 },
+    ];
+    const orphan = {
+      id: 'fx-transfer',
+      kind: 'transfer' as const,
+      accountId: 'usd',
+      targetAccountId: 'cny',
+      amount: 10,
+      accountAmount: 10,
+      currency: 'USD',
+    };
+    expect(() => composeTransactionPostings(accounts, orphan)).not.toThrow();
+    expect(composeTransactionPostings(accounts, orphan)).toEqual([]);
+    const posted = postFinanceTransaction(accounts, [orphan] as Array<{
+      id: string; kind: 'transfer' | 'expense'; accountId: string; targetAccountId?: string;
+      amount: number; accountAmount: number; currency: string;
+    }>, {
+      id: 'meal',
+      kind: 'expense',
+      accountId: 'cny',
+      amount: 8,
+      accountAmount: 8,
+      currency: 'CNY',
+    });
+    expect(posted.transactions.some((item) => item.id === 'meal')).toBe(true);
+    expect(posted.accounts.find((item) => item.id === 'cny')?.balance).toBe(92);
+  });
+
   it('posts the explicit target amount for a cross-currency reimbursement', () => {
     const accounts = [
       { id: 'usd', type: '资金账户', currency: 'USD', balance: 20, openingBalance: 20 },

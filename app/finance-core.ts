@@ -38,6 +38,7 @@ export type TransactionDraft = {
   currency?: string;
   targetAmount?: number;
   targetCurrency?: string;
+  exchangeRate?: number;
   reimbursable?: boolean;
   reimburseAccountId?: string;
   reimbursed?: boolean;
@@ -120,12 +121,18 @@ export function composeTransactionPostings(accounts: LedgerAccount[], draft: Tra
 
   const target = accounts.find((account) => account.id === draft.targetAccountId);
   if ((draft.kind === 'transfer' || draft.kind === 'settlement') && target) {
-    const amounts = resolveTransferAmounts({
-      sourceCurrency,
-      targetCurrency: draft.targetCurrency || target.currency,
-      amount: sourceAmount,
-      targetAmount: draft.targetAmount,
-    });
+    let amounts: { sourceAmount: number; targetAmount: number; rate: number };
+    try {
+      amounts = resolveTransferAmounts({
+        sourceCurrency,
+        targetCurrency: draft.targetCurrency || target.currency,
+        amount: sourceAmount,
+        rate: draft.exchangeRate,
+        targetAmount: draft.targetAmount,
+      });
+    } catch {
+      return [];
+    }
     push(source.id, sourceDebt ? amounts.sourceAmount : -amounts.sourceAmount, sourceCurrency);
     const targetDebt = isDebtRole(accountRole(target.type));
     push(target.id, targetDebt ? -amounts.targetAmount : amounts.targetAmount, amounts.sourceAmount && target.currency ? (draft.targetCurrency || target.currency) : target.currency);

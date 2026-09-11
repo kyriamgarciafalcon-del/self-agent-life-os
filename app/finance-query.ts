@@ -20,6 +20,7 @@ function selectCurrency(currencies: string[], requested?: string): string | unde
 
 type ReimbursementTransaction = MonthlyFinanceTransaction & {
   id?: string; reimbursable?: boolean; reimbursed?: boolean;
+  reimburseAccountId?: string;
   targetAmount?: number; targetCurrency?: string;
 };
 
@@ -30,6 +31,15 @@ export function getOutstandingReimbursements(transactions: ReimbursementTransact
     .filter((item) => item.currency === currency)
     .map((item) => item.amount);
   return moneyToMajor(moneySum(currency, amounts));
+}
+
+export function hasOutstandingReimbursementsForAccount(transactions: ReimbursementTransaction[], accountId: string): boolean {
+  return transactions.some((item) => item.kind === 'expense'
+    && item.reimbursable
+    && !item.reimbursed
+    && item.reimburseAccountId === accountId
+    && isActivePosted(item)
+    && reimbursementOutstandingAmount(item, transactions).amount > 0.0001);
 }
 
 export function getNetWorth(

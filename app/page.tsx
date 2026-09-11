@@ -1,7 +1,7 @@
 'use client';
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { getConvertedNetWorth, getMonthlyReport, getNetWorth, getOutstandingReimbursements, transactionsInPeriod } from './finance-query';
+import { getConvertedNetWorth, getMonthlyReport, getNetWorth, getOutstandingReimbursements, hasOutstandingReimbursementsForAccount, transactionsInPeriod } from './finance-query';
 import { migrateToSchemaV4, createSchemaV4MigrationBackup, applySchemaV4Migration, SCHEMA_V3_BACKUP_KEY } from './finance-schema';
 import { HomePage } from './components/daily/HomePage';
 import { homeHasAuthoritativeData, homeHasFinanceData, schedulesOnDate } from './components/daily/home';
@@ -949,6 +949,10 @@ export default function Home() {
     if (!account || account.balance <= 0) { notify('没有可结算的余额'); return; }
     const role = accountRole(account.type);
     if (role !== 'receivable' && !isDebtRole(role)) { notify('这个账户不需要收回或还款'); return; }
+    if (role === 'receivable' && hasOutstandingReimbursementsForAccount(data.transactions, account.id)) {
+      notify('该账户包含待报销明细，请在对应流水中逐笔入账');
+      return;
+    }
     setSettlingAccountId(id);
     setSheet('settle-account');
   }

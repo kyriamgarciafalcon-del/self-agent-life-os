@@ -424,6 +424,21 @@ describe('reimbursement settlement cashflow', () => {
     expect(rejected.accounts.find((item) => item.id === 'wechat')?.balance).toBe(100);
   });
 
+  it('rejects claim settlement after an account-level recovery already depleted the receivable balance', () => {
+    const accounts = [
+      { id: 'cash', name: '资金', type: '资金账户', currency: 'CNY', balance: 100, openingBalance: 100 },
+      { id: 'claim', name: '待收回', type: '待收回', currency: 'CNY', balance: 0, openingBalance: 0 },
+    ];
+    const original = {
+      id: 'e1', kind: 'expense' as const, accountId: 'cash', accountAmount: 36, amount: 36,
+      currency: 'CNY', reimbursable: true, reimburseAccountId: 'claim', reimbursed: false,
+    };
+    const settlement = buildReimbursementSettlement(original, { id: 's1', counterpartId: 'cash', amount: 36, currency: 'CNY' });
+    const rejected = settlePostedReimbursement(accounts, [original], 'e1', { ...settlement, postings: settlement.postings ?? [] } as never);
+    expect(rejected.accounts).toEqual(accounts);
+    expect(rejected.transactions).toEqual([original]);
+  });
+
   it('restores 100 receivable and reimbursed=false after deleting the first 40 settlement', () => {
     const seedAccounts = [
       { id: 'wechat', name: '微信', type: '资金账户', currency: 'CNY', balance: 200 },

@@ -682,6 +682,8 @@ export function settlePostedReimbursement<TA extends LedgerAccount, TT extends P
   if (!(settlementAmount > 0) || settlementAmount - outstandingBefore.amount > 0.0001) return { accounts, transactions };
   const postings = linked.postings?.length ? linked.postings : composeTransactionPostings(accounts, linked);
   const claimId = original.reimburseAccountId;
+  const claimAccount = claimId ? accounts.find((account) => account.id === claimId) : undefined;
+  if (!claimAccount || claimAccount.balance + 0.0001 < settlementAmount) return { accounts, transactions };
   const touchesClaim = Boolean(claimId && (linked.accountId === claimId || linked.targetAccountId === claimId || postings.some((posting) => posting.accountId === claimId)));
   let nextAccounts = applyPostings(accounts, postings, 1);
   if (claimId && !touchesClaim && (linked.kind === 'income') && canApplyLedger(nextAccounts, { kind: 'expense', accountId: claimId, accountAmount: original.accountAmount })) {

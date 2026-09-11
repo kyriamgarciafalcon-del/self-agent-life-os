@@ -7,6 +7,7 @@ import {
   getNetWorth,
   getReceivables,
   getOutstandingReimbursements,
+  hasOutstandingReimbursementsForAccount,
 } from '../app/finance-query';
 
 const accounts = [
@@ -46,6 +47,8 @@ describe('finance query service', () => {
     ];
     expect(getOutstandingReimbursements(items, 'CNY')).toBe(70);
     expect(getOutstandingReimbursements(items, 'USD')).toBe(10);
+    expect(hasOutstandingReimbursementsForAccount(items.map((item) => ({ ...item, reimburseAccountId: item.kind === 'expense' ? 'claim' : undefined })), 'claim')).toBe(true);
+    expect(hasOutstandingReimbursementsForAccount(items, 'manual-receivable')).toBe(false);
   });
 
   it('excludes draft, reversed, superseded and reversal entries from reports', () => {

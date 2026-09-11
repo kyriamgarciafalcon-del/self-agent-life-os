@@ -24,6 +24,7 @@ import {
   loadBrowserAiConfig,
   migrateLegacyAiLocalStorage,
   persistBrowserAiConfig,
+  persistJson,
   publicAiConfig,
   versionedAiEvent,
   canApplyLedger,
@@ -303,6 +304,22 @@ describe('truthful product state', () => {
     expect(sanitizeBackupVaultItems([{ id: 'v1', title: '站点', usernameHint: 'u***', note: '2FA', ignored: 'drop' }])).toEqual([
       { id: 'v1', title: '站点', usernameHint: 'u***', note: '2FA' },
     ]);
+  });
+
+  it('reports persistJson failure instead of throwing', () => {
+    const storage = {
+      getItem() { return null; },
+      setItem() { throw new DOMException('Quota exceeded', 'QuotaExceededError'); },
+      removeItem() {},
+    };
+    expect(persistJson(storage, 'self-agent:local-data:v1', { ok: true })).toEqual({ ok: false });
+    const memory: Record<string, string> = {};
+    expect(persistJson({
+      getItem: (key: string) => memory[key] ?? null,
+      setItem: (key: string, value: string) => { memory[key] = value; },
+      removeItem: (key: string) => { delete memory[key]; },
+    }, 'k', { a: 1 })).toEqual({ ok: true });
+    expect(JSON.parse(memory.k)).toEqual({ a: 1 });
   });
 
   it('sums every account into one total-assets view without dropping other currencies', () => {

@@ -22,7 +22,7 @@ import { AuditPage } from './components/mine/surfaces/AuditPage';
 import { DataPage } from './components/mine/surfaces/DataPage';
 import { FinancePage, TransactionList } from './components/finance/FinancePage';
 import { primaryNavActiveId } from './components/ui/nav';
-import { accountRole, applyDailyFxRates, applyDailyPriceQuotes, applyInboxLifecycle, AI_CONFIG_EVENT, AI_CONFIG_STORAGE_KEY, AI_REPLY_EVENT, AUDIT_OUTCOMES, auditOutcomeLabel, auditReasonLabel, buildButlerSystemPrompt, buildHealthBriefing, buildAiSendPreview, canUndoInboxConfirm, cnyWealthTotal, confirmByokHost, classifyAiProviderError, interpretAiConnectionTest, consumeCallBudget, createCallBudget, defaultCashId, describeButlerDataScope, detectLegacyDemoData, dialogShouldDismiss, dismissPermissionOnboarding, filterAuditLog, generateRecurringDrafts, healthRecordsFromSnapshots, inboxConfidenceLabel, inboxConfirmBlockReason, inboxItemFromAiTool, inboxItemFromButlerAction, inboxItemFromNaturalCapture, inboxItemFromPayment, inboxItemFromTravelNotice, inboxSourceLabel, ledgerIdempotencyKeyForInboxItem, INBOX_ACTION_LABELS, isBackupPayload, sanitizeBackupVaultItems, isDebtRole, latestHealthByKind, loadBrowserAiConfig, localDateKey, markPermissionSettingsOpened, migrateAuditLog, migrateInboxStore, migrateLegacyAiLocalStorage, migratePrivacySettings, normalizeAccountBalance, normalizeMemory, normalizePermissionOnboarding, parseAiProviderResponse, parseButlerModelOutput, parseCapabilityStatus, parseNaturalCapture, pendingInboxItems, persistBrowserAiConfig, permissionOnboardingProgress, planAccountSettlement, planInvestmentMigrations, confirmInvestmentMigration, prepareOutboundAiPayload, reconcileRecurringConfirmations, releaseRecurringConfirmation, resolveInboxFinanceConfirmation, resolvePaymentAccountId, shouldShowPermissionOnboarding, summarizeHealth, TOAST_ARIA_LIVE, updateInboxItemPayload, upsertByExternalKey, validateByokTarget, ACCOUNT_TYPES, buildReimbursementSettlement, canDeleteAccount, FINANCE_TABS, financeTransactionFields, transactionFormPhases, previewPostedImpact, investmentAccountSnapshot, normalizeFinanceRecords, postBalanceAdjustment, postFinanceTransaction, refreshHoldingsValuation, reimbursementOutstandingAmount, removePostedTransaction, settlePostedReimbursement, resolveTransferAmounts, type AuditEntry, type ButlerAction, type CapabilityStatusSnapshot, type HealthMetric, type InboxItem, type InboxLifecycleEvent, type InboxSource, type PermissionCardId, type PermissionOnboardingState, type TravelKind } from './product-logic';
+import { accountRole, applyDailyFxRates, applyDailyPriceQuotes, applyInboxLifecycle, AI_CONFIG_EVENT, AI_CONFIG_STORAGE_KEY, AI_REPLY_EVENT, AUDIT_OUTCOMES, auditOutcomeLabel, auditReasonLabel, buildButlerSystemPrompt, buildHealthBriefing, buildAiSendPreview, canUndoInboxConfirm, cnyWealthTotal, confirmByokHost, classifyAiProviderError, interpretAiConnectionTest, consumeCallBudget, createCallBudget, defaultCashId, describeButlerDataScope, detectLegacyDemoData, dialogShouldDismiss, dismissPermissionOnboarding, filterAuditLog, generateRecurringDrafts, healthRecordsFromSnapshots, inboxConfidenceLabel, inboxConfirmBlockReason, inboxItemFromAiTool, inboxItemFromButlerAction, inboxItemFromNaturalCapture, inboxItemFromPayment, inboxItemFromTravelNotice, inboxSourceLabel, ledgerIdempotencyKeyForInboxItem, INBOX_ACTION_LABELS, isBackupPayload, sanitizeBackupVaultItems, isDebtRole, latestHealthByKind, loadBrowserAiConfig, localDateKey, markPermissionSettingsOpened, migrateAuditLog, migrateInboxStore, migrateLegacyAiLocalStorage, migratePrivacySettings, normalizeAccountBalance, normalizeMemory, normalizePermissionOnboarding, parseAiProviderResponse, parseButlerModelOutput, parseCapabilityStatus, parseNaturalCapture, pendingInboxItems, persistBrowserAiConfig, persistJson, permissionOnboardingProgress, planAccountSettlement, planInvestmentMigrations, confirmInvestmentMigration, prepareOutboundAiPayload, reconcileRecurringConfirmations, releaseRecurringConfirmation, resolveInboxFinanceConfirmation, resolvePaymentAccountId, shouldShowPermissionOnboarding, summarizeHealth, TOAST_ARIA_LIVE, updateInboxItemPayload, upsertByExternalKey, validateByokTarget, ACCOUNT_TYPES, buildReimbursementSettlement, canDeleteAccount, FINANCE_TABS, financeTransactionFields, transactionFormPhases, previewPostedImpact, investmentAccountSnapshot, normalizeFinanceRecords, postBalanceAdjustment, postFinanceTransaction, refreshHoldingsValuation, reimbursementOutstandingAmount, removePostedTransaction, settlePostedReimbursement, resolveTransferAmounts, type AuditEntry, type ButlerAction, type CapabilityStatusSnapshot, type HealthMetric, type InboxItem, type InboxLifecycleEvent, type InboxSource, type PermissionCardId, type PermissionOnboardingState, type TravelKind } from './product-logic';
 
 type Tab = 'home' | 'schedule' | 'capture' | 'finance' | 'profile' | 'life' | 'health' | 'travel' | 'data' | 'butler' | 'privacy' | 'memory' | 'vault' | 'audit';
 type ScheduleColor = 'blue' | 'green' | 'orange';
@@ -568,7 +568,10 @@ export default function Home() {
     const timer = window.setInterval(refreshClock, 60_000);
     return () => { document.removeEventListener('visibilitychange', refreshClock); window.clearInterval(timer); };
   }, []);
-  useEffect(() => { if (hydrated && !schemaFrozen) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }, [data, hydrated, schemaFrozen]);
+  useEffect(() => {
+    if (!hydrated || schemaFrozen) return;
+    if (!persistJson(window.localStorage, STORAGE_KEY, data).ok) notify('本机存储写入失败，刚才的更改还没保存');
+  }, [data, hydrated, schemaFrozen]);
   useEffect(() => {
     if (!hydrated || !nativeOn) return;
     const native = window as Window & { SelfAgentNative?: { syncReminders?: (json: string) => void } };
@@ -606,19 +609,10 @@ export default function Home() {
       const text = String(detail.text || '').trim();
       if (!text) { notify('没有识别到文字，请重试或手动输入'); return; }
       const hinted = detail.source === 'voice' || detail.source === 'ocr' ? detail.source : captureSourceRef.current;
-      const source: InboxSource = hinted === 'voice' || hinted === 'ocr' ? hinted : 'manual';
+      if (hinted === 'voice' || hinted === 'ocr') captureSourceRef.current = hinted;
       setCaptureText((current) => `${current}${current ? ' ' : ''}${text}`.slice(0, 400));
-      const parsed = parseNaturalCapture(text, TODAY);
-      const preferredId = parsed.kind === 'expense' ? (parsed.source === '支付宝' ? 'alipay' : parsed.source === '银行卡' ? 'bank' : 'wechat') : '';
-      setData((current) => {
-        const account = parsed.kind === 'expense'
-          ? current.accounts.find((item) => item.id === preferredId) ?? current.accounts.find((item) => item.name.includes((parsed as Extract<typeof parsed, { kind: 'expense' }>).source)) ?? current.accounts[0]
-          : undefined;
-        return withInboxEvent(current, { type: 'enqueue', item: inboxItemFromNaturalCapture({ id: uid('inbox'), source, createdAt: localStamp(), parsed, accountId: account?.id }), timestamp: localStamp(), id: uid('audit') });
-      });
-      captureSourceRef.current = 'manual';
       navigate('capture');
-      notify('已放入收件箱，确认后才会保存');
+      notify('已填入输入框，放入收件箱后才会保存');
     }
     window.addEventListener('self-agent:capture-text', onCaptureText);
     return () => window.removeEventListener('self-agent:capture-text', onCaptureText);
@@ -1034,11 +1028,12 @@ export default function Home() {
     if (!text) return;
     const parsed = parseNaturalCapture(text, TODAY);
     const draft = parseCapture(text, data.accounts);
+    const source: InboxSource = captureSourceRef.current === 'voice' || captureSourceRef.current === 'ocr' ? captureSourceRef.current : 'manual';
     setData((current) => withInboxEvent(current, {
       type: 'enqueue',
       item: inboxItemFromNaturalCapture({
         id: uid('inbox'),
-        source: 'manual',
+        source,
         createdAt: localStamp(),
         parsed,
         accountId: draft.kind === 'expense' ? draft.accountId : undefined,
@@ -1046,6 +1041,7 @@ export default function Home() {
       timestamp: localStamp(),
       id: uid('audit'),
     }));
+    captureSourceRef.current = 'manual';
     setCaptureText('');
     notify('已放入收件箱，确认后才会保存');
   }

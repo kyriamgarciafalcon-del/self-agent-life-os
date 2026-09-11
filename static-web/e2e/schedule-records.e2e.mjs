@@ -181,3 +181,15 @@ test('375px records confirm loop does not write until confirm and can undo', asy
     };
   }, STORAGE_KEY)).toEqual({ tx: 2, hasReversal: true, balance: 500, pending: true });
 });
+
+test('voice capture fills the box once and submit creates a single inbox draft', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.addInitScript(({ key, value }) => window.localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: emptyLedger() });
+  await page.goto('/');
+  await page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: /记录$/ }).click();
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('self-agent:capture-text', { detail: { text: '明天10点开项目会议', source: 'voice' } })));
+  await expect(page.locator('.capture-page textarea')).toHaveValue(/明天10点开项目会议/);
+  expect(await page.evaluate((key) => JSON.parse(localStorage.getItem(key) || '{}').inboxItems || [], STORAGE_KEY)).toEqual([]);
+  await page.locator('.capture-page form').evaluate((el) => el.requestSubmit());
+  await expect.poll(async () => page.evaluate((key) => (JSON.parse(localStorage.getItem(key) || '{}').inboxItems || []).map((item) => item.source), STORAGE_KEY)).toEqual(['voice']);
+});

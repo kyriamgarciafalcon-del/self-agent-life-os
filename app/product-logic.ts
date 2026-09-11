@@ -853,6 +853,15 @@ export type StorageLike = {
   removeItem(key: string): void;
 };
 
+export function persistJson(storage: StorageLike, key: string, value: unknown): { ok: boolean } {
+  try {
+    storage.setItem(key, JSON.stringify(value));
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+}
+
 export type AiSecretConfig = { baseUrl: string; model: string; apiKey: string };
 export type AiPublicConfig = { baseUrl: string; model: string; configured: boolean };
 export type AiRuntimeConfig = AiPublicConfig & { apiKey: string };

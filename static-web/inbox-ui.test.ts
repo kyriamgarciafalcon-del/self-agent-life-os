@@ -24,4 +24,12 @@ describe('inbox finance editor', () => {
     expect(css).toContain('.inbox-card-amount');
     expect(css).toContain('.inbox-card-source');
   });
+
+  it('lets voice and OCR fill the capture box without creating a second inbox item', () => {
+    const page = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8');
+    const start = page.indexOf('function onCaptureText');
+    const chunk = page.slice(start, start + 1800);
+    expect(chunk).toContain('setCaptureText');
+    expect(chunk).not.toContain('withInboxEvent');
+  });
 });

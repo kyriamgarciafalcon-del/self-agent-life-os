@@ -48,6 +48,8 @@ class MainActivity : Activity() {
         const val LOCAL_APP_URL = "https://appassets.androidplatform.net/assets/www/index.html"
         const val LOCAL_APP_HOST = "appassets.androidplatform.net"
         private const val REQUEST_EXPORT_HEALTH_DIAGNOSTICS = 904
+        private const val REQUEST_EXPORT_BACKUP = 905
+        private const val REQUEST_IMPORT_BACKUP = 906
 
         fun ledgerIntent(context: Context, json: String, autoSave: Boolean): Intent =
             Intent(context, MainActivity::class.java)
@@ -63,6 +65,7 @@ class MainActivity : Activity() {
     private val pendingQuotes = ConcurrentLinkedQueue<JSONObject>()
     private val pendingCapture = ConcurrentLinkedQueue<String>()
     private lateinit var capture: CaptureController
+    private var pendingBackupJson: String? = null
     private var backCallback: OnBackInvokedCallback? = null
     private var pageReady = false
 
@@ -322,6 +325,33 @@ class MainActivity : Activity() {
         }
 
         @JavascriptInterface
+        fun exportBackup(json: String) {
+            pendingBackupJson = json
+            runOnUiThread {
+                startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "application/json"
+                    putExtra(Intent.EXTRA_TITLE, "self-agent-backup.json")
+                }, REQUEST_EXPORT_BACKUP)
+            }
+        }
+
+        @JavascriptInterface
+        fun importBackup() {
+            runOnUiThread {
+                startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "application/json"
+                }, REQUEST_IMPORT_BACKUP)
+            }
+        }
+
+        @JavascriptInterface
+        fun clearReminders() {
+            app.selfagent.reminders.ReminderScheduler.clearAll(this@MainActivity)
+        }
+
+        @JavascriptInterface
         fun exportHealthDiagnostics() {
             runOnUiThread {
                 startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
@@ -408,6 +438,56 @@ class MainActivity : Activity() {
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_EXPORT_BACKUP) {
+            val json = pendingBackupJson
+            pendingBackupJson = null
+            if (resultCode == RESULT_OK && data?.data != null && json != null) {
+                val target = data.data!!
+                Thread {
+                    runCatching {
+                        contentResolver.openOutputStream(target, "wt").use { output ->
+                            requireNotNull(output) { "无法创建备份文件" }
+                            output.bufferedWriter().use { it.write(json) }
+                        }
+                    }.onSuccess {
+                        runOnUiThread {
+                            android.widget.Toast.makeText(this, "备份已写入所选文件", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }.onFailure {
+                        runOnUiThread {
+                            android.widget.Toast.makeText(this, "备份导出失败", android.widget.Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }.start()
+            }
+            return
+        }
+        if (requestCode == REQUEST_IMPORT_BACKUP) {
+            if (resultCode == RESULT_OK && data?.data != null) {
+                val source = data.data!!
+                Thread {
+                    runCatching {
+                        contentResolver.openInputStream(source).use { input ->
+                            requireNotNull(input) { "无法读取备份" }
+                            input.bufferedReader().readText()
+                        }
+                    }.onSuccess { text ->
+                        val payload = JSONObject().put("text", text)
+                        runOnUiThread {
+                            webView.evaluateJavascript(
+                                "window.dispatchEvent(new CustomEvent('self-agent:backup-imported',{detail:$payload}));",
+                                null,
+                            )
+                        }
+                    }.onFailure {
+                        runOnUiThread {
+                            android.widget.Toast.makeText(this, "备份读取失败", android.widget.Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }.start()
+            }
+            return
+        }
         if (requestCode == REQUEST_EXPORT_HEALTH_DIAGNOSTICS) {
             if (resultCode == RESULT_OK && data?.data != null) {
                 val target = data.data!!

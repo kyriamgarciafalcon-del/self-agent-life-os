@@ -185,6 +185,9 @@ type NativeAiBridge = {
   aiConfigStatus?: () => string;
   clearAiConfig?: () => void;
   askAi?: (json: string) => void;
+  exportBackup?: (json: string) => void;
+  importBackup?: () => void;
+  clearReminders?: () => void;
 };
 
 function readNativeAiConfig(native?: NativeAiBridge | null): AiConfig {
@@ -616,6 +619,16 @@ export default function Home() {
     }
     window.addEventListener('self-agent:capture-text', onCaptureText);
     return () => window.removeEventListener('self-agent:capture-text', onCaptureText);
+  }, []);
+  useEffect(() => {
+    function onBackupImported(event: Event) {
+      const detail = (event as CustomEvent<{ text?: string }>).detail || {};
+      try {
+        applyImportedBackup(JSON.parse(String(detail.text || '')) as unknown);
+      } catch { notify('无法读取备份，现有数据未改变'); }
+    }
+    window.addEventListener('self-agent:backup-imported', onBackupImported);
+    return () => window.removeEventListener('self-agent:backup-imported', onBackupImported);
   }, []);
   useEffect(() => {
     function onAiConfig(event: Event) {
@@ -1368,19 +1381,33 @@ export default function Home() {
   function toggleTheme() { setData((current) => ({ ...current, theme: current.theme === 'dark' ? 'light' : 'dark' })); }
   function exportLocalData() {
     const safe = { ...data, vaultItems: data.vaultItems.map(({ id, title, usernameHint, note }) => ({ id, title, usernameHint, note })) };
-    const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([JSON.stringify(safe, null, 2)], { type: 'application/json' })); link.download = `self-agent-data-${TODAY}.json`; link.click(); URL.revokeObjectURL(link.href); notify('已导出本机数据。密码和 API 密钥不包含在内，账本与健康记录是明文');
+    const json = JSON.stringify(safe, null, 2);
+    const native = (window as Window & { SelfAgentNative?: NativeAiBridge }).SelfAgentNative;
+    if (native?.exportBackup) {
+      native.exportBackup(json);
+      notify('请选择保存位置。账本与健康是明文，不含密码和 API 密钥');
+      return;
+    }
+    const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([json], { type: 'application/json' })); link.download = `self-agent-data-${TODAY}.json`; link.click(); URL.revokeObjectURL(link.href); notify('已导出本机数据。密码和 API 密钥不包含在内，账本与健康记录是明文');
+  }
+  function applyImportedBackup(raw: unknown) {
+    if (!isBackupPayload(raw)) { notify('备份格式不正确，现有数据未改变'); return; }
+    if (!window.confirm('导入将替换当前日程、账本和设置，是否继续？')) return;
+    setData(normalizeData(raw as Partial<AppData>));
+    notify('备份已恢复，可以重新查看和编辑');
   }
   async function importLocalData(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
     try {
-      const raw = JSON.parse(await file.text()) as unknown;
-      if (!isBackupPayload(raw)) { notify('备份格式不正确，现有数据未改变'); return; }
-      if (!window.confirm('导入将替换当前日程、账本和设置，是否继续？')) return;
-      setData(normalizeData(raw as Partial<AppData>));
-      notify('备份已恢复，可以重新查看和编辑');
+      applyImportedBackup(JSON.parse(await file.text()) as unknown);
     } catch { notify('无法读取备份，现有数据未改变'); }
+  }
+  function pickNativeBackup() {
+    const native = (window as Window & { SelfAgentNative?: NativeAiBridge }).SelfAgentNative;
+    if (!native?.importBackup) { notify('请在 Android App 中选择备份文件'); return; }
+    native.importBackup();
   }
   function loadDemoData() {
     const hasData = data.schedules.length + data.transactions.length + data.accounts.length > 0;
@@ -1389,7 +1416,7 @@ export default function Home() {
   }
   function clearLocalData() {
     if (!window.confirm('确定清空本机日程、账本、健康、行程和 AI 设置吗？密码库不会被清空。')) return;
-    setData(emptyData); setAiConfig(emptyAi); window.localStorage.removeItem(STORAGE_KEY); window.localStorage.removeItem(AI_CONFIG_STORAGE_KEY); window.sessionStorage.removeItem(AI_CONFIG_STORAGE_KEY); (window as Window & { SelfAgentNative?: NativeAiBridge }).SelfAgentNative?.clearAiConfig?.(); notify('本机业务数据已清空');
+    setData(emptyData); setAiConfig(emptyAi); window.localStorage.removeItem(STORAGE_KEY); window.localStorage.removeItem(AI_CONFIG_STORAGE_KEY); window.sessionStorage.removeItem(AI_CONFIG_STORAGE_KEY); const native = (window as Window & { SelfAgentNative?: NativeAiBridge }).SelfAgentNative; native?.clearAiConfig?.(); native?.clearReminders?.(); pushReminders([], [], false); notify('本机业务数据已清空');
   }
   function openPermissionSettings(id: PermissionCardId, secondary = false) {
     const native = (window as Window & { SelfAgentNative?: { openNotificationAccess?: () => void; openAccessibilitySettings?: () => void; openAutofillSettings?: () => void; importHealthConnect?: () => void; openReminderSettings?: () => void } }).SelfAgentNative;
@@ -1472,7 +1499,7 @@ export default function Home() {
 
     {tab === 'finance' && <FinancePage data={data} currency={financeCurrency} selectedAccountId={selectedAccountId} selectedHoldingId={selectedHoldingId} onCurrency={setFinanceCurrency} onSelectAccount={(id) => { setSelectedAccountId(id); setSelectedHoldingId(null); }} onSelectHolding={setSelectedHoldingId} onBackAccount={() => setSelectedAccountId(null)} onBackHolding={() => setSelectedHoldingId(null)} onNewTransaction={() => { setEditingTransactionId(null); setSheet('transaction'); }} onEditTransaction={(id) => { setEditingTransactionId(id); setSheet('transaction'); }} onNewAccount={() => { setEditingAccountId(null); setSheet('account'); }} onEditAccount={(id) => { setEditingAccountId(id); setSheet('account'); }} onNewHolding={() => { setEditingHoldingId(null); setSheet('holding'); }} onEditHolding={(id) => { setEditingHoldingId(id); setSheet('holding'); }} onNewRecurring={() => { setEditingRecurringId(null); setSheet('recurring'); }} onEditRecurring={(id) => { setEditingRecurringId(id); setSheet('recurring'); }} onDeleteRecurring={(id) => deleteRecurringRule(id)} onDeleteTransaction={(id) => deleteTransaction(id)} onRunRecurring={runRecurringRule} onSettleReimbursement={settleReimbursement} onSettleAccount={settleAccount} onNewRate={() => { setEditingRateCurrency(null); setSheet('exchange-rate'); }} onEditRate={(currency) => { setEditingRateCurrency(currency); setSheet('exchange-rate'); }} onDeleteRate={deleteExchangeRate} onRefreshQuotes={requestQuoteRefresh} />}
 
-    {tab === 'profile' && <ProfilePage theme={data.theme} nativeOn={nativeOn} aiConfig={aiConfig} onNavigate={navigate} onOpenPermissions={() => setPermissionOnboardingOpen(true)} onChooseZip={chooseGadgetbridgeExport} onSaveAi={saveAiConfig} onTestAi={() => void testAiConnection()} onOpenAccessibility={() => (window as Window & { SelfAgentNative?: { openAccessibilitySettings?: () => void } }).SelfAgentNative?.openAccessibilitySettings?.()} onOpenNotification={() => (window as Window & { SelfAgentNative?: { openNotificationAccess?: () => void } }).SelfAgentNative?.openNotificationAccess?.()} onOpenAutofill={() => (window as Window & { SelfAgentNative?: { openAutofillSettings?: () => void } }).SelfAgentNative?.openAutofillSettings?.()} onToggleTheme={toggleTheme} onExport={exportLocalData} onImport={importLocalData} onLoadDemo={loadDemoData} onClear={clearLocalData} />}
+    {tab === 'profile' && <ProfilePage theme={data.theme} nativeOn={nativeOn} aiConfig={aiConfig} onNavigate={navigate} onOpenPermissions={() => setPermissionOnboardingOpen(true)} onChooseZip={chooseGadgetbridgeExport} onSaveAi={saveAiConfig} onTestAi={() => void testAiConnection()} onOpenAccessibility={() => (window as Window & { SelfAgentNative?: { openAccessibilitySettings?: () => void } }).SelfAgentNative?.openAccessibilitySettings?.()} onOpenNotification={() => (window as Window & { SelfAgentNative?: { openNotificationAccess?: () => void } }).SelfAgentNative?.openNotificationAccess?.()} onOpenAutofill={() => (window as Window & { SelfAgentNative?: { openAutofillSettings?: () => void } }).SelfAgentNative?.openAutofillSettings?.()} onToggleTheme={toggleTheme} onExport={exportLocalData} onImport={importLocalData} onNativeImport={pickNativeBackup} onLoadDemo={loadDemoData} onClear={clearLocalData} />}
     {tab === 'life' && <LifePage onNavigate={navigate} />}
     {tab === 'health' && <HealthPage records={data.healthRecords} onAdd={() => setSheet('health')} onImportHealthConnect={importHealthConnect} onImportGadgetbridge={importGadgetbridgeHealth} onSelectExport={chooseGadgetbridgeExport} onExportDiagnostics={exportHealthDiagnostics} onSaveBody={saveBodyMetrics} />}
     {tab === 'travel' && <TravelPage items={data.travels} onSync={requestTravelSync} onAdd={() => setSheet('travel')} onDelete={(id) => { setData((current) => ({ ...current, travels: current.travels.filter((item) => item.id !== id) })); notify('行程已删除'); }} />}

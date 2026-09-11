@@ -40,6 +40,7 @@ class ReminderFireActivity : Activity() {
     }
 
     private fun closeReminder(key: String) {
+        ReminderScheduler.cancelNotification(this, key)
         ReminderScheduler.reschedule(this)
         finishAndRemoveTask()
     }

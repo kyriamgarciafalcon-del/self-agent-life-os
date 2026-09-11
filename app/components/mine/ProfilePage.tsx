@@ -19,6 +19,7 @@ export function ProfilePage({
   onToggleTheme,
   onExport,
   onImport,
+  onNativeImport,
   onLoadDemo,
   onClear,
 }: {
@@ -36,6 +37,7 @@ export function ProfilePage({
   onToggleTheme: () => void;
   onExport: () => void;
   onImport: (event: ChangeEvent<HTMLInputElement>) => void;
+  onNativeImport: () => void;
   onLoadDemo: () => void;
   onClear: () => void;
 }) {
@@ -97,7 +99,9 @@ export function ProfilePage({
         <section className="profile-actions sa-actions">
           <button type="button" className="sa-btn sa-btn-secondary" onClick={onToggleTheme}>{theme === 'dark' ? '切换浅色模式' : '切换深色模式'}</button>
           <button type="button" className="sa-btn sa-btn-secondary" onClick={onExport}>导出全部数据</button>
-          <label className="file-action">从备份恢复<input hidden type="file" accept="application/json,.json" onChange={onImport} /></label>
+          {nativeOn
+            ? <button type="button" className="sa-btn sa-btn-secondary" onClick={onNativeImport}>从备份恢复</button>
+            : <label className="file-action">从备份恢复<input hidden type="file" accept="application/json,.json" onChange={onImport} /></label>}
           <button type="button" className="sa-btn sa-btn-secondary" onClick={onLoadDemo}>加载演示数据</button>
           <button type="button" className="sa-btn sa-btn-danger danger-text" onClick={onClear}>清空本机数据</button>
         </section>

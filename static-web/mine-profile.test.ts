@@ -61,6 +61,8 @@ describe('profile experience extraction', () => {
     expect(profile).toContain('切换');
     expect(profile).toContain('导出全部数据');
     expect(profile).toContain('从备份恢复');
+    expect(profile).toContain('onNativeImport');
+    expect(page).toContain('exportBackup');
     expect(profile).toContain('加载演示数据');
     expect(profile).toContain('清空本机数据');
 

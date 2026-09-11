@@ -69,4 +69,16 @@ class ReminderSchedulerTest {
     fun reminderKeyIsReadFromAlarmDataUri() {
         assertEquals("schedule:walk:due", ReminderScheduler.reminderKeyFromData("selfagent://reminder/schedule:walk:due"))
     }
+
+    @Test
+    fun notificationIdsUseStableKeysInsteadOfTitleAndBody() {
+        org.junit.Assert.assertNotEquals(
+            ReminderScheduler.notificationId("schedule:a:due"),
+            ReminderScheduler.notificationId("schedule:b:due"),
+        )
+        assertEquals(
+            ReminderScheduler.notificationId("schedule:walk:due"),
+            ReminderScheduler.notificationId("schedule:walk:due"),
+        )
+    }
 }

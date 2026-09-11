@@ -225,7 +225,7 @@ object ReminderScheduler {
         }
         val open = PendingIntent.getActivity(
             context,
-            (title + body).hashCode(),
+            notificationId("open:${fullScreenKey ?: title}"),
             Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -244,7 +244,7 @@ object ReminderScheduler {
         val builder = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(context, CHANNEL) else Notification.Builder(context)
         if (fullScreen != null) builder.setFullScreenIntent(fullScreen, true)
         nm.notify(
-            (title + body).hashCode() and 0x7fffffff,
+            notificationId(fullScreenKey ?: "notice:$title\u0000$body"),
             builder.setSmallIcon(R.drawable.ic_stat_notify)
                 .setContentTitle(title)
                 .setContentText(body)
@@ -263,6 +263,24 @@ object ReminderScheduler {
         val title = stored?.substringBefore('\u0000')?.ifBlank { null } ?: fallbackTitle
         val body = stored?.substringAfter('\u0000', fallbackBody) ?: fallbackBody
         notify(context, title, body, key)
+    }
+
+    fun notificationId(key: String): Int = key.hashCode() and 0x7fffffff
+
+    fun cancelNotification(context: Context, key: String) {
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        nm.cancel(notificationId(key))
+    }
+
+    fun clearAll(context: Context) {
+        val app = context.applicationContext
+        val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        cancelStoredAlarms(app, prefs)
+        val nm = app.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        prefs.getStringSet(KEY_SCHEDULED_KEYS, emptySet())?.forEach { key ->
+            nm.cancel(notificationId(key))
+        }
+        prefs.edit().clear().apply()
     }
 }
 

@@ -346,13 +346,20 @@ export function normalizeFinanceRecords<TA extends WealthAccount & { id: string;
   accounts: TA[],
   transactions: TT[],
   holdings: Array<{ accountId: string; quantity: number; currentPrice: number }> = [],
-): { accounts: Array<TA & { openingBalance: number }>; transactions: Array<TT & { postings: LedgerPosting[] }> } {
+): { accounts: Array<TA & { openingBalance?: number; balance: number }>; transactions: Array<TT & { postings: LedgerPosting[] }> } {
   const legacy = migrateLegacyReimbursementAccounts(accounts, transactions);
   const subscribed = migrateSubscriptionAccounts(legacy.accounts);
   const cashSeparated = migrateInvestmentCash(subscribed, holdings);
+  const pendingInvestmentIds = new Set(cashSeparated
+    .filter((account) => /理财账户/.test(account.type) && !Number.isFinite((account as TA & { openingBalance?: number }).openingBalance))
+    .map((account) => account.id));
   const posted = migrateToPostingLedger(cashSeparated, legacy.transactions);
   return {
-    accounts: posted.accounts,
+    accounts: posted.accounts.map((account) => {
+      if (!pendingInvestmentIds.has(account.id)) return account;
+      const { openingBalance: _unconfirmedCash, ...pending } = account;
+      return pending as TA & { openingBalance?: number; balance: number };
+    }),
     transactions: posted.transactions.map((item) => ({
       ...item,
       reimburseAccountId: item.reimburseAccountId,

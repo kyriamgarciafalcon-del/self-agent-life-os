@@ -5,6 +5,7 @@ import {
   migrateInvestmentCash,
   planInvestmentMigrations,
   investmentAccountSnapshot,
+  normalizeFinanceRecords,
 } from '../app/finance-core';
 
 describe('investment migration wizard', () => {
@@ -23,6 +24,12 @@ describe('investment migration wizard', () => {
       inferredDelta: 0,
       choices: ['cash', 'market', 'total'],
     }]);
+  });
+
+  it('keeps legacy investment accounts pending through posting-ledger normalization', () => {
+    const normalized = normalizeFinanceRecords([account], [], holdings).accounts;
+    expect(normalized[0]?.openingBalance).toBeUndefined();
+    expect(planInvestmentMigrations(normalized, holdings)).toHaveLength(1);
   });
 
   it('applies the user choice of market vs cash vs total without guessing', () => {

@@ -4,7 +4,7 @@ import { SettingsGroup, SettingsRow } from './primitives';
 export function LifePage({ onNavigate }: { onNavigate: (tab: 'schedule' | 'health' | 'travel' | 'memory' | 'butler') => void }) {
   return (
     <div className="page life-page">
-      <LargeTitle title="生活"><p>健康、出行和记忆</p></LargeTitle>
+      <LargeTitle title="生活"><h3>健康、出行和记忆</h3></LargeTitle>
       <GroupedList>
         <SettingsGroup title="功能">
           <SettingsRow mark="日" tone="mint" title="日程" subtitle="今天的安排" onClick={() => onNavigate('schedule')} />

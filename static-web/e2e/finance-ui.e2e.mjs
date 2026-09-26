@@ -27,6 +27,7 @@ test('375px finance keeps five sections and ledger-backed account actions', asyn
   await page.addInitScript(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: data });
   await page.goto('/');
   await page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: /财务/ }).click();
+  await page.getByRole('dialog', { name: '理财余额确认' }).getByRole('button', { name: '是现金', exact: true }).click();
   await page.waitForTimeout(250);
 
   const tabs = page.getByRole('tablist', { name: '财务分类' });

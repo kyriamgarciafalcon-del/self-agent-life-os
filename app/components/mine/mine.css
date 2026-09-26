@@ -53,11 +53,13 @@
 }
 
 .life-page > .large-title p,
+.life-page > .large-title h3,
 .profile-page > .large-title p {
   margin: 4px 0 0;
   color: var(--muted);
   font-size: 14px;
   line-height: 20px;
+  font-weight: 400;
 }
 
 .life-page > .grouped-list,

@@ -36,6 +36,36 @@
   color: var(--muted);
 }
 
+.life-page > .large-title,
+.profile-page > .large-title {
+  margin: 0 0 12px;
+  padding: 8px 20px 12px;
+}
+
+.life-page > .large-title h2,
+.profile-page > .large-title h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 34px;
+  line-height: 41px;
+  letter-spacing: 0.37px;
+  font-weight: 700;
+}
+
+.life-page > .large-title p,
+.profile-page > .large-title p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.life-page > .grouped-list,
+.profile-page > .grouped-list {
+  display: grid;
+  min-width: 0;
+}
+
 .sa-group-header {
   margin: 24px 20px 6px;
   padding: 0 16px;

@@ -1,6 +1,7 @@
 import type { ChangeEvent, FormEvent } from 'react';
 import { HowToNative } from './HowToNative';
-import { MineCard, MineHeader, SettingsGroup, SettingsRow } from './primitives';
+import { GroupedList, LargeTitle } from '../../ui';
+import { MineCard, SettingsGroup, SettingsRow } from './primitives';
 
 export type MineTab = 'life' | 'audit' | 'memory' | 'privacy' | 'vault' | 'data';
 
@@ -53,21 +54,22 @@ export function ProfilePage({
 
   return (
     <div className="page profile-page">
-      <MineHeader title="我的" subtitle="设置与扩展" />
+      <LargeTitle title="我的"><p>设置与扩展</p></LargeTitle>
+      <GroupedList>
+        <SettingsGroup title="功能">
+          <SettingsRow mark="生" tone="mint" title="生活" subtitle="健康、出行和记忆" onClick={() => onNavigate('life')} />
+          <SettingsRow mark="权" tone="teal" title="系统权限引导" subtitle="查看真实授权状态与用途说明" onClick={onOpenPermissions} />
+          <SettingsRow mark="史" tone="gray" title="操作历史" subtitle="收件箱确认、忽略、撤销与失败记录" onClick={() => onNavigate('audit')} />
+          <SettingsRow mark="链" tone="orange" title="选择 ZIP 所在文件夹" subtitle="请选择 Download/health，自动跟踪新生成的 Gadgetbridge.zip" onClick={onChooseZip} />
+        </SettingsGroup>
 
-      <SettingsGroup title="功能">
-        <SettingsRow mark="生" tone="mint" title="生活" subtitle="健康、出行和记忆" onClick={() => onNavigate('life')} />
-        <SettingsRow mark="权" tone="teal" title="系统权限引导" subtitle="查看真实授权状态与用途说明" onClick={onOpenPermissions} />
-        <SettingsRow mark="史" tone="gray" title="操作历史" subtitle="收件箱确认、忽略、撤销与失败记录" onClick={() => onNavigate('audit')} />
-        <SettingsRow mark="链" tone="orange" title="选择 ZIP 所在文件夹" subtitle="请选择 Download/health，自动跟踪新生成的 Gadgetbridge.zip" onClick={onChooseZip} />
-      </SettingsGroup>
-
-      <SettingsGroup title="数据与隐私">
-        <SettingsRow mark="忆" tone="ink" title="AI 记忆管理" subtitle="查看、暂停或删除管家记忆" onClick={() => onNavigate('memory')} />
-        <SettingsRow mark="盾" tone="teal" title="隐私与权限" subtitle="分别控制健康、财务和日程摘要" onClick={() => onNavigate('privacy')} />
-        <SettingsRow mark="钥" tone="gray" title="密码库" subtitle="不在网页保存密码明文" onClick={() => onNavigate('vault')} />
-        <SettingsRow mark="数" tone="mint" title="数据中心" subtitle="健康、财务与行动统一摘要" onClick={() => onNavigate('data')} />
-      </SettingsGroup>
+        <SettingsGroup title="数据与隐私">
+          <SettingsRow mark="忆" tone="ink" title="AI 记忆管理" subtitle="查看、暂停或删除管家记忆" onClick={() => onNavigate('memory')} />
+          <SettingsRow mark="盾" tone="teal" title="隐私与权限" subtitle="分别控制健康、财务和日程摘要" onClick={() => onNavigate('privacy')} />
+          <SettingsRow mark="钥" tone="gray" title="密码库" subtitle="不在网页保存密码明文" onClick={() => onNavigate('vault')} />
+          <SettingsRow mark="数" tone="mint" title="数据中心" subtitle="健康、财务与行动统一摘要" onClick={() => onNavigate('data')} />
+        </SettingsGroup>
+      </GroupedList>
 
       <MineCard>
         <form className="ai-box" onSubmit={submitAi}>

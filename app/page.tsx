@@ -474,6 +474,7 @@ export default function Home() {
               setData(normalizeData(parsed));
             }
           } catch {
+            setSchemaFrozen(true);
             setData(normalizeData(parsed));
           }
         }

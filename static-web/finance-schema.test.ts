@@ -89,6 +89,15 @@ describe('schema v4 rollback', () => {
     expect(result.reason).toBe('occurredAt');
   });
 
+  it('freezes writes if the backup or migration step throws', () => {
+    const page = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8');
+    const start = page.indexOf('const decision = applySchemaV4Migration(parsed, backup);');
+    const end = page.indexOf('const leftover = migrateLegacyAiLocalStorage', start);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    expect(page.slice(start, end)).toMatch(/catch\s*\{\s*setSchemaFrozen\(true\);/);
+  });
+
   it('does not restore a backup whose checksum no longer matches', () => {
     const backup = createSchemaV4MigrationBackup(v3, null)!;
     const tampered = { ...backup, payload: { schemaVersion: 3, transactions: [] } };

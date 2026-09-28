@@ -508,12 +508,10 @@ export function transactionFormPhases(
     if (flags.sameCurrency === false) details.push('rate', 'targetAmount');
     return [['kind', 'amount'], details, ['preview']];
   }
-  return [
-    ['kind', 'amount'],
-    ['accountId', 'merchant', 'category', 'currency'],
-    flags.reimbursable ? ['reimbursable', 'reimburseAccountId'] : ['reimbursable'],
-    ['preview'],
-  ];
+  return [[
+    'kind', 'amount', 'accountId', 'merchant', 'category', 'currency',
+    'occurredAt', 'reimbursable', ...(flags.reimbursable ? ['reimburseAccountId'] : []), 'preview',
+  ]];
 }
 
 export function previewPostedImpact(input: { kind: string; amount: number; accountName: string; reimbursable?: boolean; targetName?: string }): string {

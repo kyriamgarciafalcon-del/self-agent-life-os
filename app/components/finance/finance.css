@@ -40,9 +40,26 @@
 }
 
 .finance-toolbar-row select,
+.finance-toolbar-row .finance-month-picker input,
 .finance-page button,
 .finance-page .sa-row {
   min-height:44px;
+}
+.finance-month-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink);
+}
+.finance-month-picker input {
+  box-sizing: border-box;
+  max-width: 145px;
+  border: 0;
+  border-radius: 10px;
+  background: #fff;
+  padding: 0 8px;
+  color: var(--ink);
 }
 
 .finance-toolbar-row select {
@@ -62,6 +79,37 @@
   padding: 0 16px;
   font-size: 15px;
   font-weight: 700;
+}
+
+.finance-ledger-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 16px 12px;
+  color: #8E8E93;
+  font-size: 14px;
+}
+.finance-ledger-search input {
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid rgba(60, 60, 67, 0.12);
+  border-radius: 10px;
+  background: #fff;
+  padding: 0 12px;
+  color: #1C1C1E;
+}
+
+.finance-day-heading {
+  margin: 0;
+  padding: 12px 16px 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #8E8E93;
+}
+.finance-day-group + .finance-day-group {
+  border-top: 8px solid #F2F2F7;
 }
 
 .finance-tabs {

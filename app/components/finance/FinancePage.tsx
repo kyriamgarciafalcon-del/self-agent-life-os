@@ -11,8 +11,7 @@ import { currencyMark, formatAssetAmount, hideMoney, holdingKindLabel, investmen
 import { FINANCE_CURRENCIES, FINANCE_SECTIONS, type Account, type Currency, type FinanceData, type FinanceSection, type InvestmentHolding, type Transaction } from './types';
 import './finance.css';
 
-const TODAY = localDateKey();
-const MONTH = TODAY.slice(0, 7);
+const INITIAL_MONTH = localDateKey().slice(0, 7);
 
 export type FinancePageProps = {
   data: FinanceData;
@@ -76,6 +75,11 @@ export function FinancePage({
   onToggleHideAmounts,
 }: FinancePageProps) {
   const [financeSection, setFinanceSection] = useState<FinanceSection>('总览');
+  const [selectedMonth, setSelectedMonth] = useState(INITIAL_MONTH);
+  const [ledgerSearch, setLedgerSearch] = useState('');
+  const TODAY = localDateKey();
+  const currentMonth = TODAY.slice(0, 7);
+  const MONTH = selectedMonth <= currentMonth ? selectedMonth : currentMonth;
   const selectedHolding = selectedHoldingId ? data.investments.find((item) => item.id === selectedHoldingId) : undefined;
   if (selectedHolding) {
     return <HoldingDetail hideAmounts={hideAmounts} holding={selectedHolding} account={data.accounts.find((item) => item.id === selectedHolding.accountId)} onBack={onBackHolding} onEdit={() => onEditHolding(selectedHolding.id)} />;
@@ -123,6 +127,7 @@ export function FinancePage({
         <h1>财务</h1>
         <p>{Number(MONTH.slice(0, 4))}年{Number(MONTH.slice(5, 7))}月 · 统一账本</p>
         <div className="finance-toolbar-row">
+          <label className="finance-month-picker">账单月份 <input aria-label="账单月份" type="month" max={currentMonth} value={MONTH} onChange={(event) => { if (/^\d{4}-\d{2}$/.test(event.target.value) && event.target.value <= currentMonth) setSelectedMonth(event.target.value); }} /></label>
           <select aria-label="月度收支币种" value={currency} onChange={(event) => onCurrency(event.target.value as Currency)}>
             {FINANCE_CURRENCIES.map((item) => <option key={item}>{item}</option>)}
           </select>
@@ -185,17 +190,17 @@ export function FinancePage({
         </div>
 
         <div className="finance-month-grid">
-          <article><span>本月收入</span><strong className="income">{amt(`+${mark}${money(monthSummary.income)}`)}</strong></article>
-          <article><span>本月支出</span><strong>{amt(`−${mark}${money(monthSummary.expense)}`)}</strong></article>
+          <article><span>{MONTH === currentMonth ? '本月收入' : `${MONTH}收入`}</span><strong className="income">{amt(`+${mark}${money(monthSummary.income)}`)}</strong></article>
+          <article><span>{MONTH === currentMonth ? '本月支出' : `${MONTH}支出`}</span><strong>{amt(`−${mark}${money(monthSummary.expense)}`)}</strong></article>
           <article>
-            <span>本月结余</span>
+            <span>{MONTH === currentMonth ? '本月结余' : `${MONTH}结余`}</span>
             <strong className={monthSummary.balance >= 0 ? 'income' : ''}>
               {amt(`${monthSummary.balance >= 0 ? '+' : '−'}${mark}${money(Math.abs(monthSummary.balance))}`)}
             </strong>
           </article>
         </div>
 
-        <div className="sa-card">
+        {MONTH === currentMonth && <div className="sa-card">
           <p className="sa-group-header" style={{ margin: 0, padding: 0 }}>每日支出</p>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
             <span style={{ color: '#8E8E93', fontSize: 13 }}>今天</span>
@@ -213,7 +218,7 @@ export function FinancePage({
             <span style={{ color: '#8E8E93', fontSize: 13 }}>待报销</span>
             <strong>{amt(`${mark}${money(reimburse)}`)}</strong>
           </div>
-        </div>
+        </div>}
       </div>
 
       <section className="account-section" role="tabpanel" hidden={financeSection !== '账户'}>
@@ -275,8 +280,8 @@ export function FinancePage({
                 <div>
                   <strong>{rule.name}</strong>
                   <small>每月 {rule.dueDay} 日 · {data.accounts.find((account) => account.id === rule.accountId)?.name || '账户待补充'}</small>
-                  <button type="button" disabled={!rule.enabled || rule.lastRunPeriod === MONTH || future} onClick={() => onRunRecurring(rule.id)}>
-                    {rule.lastRunPeriod === MONTH ? '本月已确认' : !rule.enabled ? '已暂停' : future ? `${rule.dueDay}日到期` : rule.kind === 'subscription' ? '生成扣款草稿' : '生成还款草稿'}
+                  <button type="button" disabled={!rule.enabled || rule.lastRunPeriod === currentMonth || future} onClick={() => onRunRecurring(rule.id)}>
+                    {rule.lastRunPeriod === currentMonth ? '本月已确认' : !rule.enabled ? '已暂停' : future ? `${rule.dueDay}日到期` : rule.kind === 'subscription' ? '生成扣款草稿' : '生成还款草稿'}
                   </button>
                 </div>
                 <b>{amt(`${currencyMark(rule.currency)}${money(rule.amount)}`)}</b>
@@ -292,8 +297,12 @@ export function FinancePage({
       </section>
 
       <section className="finance-legacy-block" role="tabpanel" hidden={financeSection !== '流水'}>
-        <div className="section-title"><h2>本月流水 · {currency}</h2></div>
-        <TransactionList hideAmounts={hideAmounts} items={monthItems} accounts={data.accounts} onEdit={onEditTransaction} onDelete={onDeleteTransaction} onSettle={onSettleReimbursement} />
+        <div className="section-title"><h2>{MONTH} 流水 · {currency}</h2></div>
+        <label className="finance-ledger-search">搜索流水<input type="search" value={ledgerSearch} onChange={(event) => setLedgerSearch(event.target.value)} placeholder="商家、分类或账户" /></label>
+        <TransactionList hideAmounts={hideAmounts} items={monthItems.filter((item) => {
+          const query = ledgerSearch.trim().toLocaleLowerCase();
+          return !query || [item.merchant, item.category, data.accounts.find((account) => account.id === item.accountId)?.name || ''].some((text) => text.toLocaleLowerCase().includes(query));
+        })} accounts={data.accounts} onEdit={onEditTransaction} onDelete={onDeleteTransaction} onSettle={onSettleReimbursement} />
       </section>
     </div>
   );
@@ -459,11 +468,19 @@ function HoldingDetail({ holding, account, onBack, onEdit, hideAmounts = false }
 }
 
 export function TransactionList({ items, accounts, onEdit, onDelete, onSettle, hideAmounts = false }: { items: Transaction[]; accounts: Account[]; onEdit: (id: string) => void; onDelete: (id: string) => void; onSettle?: (id: string) => void; hideAmounts?: boolean }) {
-  const visible = items.filter((item) => item.status !== 'reversed' && item.status !== 'superseded' && !item.reversesId);
+  const visible = items.filter((item) => item.status !== 'reversed' && item.status !== 'superseded' && !item.reversesId)
+    .sort((a, b) => (b.occurredAt || b.createdAt || '').localeCompare(a.occurredAt || a.createdAt || ''));
   if (!visible.length) return <div className="finance-empty">还没有流水</div>;
+  const groups = new Map<string, Transaction[]>();
+  for (const item of visible) {
+    const day = (item.occurredAt || item.createdAt || '').slice(0, 10) || '日期待补充';
+    groups.set(day, [...(groups.get(day) || []), item]);
+  }
   return (
     <div className="sa-group">
-      {visible.map((item) => (
+      {[...groups].map(([day, dayItems]) => <div key={day} className="finance-day-group">
+        <h3 className="finance-day-heading">{day}</h3>
+        {dayItems.map((item) => (
         <div className="sa-row" key={item.id}>
           <span className="sa-row-text">
             <strong>{item.merchant}{item.reimbursable && <em> {item.reimbursed ? '已报销' : '待报销'}</em>}</strong>
@@ -478,7 +495,8 @@ export function TransactionList({ items, accounts, onEdit, onDelete, onSettle, h
             <button type="button" className="del" onClick={() => onDelete(item.id)}>删除</button>
           </div>
         </div>
-      ))}
+        ))}
+      </div>)}
     </div>
   );
 }

@@ -2,15 +2,12 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { previewPostedImpact, transactionFormPhases } from '../app/finance-core';
 
-describe('progressive transaction form', () => {
-  it('asks expense amount before reimbursement details and ends on an impact preview', () => {
-    expect(transactionFormPhases('expense')).toEqual([
-      ['kind', 'amount'],
-      ['accountId', 'merchant', 'category', 'currency'],
-      ['reimbursable'],
-      ['preview'],
-    ]);
-    expect(transactionFormPhases('expense', { reimbursable: true }).at(-2)).toEqual(['reimbursable', 'reimburseAccountId']);
+describe('quick transaction form', () => {
+  it('keeps ordinary expenses on one screen with occurrence date and impact preview', () => {
+    expect(transactionFormPhases('expense')).toEqual([[
+      'kind', 'amount', 'accountId', 'merchant', 'category', 'currency', 'occurredAt', 'reimbursable', 'preview',
+    ]]);
+    expect(transactionFormPhases('expense', { reimbursable: true })[0]).toContain('reimburseAccountId');
     expect(transactionFormPhases('income')[0]).toEqual(['kind', 'amount']);
     expect(transactionFormPhases('transfer', { sameCurrency: false })[1]).toContain('rate');
   });

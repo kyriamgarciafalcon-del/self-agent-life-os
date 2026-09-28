@@ -358,6 +358,7 @@ function TransactionComposer({ accounts, currency, editing, onClose, onSubmit, o
     {persist('currency') && <div className="row" hidden={!show('currency') && !show('accountId')}><label hidden={!show('currency')}>币种<select name="currency" defaultValue={editing?.currency ?? source?.currency ?? currency}>{currencies.map((item) => <option key={item}>{item}</option>)}</select></label>{persist('accountId') && <label hidden={!show('accountId')}>账户<select name="accountId" value={accountId} onChange={(event) => setAccountId(event.target.value)}>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {account.currency}</option>)}</select></label>}</div>}
     {persist('merchant') && <label hidden={!show('merchant')}>商家 / 用途<input required={show('merchant')} name="merchant" placeholder="例如：午餐" defaultValue={editing?.merchant} /></label>}
     {persist('category') && <label hidden={!show('category')}>分类<select name="category" defaultValue={editing?.category}><option>餐饮</option><option>交通</option><option>生活</option><option>医疗</option><option>订阅</option><option>其他</option></select></label>}
+    {persist('occurredAt') && <label hidden={!show('occurredAt')}>发生日期<input required name="occurredAt" type="date" max={localDateKey()} defaultValue={editing?.occurredAt?.slice(0, 10) ?? editing?.createdAt?.slice(0, 10) ?? localDateKey()} /></label>}
     {persist('targetAccountId') && <label hidden={!show('targetAccountId')}>转入账户<select name="targetAccountId" value={targetAccountId} onChange={(event) => setTargetAccountId(event.target.value)}>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {account.currency}</option>)}</select></label>}
     {(persist('rate') || persist('targetAmount')) && <div className="row" hidden={!show('rate') && !show('targetAmount')}>{persist('rate') && <label hidden={!show('rate')}>汇率<input name="exchangeRate" type="number" min="0.000001" step="0.000001" defaultValue={editing?.exchangeRate ?? 1} /></label>}{persist('targetAmount') && <label hidden={!show('targetAmount')}>对方金额<input name="targetAmount" type="number" min="0.01" step="0.01" defaultValue={editing?.targetAmount} /></label>}</div>}
     {persist('reimbursable') && <label className="check-option" hidden={!show('reimbursable')}><input name="reimbursable" type="checkbox" checked={reimbursable} onChange={(event) => setReimbursable(event.target.checked)} />待报销（垫付时增加待收回）</label>}
@@ -809,6 +810,8 @@ export default function Home() {
     const sourceAccount = data.accounts.find((account) => account.id === paidFrom);
     const targetAccount = targetId ? data.accounts.find((account) => account.id === targetId) : undefined;
     const reimburseAccount = data.accounts.find((account) => account.id === reimburseTo);
+    const occurredDate = String(form.get('occurredAt') || previous?.occurredAt?.slice(0, 10) || localDateKey());
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(occurredDate) || !Number.isFinite(Date.parse(`${occurredDate}T12:00:00`)) || new Date(`${occurredDate}T12:00:00`).getDate() !== Number(occurredDate.slice(8)) || occurredDate > localDateKey()) { notify('请选择有效且不晚于今天的发生日期'); return; }
     if (!Number.isFinite(amount) || amount <= 0) { notify('请输入大于 0 的金额'); return; }
     if (!canHoldMoney(sourceAccount) && accountRole(sourceAccount?.type ?? '') !== 'payable' && accountRole(sourceAccount?.type ?? '') !== 'liability') { notify('请选择真实的资金或信用卡账户'); return; }
     if (kind === 'transfer' && (!targetAccount || targetId === paidFrom)) { notify('请选择不同的转入账户'); return; }
@@ -849,6 +852,7 @@ export default function Home() {
       reimburseAccountId: reimbursable ? reimburseTo : undefined,
       reimbursed: reimbursable ? (wasSettled ? false : previous?.reimbursed ?? false) : false,
       createdAt: previous?.createdAt ?? localStamp(),
+      occurredAt: `${occurredDate}T12:00:00`,
     };
     const removedPreview = previous ? removePostedTransaction(data.accounts, data.transactions, previous.id) : { accounts: data.accounts, transactions: data.transactions };
     const preview = postFinanceTransaction(removedPreview.accounts, removedPreview.transactions, draft);

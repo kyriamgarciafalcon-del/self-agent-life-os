@@ -62,6 +62,30 @@
 .schedule-page,.capture-page{overflow-x:hidden;padding:12px 0 28px;background:#F2F2F7}
 .schedule-page button{min-height:44px;min-width:44px}
 .capture-page button{min-height:44px;min-width:44px}
+.daily-date-picker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  margin: 0 16px 8px;
+  padding: 0 12px;
+  border: 1px solid rgba(60,60,67,.1);
+  border-radius: 12px;
+  background: #fff;
+  color: #636366;
+  font-size: 14px;
+  font-weight: 600;
+}
+.daily-date-picker input {
+  min-width: 0;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: #2F6F57;
+  font: inherit;
+  text-align: right;
+}
 .daily-segment{display:flex;margin:0 16px 8px;padding:2px;border-radius:10px;background:rgba(118,118,128,0.12)}
 .daily-segment button{flex:1;min-height:44px;border:0;border-radius:8px;background:transparent;color:#1C1C1E;font-weight:600}
 .daily-segment button.on{background:#FFFFFF;color:#2F6F57}

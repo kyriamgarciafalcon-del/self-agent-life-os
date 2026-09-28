@@ -49,14 +49,15 @@ export function SchedulePage({
         <button type="button" className={offset === 0 ? 'on' : ''} onClick={() => onSelectDate(today)}>今天</button>
         <button type="button" className={offset === 1 ? 'on' : ''} onClick={() => onSelectDate(addDaysKey(today, 1))}>明天</button>
       </div>
-      {Math.abs(offset) > 1 ? (
-        <button type="button" className="daily-plain" onClick={() => onSelectDate(today)}>回到今天 · 也可点「前/后」继续浏览</button>
-      ) : (
-        <div className="daily-day-nav">
-          <button type="button" onClick={() => onSelectDate(addDaysKey(selectedDate, -1))}>前一天</button>
-          <button type="button" onClick={() => onSelectDate(addDaysKey(selectedDate, 1))}>后一天</button>
-        </div>
-      )}
+      <label className="daily-date-picker">
+        <span>查看日期</span>
+        <input aria-label="选择日程日期" type="date" value={selectedDate} onChange={(event) => event.target.value && onSelectDate(event.target.value)} />
+      </label>
+      {offset !== 0 && <button type="button" className="daily-plain" onClick={() => onSelectDate(today)}>回到今天</button>}
+      <div className="daily-day-nav">
+        <button type="button" aria-label="前一天" onClick={() => onSelectDate(addDaysKey(selectedDate, -1))}>‹ 前一天</button>
+        <button type="button" aria-label="后一天" onClick={() => onSelectDate(addDaysKey(selectedDate, 1))}>后一天 ›</button>
+      </div>
       <h2 className="daily-group-header">{dayLabel} · {dayItems.length} 项</h2>
       <div className="daily-group">
         {dayItems.length === 0 ? (

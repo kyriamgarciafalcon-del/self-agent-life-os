@@ -81,6 +81,113 @@
   font-weight: 700;
 }
 
+.finance-tab-panel[role="tabpanel"]:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+}
+.finance-networth { order: 0; }
+.finance-month-grid { order: 1; }
+.finance-next-actions { order: 2; }
+.finance-rates { order: 3; }
+.finance-daily-spend { order: 4; }
+.finance-next-actions {
+  margin: 0 16px 12px;
+  padding: 12px;
+  border-radius: 14px;
+  background: #fff;
+}
+.finance-next-actions h2 {
+  margin: 0 0 6px;
+  color: #8E8E93;
+  font-size: 13px;
+  font-weight: 650;
+}
+.finance-next-action {
+  display: flex;
+  min-height: 56px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid rgba(60,60,67,.1);
+}
+.finance-next-action span { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.finance-next-action strong { font-size: 14px; }
+.finance-next-action small { color: #8E8E93; font-size: 12px; }
+.finance-next-action button {
+  flex: none;
+  min-height: 44px;
+  border: 0;
+  border-radius: 10px;
+  background: #E7F2EC;
+  padding: 0 10px;
+  color: #2F6F57;
+  font-size: 12px;
+  font-weight: 650;
+}
+.finance-rates {
+  margin: 0 16px 12px;
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+}
+.finance-rates > summary {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  color: #2F6F57;
+  font-size: 14px;
+  font-weight: 650;
+  cursor: pointer;
+  list-style: none;
+}
+.finance-rates > summary::-webkit-details-marker { display: none; }
+.finance-rates > summary::after { content: '⌄'; font-size: 18px; }
+.finance-rates[open] > summary::after { content: '⌃'; }
+.finance-rates .sa-group { margin: 0; border-radius: 0; }
+.finance-month-grid { margin-top: 0; }
+.finance-daily-spend { order: 3; }
+
+.transaction-amount {
+  margin: 4px 0 8px;
+  padding: 10px 14px 12px;
+  border-radius: 16px;
+  background: #F2F2F7;
+}
+.transaction-amount input {
+  min-height: 64px;
+  padding: 0 2px;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  font-size: 36px !important;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.transaction-kind-switch {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  min-height: 48px;
+  padding: 3px;
+  border-radius: 12px;
+  background: #F2F2F7;
+}
+.transaction-kind-switch button {
+  min-height: 44px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #636366;
+  font-weight: 600;
+}
+.transaction-kind-switch button.selected {
+  background: #fff;
+  color: #2F6F57;
+  box-shadow: 0 1px 3px rgba(28,28,30,.12);
+}
+
 .finance-ledger-search {
   display: flex;
   align-items: center;

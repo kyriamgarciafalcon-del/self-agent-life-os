@@ -20,5 +20,13 @@ test('home exposes three direct actions for the primary record workflows', async
   await actions.getByRole('button', { name: '记一笔' }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(page.getByRole('heading', { name: '确认一笔流水' })).toBeVisible();
-  await expect(page.getByLabel('发生日期')).toBeVisible();
+  const composer = page.getByRole('dialog');
+  await expect(composer.getByRole('group', { name: '流水类型' })).toBeVisible();
+  await expect(composer.getByRole('button', { name: '支出' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(composer.getByLabel('金额')).toBeVisible();
+  await expect(composer.getByLabel('发生日期')).toBeVisible();
+  await composer.getByRole('button', { name: '收入' }).click();
+  await expect(composer.locator('input[name="kind"]')).toHaveValue('income');
+  await composer.getByRole('button', { name: '支出' }).click();
+  await expect(composer.locator('input[name="kind"]')).toHaveValue('expense');
 });

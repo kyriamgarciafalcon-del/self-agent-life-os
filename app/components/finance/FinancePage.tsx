@@ -110,6 +110,8 @@ export function FinancePage({
   const todayExpense = getMonthlyReport(transactionsInPeriod(monthItems, TODAY), currency).expense;
   const reimburse = getOutstandingReimbursements(data.transactions, currency);
   const currentDay = Number(TODAY.slice(-2));
+  const receivableAccounts = data.accounts.filter((account) => accountRole(account.type) === 'receivable' && account.currency === currency && Number(account.balance) > 0);
+  const dueRecurringRules = data.recurringRules.filter((rule) => rule.enabled && rule.currency === currency && rule.lastRunPeriod !== currentMonth && rule.dueDay <= currentDay);
   const chartDays = Array.from({ length: Math.min(6, currentDay) }, (_, index) => Math.max(1, currentDay - 5) + index).map((day) => ({
     day,
     amount: getMonthlyReport(transactionsInPeriod(monthItems, `${MONTH}-${String(day).padStart(2, '0')}`), currency).expense,
@@ -164,7 +166,20 @@ export function FinancePage({
           {!data.accounts.length && <div className="account-hero-ops"><button type="button" onClick={onNewAccount}>添加第一个账户</button></div>}
         </div>
 
-        <p className="sa-group-header">人民币汇率</p>
+        {(receivableAccounts.length > 0 || dueRecurringRules.length > 0) && <section className="finance-next-actions">
+          <h2>需要处理</h2>
+          {receivableAccounts.map((account) => <div className="finance-next-action" key={account.id}>
+            <span><strong>待收回</strong><small>{account.name} · {currencyMark(account.currency)}{money(account.balance)}</small></span>
+            <button type="button" aria-label="查看待收回" onClick={() => onSelectAccount(account.id)}>查看账户</button>
+          </div>)}
+          {dueRecurringRules.map((rule) => <div className="finance-next-action" key={rule.id}>
+            <span><strong>{rule.kind === 'subscription' ? '订阅扣款' : '信用卡还款'}</strong><small>{rule.name} · {currencyMark(rule.currency)}{money(rule.amount)}</small></span>
+            <button type="button" aria-label={`生成扣款草稿 · ${rule.name}`} onClick={() => onRunRecurring(rule.id)}>{rule.kind === 'subscription' ? '生成扣款草稿' : '生成还款草稿'}</button>
+          </div>)}
+        </section>}
+
+        <details className="finance-rates">
+          <summary>参考汇率与估值</summary>
         <div className="sa-group">
           <div className="sa-row">
             <span className="sa-row-text"><strong>参考汇率</strong><small>每天 18:00 更新一次，只改估值，不改流水。</small></span>
@@ -188,6 +203,7 @@ export function FinancePage({
             </div>
           )) : <div className="sa-row"><span className="sa-row-text"><strong>还没有网络汇率</strong><small>点「每日更新」，或手动补充。</small></span></div>}
         </div>
+        </details>
 
         <div className="finance-month-grid">
           <article><span>{MONTH === currentMonth ? '本月收入' : `${MONTH}收入`}</span><strong className="income">{amt(`+${mark}${money(monthSummary.income)}`)}</strong></article>
@@ -200,7 +216,7 @@ export function FinancePage({
           </article>
         </div>
 
-        {MONTH === currentMonth && <div className="sa-card">
+        {MONTH === currentMonth && <div className="sa-card finance-daily-spend">
           <p className="sa-group-header" style={{ margin: 0, padding: 0 }}>每日支出</p>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
             <span style={{ color: '#8E8E93', fontSize: 13 }}>今天</span>

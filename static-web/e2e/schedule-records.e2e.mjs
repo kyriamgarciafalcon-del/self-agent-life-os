@@ -67,6 +67,14 @@ test('375px schedule empty state, segments, and native reminder bridge on save',
   await expect(schedule.getByRole('button', { name: '明天' })).toBeVisible();
   await expect(schedule.getByRole('button', { name: '前一天' })).toBeVisible();
   await expect(schedule.getByRole('button', { name: '后一天' })).toBeVisible();
+  await expect(schedule.getByLabel('选择日程日期')).toHaveValue(shanghaiStamp(9).slice(0, 10));
+  const futureDate = await schedule.getByLabel('选择日程日期').evaluate((input) => {
+    const date = new Date(`${input.value}T12:00:00Z`);
+    date.setUTCDate(date.getUTCDate() + 4);
+    return date.toISOString().slice(0, 10);
+  });
+  await schedule.getByLabel('选择日程日期').fill(futureDate);
+  await expect(schedule.getByLabel('选择日程日期')).toHaveValue(futureDate);
   await expect(schedule.getByText('这一天没有日程')).toBeVisible();
 
   const overflow = await page.evaluate(() => {
@@ -83,6 +91,7 @@ test('375px schedule empty state, segments, and native reminder bridge on save',
   expect(shortActions).toEqual([]);
 
   await page.getByRole('button', { name: '新建日程' }).click();
+  await expect(page.locator('input[name="date"]')).toHaveValue(futureDate);
   await page.getByLabel('日程名称').fill('桥接提醒会议与跨部门项目同步安排');
   await page.locator('input[name="time"]').fill('23:50');
   await page.getByRole('button', { name: '确认添加' }).click();

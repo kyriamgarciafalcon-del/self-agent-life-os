@@ -36,6 +36,13 @@ test('375px finance keeps five sections and ledger-backed account actions', asyn
   await expect(page.getByRole('button', { name: '手动汇率' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '编辑' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '删除' })).toHaveCount(0);
+  const valuationDetails = page.locator('details.finance-rates');
+  await expect(valuationDetails).not.toHaveAttribute('open', '');
+  await expect(valuationDetails.locator('summary')).toHaveText('参考汇率与估值');
+  const summaryY = await page.locator('.finance-month-grid').first().evaluate((node) => node.getBoundingClientRect().y);
+  const ratesY = await valuationDetails.evaluate((node) => node.getBoundingClientRect().y);
+  expect(summaryY).toBeLessThan(ratesY);
+  await valuationDetails.locator('summary').click();
   await expect(page.getByRole('button', { name: '每日更新' })).toBeVisible();
   await expect(page.getByRole('button', { name: '新建流水' })).toBeVisible();
   await expect(page.getByRole('button', { name: '隐藏金额' })).toBeVisible();
@@ -53,7 +60,7 @@ test('375px finance keeps five sections and ledger-backed account actions', asyn
   await tabs.getByRole('tab', { name: '投资' }).click();
   await expect(page.getByText('指数基金')).toBeVisible();
   await tabs.getByRole('tab', { name: '周期账单' }).click();
-  await expect(page.getByText('云盘')).toBeVisible();
+  await expect(page.getByText('云盘', { exact: true })).toBeVisible();
   await tabs.getByRole('tab', { name: '流水' }).click();
   await expect(page.getByText('午餐')).toBeVisible();
 

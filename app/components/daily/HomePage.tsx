@@ -34,6 +34,7 @@ export function HomePage({
   recentLedger,
   onClearDemo,
   onNavigate,
+  onAddTransaction,
   onAddFirstSchedule,
   onAddFirstAccount,
 }: {
@@ -53,6 +54,7 @@ export function HomePage({
   recentLedger: ReactNode;
   onClearDemo: () => void;
   onNavigate: (tab: HomeShortcutId | 'schedule' | 'finance' | 'profile' | 'capture') => void;
+  onAddTransaction: () => void;
   onAddFirstSchedule: () => void;
   onAddFirstAccount: () => void;
 }) {
@@ -68,6 +70,11 @@ export function HomePage({
       <LargeTitle kicker={todayLabel} title={greeting}>
         <p>所有内容先整理、确认后再保存。</p>
       </LargeTitle>
+      <div className="home-primary-actions" role="group" aria-label="快速操作">
+        <button type="button" className="primary" aria-label="记一笔" onClick={onAddTransaction}><span aria-hidden="true">＋</span>记一笔</button>
+        <button type="button" aria-label="新建日程" onClick={onAddFirstSchedule}><span aria-hidden="true">◷</span>新建日程</button>
+        <button type="button" aria-label="快速记录" onClick={() => onNavigate('capture')}><span aria-hidden="true">✎</span>快速记录</button>
+      </div>
       {inboxPendingCount > 0 && (
         <section className="inbox-home">
           <h2 className="daily-group-header">待确认</h2>

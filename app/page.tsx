@@ -1469,6 +1469,7 @@ export default function Home() {
       recentLedger={<TransactionList hideAmounts={data.hideAmounts} items={recentTransactions} accounts={data.accounts} onEdit={(id) => { setEditingTransactionId(id); setSheet('transaction'); }} onDelete={(id) => deleteTransaction(id)} onSettle={(id) => settleReimbursement(id)} />}
       onClearDemo={clearLocalData}
       onNavigate={(id) => navigate(id)}
+      onAddTransaction={() => { setEditingTransactionId(null); setSheet('transaction'); }}
       onAddFirstSchedule={() => { setEditingScheduleId(null); navigate('schedule'); setSheet('schedule'); }}
       onAddFirstAccount={() => { navigate('finance'); setEditingAccountId(null); setSheet('account'); }}
     />}

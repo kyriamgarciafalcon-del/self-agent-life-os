@@ -28,5 +28,11 @@
     "../app/components/daily/**/*.tsx",
     "../app/components/finance/**/*.ts",
     "../app/components/finance/**/*.tsx"
+  ],
+  "exclude": [
+    "**/*.test.ts",
+    "**/node_modules/**",
+    "./dist/**",
+    "./test-results/**"
   ]
 }

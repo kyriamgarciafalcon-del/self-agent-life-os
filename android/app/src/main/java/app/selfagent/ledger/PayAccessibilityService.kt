@@ -46,12 +46,20 @@ class PayAccessibilityService : AccessibilityService() {
         val pkg = event.packageName?.toString() ?: return
         if (pkg !in setOf("com.tencent.mm", "com.eg.android.AlipayGphone", "com.unionpay")) return
 
-        if (queuedPackage != pkg) queuedEventCount = 0
+        val eventWindowId = event.windowId
+        val sameWindow = queuedPackage == pkg && queuedWindowId == eventWindowId
+        if (!sameWindow) queuedEventCount = 0
+        val previousEventText = queuedFallbackText.takeIf { sameWindow }.orEmpty()
         queuedPackage = pkg
+        queuedWindowId = eventWindowId
         queuedEventType = event.eventType
         queuedEventCount = (queuedEventCount + 1).coerceAtMost(1_000)
-        queuedFallbackText = event.source?.let { collect(it, StringBuilder(), 0).toString() }.orEmpty()
-        queuedWindowId = event.windowId
+        val sourceText = event.source?.let { collect(it, StringBuilder(), 0).toString() }.orEmpty()
+        queuedFallbackText = AccessibilityPaymentText.combine(
+            nodeText = sourceText,
+            eventTexts = event.text.map { it?.toString().orEmpty() },
+            previousEventText = previousEventText,
+        )
         queuedEventTime = event.eventTime
         scanHandler.removeCallbacks(scanTask)
         scanHandler.postDelayed(scanTask, cadence.delayUntilNextScan(System.currentTimeMillis()))
@@ -63,7 +71,11 @@ class PayAccessibilityService : AccessibilityService() {
             ?.takeIf { it.packageName?.toString() == pkg }
             ?.let { collect(it, StringBuilder(), 0).toString() }
             .orEmpty()
-        val text = rootText.ifBlank { fallbackText }
+        val text = AccessibilityPaymentText.combine(
+            nodeText = rootText,
+            eventTexts = emptyList(),
+            previousEventText = fallbackText,
+        )
         if (text.isBlank()) {
             PayCaptureDiagnostics.scan(this, 0, "empty")
             return

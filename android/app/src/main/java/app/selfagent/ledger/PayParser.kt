@@ -15,7 +15,7 @@ data class PendingTxn(
 
 object PayParser {
     private val promoHint = Regex("签到|京豆|红包|去领取|立即领取|点击领取|每天赚|赚\\s*\\d+(?:\\.\\d+)?\\s*(?:块|元)|优惠券|抽奖|推广|广告")
-    private val payHint = Regex("支付成功|付款成功|已支付|已付款|消费成功|转账成功|收款成功|到账成功|已到账|已收款|支付完成|付款完成|转账到账|收款到账|款项到账|到账通知|到账提醒")
+    private val payHint = Regex("支付成功|付款成功|已支付|已付款|消费成功|转账成功|收款成功|到账成功|已到账|已收款|支付完成|付款完成|转账到账|收款到账|款项到账|到账通知|到账提醒|你发起了一笔转账")
     private val yen = Regex("[¥￥]\\s*(\\d+(?:\\.\\d{1,2})?)")
     private val yuan = Regex("(\\d+(?:\\.\\d{1,2})?)\\s*元")
 

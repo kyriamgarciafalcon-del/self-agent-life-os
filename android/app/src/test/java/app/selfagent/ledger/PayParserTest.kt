@@ -1,6 +1,7 @@
 package app.selfagent.ledger
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -27,6 +28,20 @@ class PayParserTest {
         )
 
         assertNull(parsed)
+    }
+
+    @Test
+    fun `wechat outgoing transfer card is recognized as an expense`() {
+        val parsed = PayParser.parse(
+            pkg = "com.tencent.mm",
+            raw = "¥0.01 你发起了一笔转账 转账",
+            at = 1_800_000L,
+            channel = "accessibility",
+        )
+
+        assertNotNull(parsed)
+        assertEquals(0.01, parsed?.amount ?: 0.0, 0.001)
+        assertEquals("out", parsed?.dir)
     }
 
     @Test

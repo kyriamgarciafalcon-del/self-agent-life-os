@@ -8,8 +8,13 @@ object ConfirmBus {
 
     fun post(pending: PendingTxn, context: Context? = null) {
         val app = context?.applicationContext
-        if (app != null && !TxnGuard.shouldPost(app, pending)) return
-        app?.let { LedgerNotifier.show(it, pending) }
+        if (app != null && !TxnGuard.shouldPost(app, pending)) {
+            PayCaptureDiagnostics.duplicate(app)
+            return
+        }
+        app?.let {
+            PayCaptureDiagnostics.notification(it, LedgerNotifier.show(it, pending))
+        }
         sink?.invoke(pending)
     }
 

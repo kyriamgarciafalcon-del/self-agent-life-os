@@ -6,6 +6,7 @@ import android.os.Build
 import android.provider.Settings
 import android.view.autofill.AutofillManager
 import app.selfagent.ledger.PayAccessibilityService
+import app.selfagent.ledger.PayCaptureDiagnostics
 import app.selfagent.vault.SelfAgentAutofillService
 import org.json.JSONObject
 
@@ -31,6 +32,7 @@ object CapabilityStatus {
             .put("notificationListener", listener)
             .put("autofill", autofill && supported)
             .put("notifications", notifications)
+            .put("paymentCapture", PayCaptureDiagnostics.snapshot(context))
             .toString()
     }
 }

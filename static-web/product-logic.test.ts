@@ -57,6 +57,7 @@ import {
   normalizePermissionOnboarding,
   permissionOnboardingCards,
   permissionOnboardingProgress,
+  parseCapabilityStatus,
   shouldShowPermissionOnboarding,
   pendingInboxCount,
   postFinanceTransaction,
@@ -1108,5 +1109,46 @@ describe('v2 permission onboarding persistence', () => {
     expect(partialReminders.find((card) => card.id === 'reminders')?.enabled).toBe(true);
     const unknownExact = permissionOnboardingProgress({ notifications: true, exactAlarms: null, fullScreenIntent: null });
     expect(unknownExact.find((card) => card.id === 'reminders')?.enabled).toBe(true);
+  });
+
+  it('parses only privacy-safe payment capture diagnostic fields', () => {
+    const status = parseCapabilityStatus({
+      accessibility: true,
+      notificationListener: true,
+      notifications: true,
+      paymentCapture: {
+        active: true,
+        serviceStarts: 2,
+        accessibilityEvents: 5,
+        scans: 3,
+        nonEmptyScans: 2,
+        matches: 1,
+        parsed: 1,
+        duplicates: 0,
+        notificationsSubmitted: 1,
+        lastOutcome: 'notified',
+        lastPackage: 'wechat',
+        lastEventType: 2048,
+        lastTextLength: 64,
+        rawText: 'private transaction text',
+      },
+    });
+
+    expect(status.paymentCapture).toEqual({
+      active: true,
+      serviceStarts: 2,
+      accessibilityEvents: 5,
+      scans: 3,
+      nonEmptyScans: 2,
+      matches: 1,
+      parsed: 1,
+      duplicates: 0,
+      notificationsSubmitted: 1,
+      lastOutcome: 'notified',
+      lastPackage: 'wechat',
+      lastEventType: 2048,
+      lastTextLength: 64,
+    });
+    expect(JSON.stringify(status)).not.toContain('private transaction text');
   });
 });

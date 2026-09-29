@@ -30,6 +30,7 @@ import app.selfagent.health.HealthImportDiagnostics
 import app.selfagent.health.HealthImportActivity
 import app.selfagent.health.GadgetbridgeImportActivity
 import app.selfagent.ledger.ConfirmBus
+import app.selfagent.ledger.PayCaptureDiagnostics
 import app.selfagent.ledger.PendingTxn
 import app.selfagent.quotes.QuoteBus
 import app.selfagent.quotes.QuoteSync
@@ -379,6 +380,16 @@ class MainActivity : Activity() {
 
         @JavascriptInterface
         fun capabilityStatus(): String = CapabilityStatus.json(this@MainActivity)
+
+        @JavascriptInterface
+        fun resetPaymentCaptureDiagnostics() {
+            PayCaptureDiagnostics.reset(this@MainActivity)
+        }
+
+        @JavascriptInterface
+        fun stopPaymentCaptureDiagnostics() {
+            PayCaptureDiagnostics.stop(this@MainActivity)
+        }
 
         @JavascriptInterface
         fun syncReminders(json: String): String {

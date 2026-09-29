@@ -16,7 +16,7 @@ object LedgerNotifier {
     const val ACTION_IGNORE = "app.selfagent.IGNORE_TXN"
     const val EXTRA_NOTIFY_ID = "notify_id"
 
-    fun show(context: Context, txn: PendingTxn) {
+    fun show(context: Context, txn: PendingTxn): Boolean {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= 26 && nm.getNotificationChannel(CHANNEL) == null) {
             nm.createNotificationChannel(
@@ -27,6 +27,8 @@ object LedgerNotifier {
                 }
             )
         }
+        val channelAllowed = Build.VERSION.SDK_INT < 26 || nm.getNotificationChannel(CHANNEL)?.importance != NotificationManager.IMPORTANCE_NONE
+        if (!nm.areNotificationsEnabled() || !channelAllowed) return false
         val notifyId = (txn.id.hashCode() and 0x7fffffff).let { if (it == 0) 1 else it }
         val json = ConfirmBus.toJson(txn)
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -59,7 +61,12 @@ object LedgerNotifier {
             .addAction(Notification.Action.Builder(0, "确认入账", confirm).build())
             .addAction(Notification.Action.Builder(0, "忽略", ignore).build())
             .build()
-        nm.notify(notifyId, notification)
+        return try {
+            nm.notify(notifyId, notification)
+            true
+        } catch (_: SecurityException) {
+            false
+        }
     }
 
     private fun sourceLabel(source: String) = when (source) {

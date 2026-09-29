@@ -255,6 +255,33 @@
   margin-top: 12px;
 }
 
+.payment-capture-diagnostics h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.payment-capture-diagnostics > p,
+.payment-capture-diagnostics small {
+  display: block;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.payment-capture-diagnostic-counts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px 12px;
+  margin-top: 10px;
+}
+
+.payment-capture-diagnostic-counts p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .sa-actions button,
 .native-actions button,
 .profile-actions button,

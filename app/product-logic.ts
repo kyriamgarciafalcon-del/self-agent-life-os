@@ -1632,6 +1632,22 @@ export type PermissionOnboardingCard = {
   cannotRead: string;
 };
 
+export type PaymentCaptureSnapshot = {
+  active: boolean;
+  serviceStarts: number;
+  accessibilityEvents: number;
+  scans: number;
+  nonEmptyScans: number;
+  matches: number;
+  parsed: number;
+  duplicates: number;
+  notificationsSubmitted: number;
+  lastOutcome: 'idle' | 'empty' | 'password-screen' | 'no-match' | 'parsed' | 'duplicate-local' | 'duplicate-guard' | 'notified' | 'notification-blocked';
+  lastPackage: 'wechat' | 'alipay' | 'unionpay' | 'unknown';
+  lastEventType: number;
+  lastTextLength: number;
+};
+
 export type CapabilityStatusSnapshot = {
   accessibility?: boolean | null;
   notifications?: boolean | null;
@@ -1640,6 +1656,7 @@ export type CapabilityStatusSnapshot = {
   exactAlarms?: boolean | null;
   fullScreenIntent?: boolean | null;
   healthConnect?: boolean | null;
+  paymentCapture?: PaymentCaptureSnapshot;
 };
 
 export function shouldShowPermissionOnboarding(state: unknown, options?: { reopen?: boolean }): boolean {
@@ -1702,6 +1719,30 @@ export function permissionOnboardingProgress(
 export function parseCapabilityStatus(raw: unknown): CapabilityStatusSnapshot {
   const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
   const optional = (key: string): boolean | null => (source[key] === true ? true : source[key] === false ? false : null);
+  const candidate = source.paymentCapture && typeof source.paymentCapture === 'object' && !Array.isArray(source.paymentCapture)
+    ? source.paymentCapture as Record<string, unknown>
+    : null;
+  const count = (key: string): number => {
+    const value = candidate?.[key];
+    return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+  };
+  const outcomes: PaymentCaptureSnapshot['lastOutcome'][] = ['idle', 'empty', 'password-screen', 'no-match', 'parsed', 'duplicate-local', 'duplicate-guard', 'notified', 'notification-blocked'];
+  const packages: PaymentCaptureSnapshot['lastPackage'][] = ['wechat', 'alipay', 'unionpay', 'unknown'];
+  const diagnostic: PaymentCaptureSnapshot | undefined = candidate ? {
+    active: candidate.active === true,
+    serviceStarts: count('serviceStarts'),
+    accessibilityEvents: count('accessibilityEvents'),
+    scans: count('scans'),
+    nonEmptyScans: count('nonEmptyScans'),
+    matches: count('matches'),
+    parsed: count('parsed'),
+    duplicates: count('duplicates'),
+    notificationsSubmitted: count('notificationsSubmitted'),
+    lastOutcome: outcomes.includes(candidate.lastOutcome as PaymentCaptureSnapshot['lastOutcome']) ? candidate.lastOutcome as PaymentCaptureSnapshot['lastOutcome'] : 'idle',
+    lastPackage: packages.includes(candidate.lastPackage as PaymentCaptureSnapshot['lastPackage']) ? candidate.lastPackage as PaymentCaptureSnapshot['lastPackage'] : 'unknown',
+    lastEventType: count('lastEventType'),
+    lastTextLength: count('lastTextLength'),
+  } : undefined;
   return {
     accessibility: source.accessibility === true,
     notifications: source.notifications === true,
@@ -1710,6 +1751,7 @@ export function parseCapabilityStatus(raw: unknown): CapabilityStatusSnapshot {
     exactAlarms: optional('exactAlarms'),
     fullScreenIntent: optional('fullScreenIntent'),
     healthConnect: optional('healthConnect'),
+    ...(diagnostic ? { paymentCapture: diagnostic } : {}),
   };
 }
 

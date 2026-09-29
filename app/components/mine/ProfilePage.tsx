@@ -1,14 +1,39 @@
 import type { ChangeEvent, FormEvent } from 'react';
+import type { PaymentCaptureSnapshot } from '../../product-logic';
 import { HowToNative } from './HowToNative';
 import { GroupedList, LargeTitle } from '../../ui';
 import { MineCard, SettingsGroup, SettingsRow } from './primitives';
 
 export type MineTab = 'life' | 'audit' | 'memory' | 'privacy' | 'vault' | 'data';
 
+const EMPTY_PAYMENT_CAPTURE_SNAPSHOT: PaymentCaptureSnapshot = {
+  active: false,
+  serviceStarts: 0, accessibilityEvents: 0, scans: 0, nonEmptyScans: 0,
+  matches: 0, parsed: 0, duplicates: 0, notificationsSubmitted: 0,
+  lastOutcome: 'idle', lastPackage: 'unknown', lastEventType: 0, lastTextLength: 0,
+};
+const PAYMENT_CAPTURE_OUTCOME_LABELS: Record<PaymentCaptureSnapshot['lastOutcome'], string> = {
+  idle: '尚无扫描',
+  empty: '事件到达，但没有读到界面文字',
+  'password-screen': '密码或验证码页面，按规则跳过',
+  'no-match': '读到文字，但支付规则未命中',
+  parsed: '已解析为待确认草稿',
+  'duplicate-local': '重复界面事件，已去重',
+  'duplicate-guard': '已由交易去重器拦截',
+  notified: '已向系统提交记账通知',
+  'notification-blocked': '系统未允许提交记账通知',
+};
+const PAYMENT_CAPTURE_SOURCE_LABELS: Record<PaymentCaptureSnapshot['lastPackage'], string> = {
+  wechat: '微信', alipay: '支付宝', unionpay: '云闪付', unknown: '无来源',
+};
+
 export function ProfilePage({
   theme,
   nativeOn,
   aiConfig,
+  caps,
+  onResetPaymentDiagnostics,
+  onStopPaymentDiagnostics,
   onNavigate,
   onOpenPermissions,
   onChooseZip,
@@ -26,7 +51,10 @@ export function ProfilePage({
 }: {
   theme: 'light' | 'dark';
   nativeOn: boolean;
-  aiConfig: { baseUrl: string; model: string; apiKey: string };
+  aiConfig: { baseUrl: string; model: string; apiKey: string; configured: boolean };
+  caps: { accessibility?: boolean | null; notifications?: boolean | null; notificationListener?: boolean | null; paymentCapture?: PaymentCaptureSnapshot };
+  onResetPaymentDiagnostics: () => void;
+  onStopPaymentDiagnostics: () => void;
   onNavigate: (tab: MineTab) => void;
   onOpenPermissions: () => void;
   onChooseZip: () => void;
@@ -51,6 +79,7 @@ export function ProfilePage({
       apiKey: String(form.get('apiKey') ?? '').trim(),
     });
   }
+  const diagnostic = caps.paymentCapture ?? EMPTY_PAYMENT_CAPTURE_SNAPSHOT;
 
   return (
     <div className="page profile-page">
@@ -92,6 +121,33 @@ export function ProfilePage({
             <button type="button" className="sa-btn sa-btn-secondary" onClick={onOpenNotification}>第2步：打开通知使用权</button>
             <button type="button" className="sa-btn sa-btn-secondary" onClick={onOpenAutofill}>第3步：设为自动填充服务</button>
           </div>
+        </MineCard>
+      ) : null}
+
+      {nativeOn ? (
+        <MineCard>
+          <section className="payment-capture-diagnostics" aria-label="自动记账诊断">
+            <h2>自动记账诊断</h2>
+            <p>只在本机保存计数、来源和处理结果；不保存聊天内容、金额或商户。</p>
+            <p>诊断状态：{diagnostic.active ? '运行中（最长 10 分钟）' : '已停止'}</p>
+            <p>无障碍：{caps.accessibility ? '已开启' : '未开启'} · 通知读取：{caps.notificationListener ? '已开启' : '未开启'} · 应用通知：{caps.notifications ? '已开启' : '未开启'}</p>
+            <div className="payment-capture-diagnostic-counts">
+              <p>服务启动：{diagnostic.serviceStarts}</p>
+              <p>微信界面事件：{diagnostic.accessibilityEvents}</p>
+              <p>扫描次数：{diagnostic.scans}</p>
+              <p>扫描中读到文字：{diagnostic.nonEmptyScans}</p>
+              <p>规则命中：{diagnostic.matches}</p>
+              <p>已解析草稿：{diagnostic.parsed}</p>
+              <p>重复拦截：{diagnostic.duplicates}</p>
+              <p>通知已提交：{diagnostic.notificationsSubmitted}</p>
+            </div>
+            <p>最近结果：{PAYMENT_CAPTURE_OUTCOME_LABELS[diagnostic.lastOutcome]} · {PAYMENT_CAPTURE_SOURCE_LABELS[diagnostic.lastPackage]} · 事件 {diagnostic.lastEventType} · 文字长度 {diagnostic.lastTextLength}</p>
+            <div className="sa-actions">
+              <button type="button" className="sa-btn sa-btn-secondary" onClick={onResetPaymentDiagnostics}>清零并开始 10 分钟检测</button>
+              <button type="button" className="sa-btn sa-btn-secondary" onClick={onStopPaymentDiagnostics} disabled={!diagnostic.active}>停止诊断</button>
+            </div>
+            <small>开始后关闭再开启无障碍服务，再回微信重新打开原有转账卡片，最后返回此页查看。计数只在本机保留，10 分钟后自动停止。</small>
+          </section>
         </MineCard>
       ) : null}
 

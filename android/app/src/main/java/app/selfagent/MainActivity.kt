@@ -59,6 +59,7 @@ class MainActivity : Activity() {
     }
 
     private lateinit var webView: WebView
+    private val webPageReadyGate = WebPageReadyGate()
     private val pendingTransactions = ConcurrentLinkedQueue<PendingTxn>()
     private val pendingTravels = ConcurrentLinkedQueue<JSONObject>()
     private val pendingHealth = ConcurrentLinkedQueue<JSONObject>()
@@ -67,7 +68,7 @@ class MainActivity : Activity() {
     private lateinit var capture: CaptureController
     private var pendingBackupJson: String? = null
     private var backCallback: OnBackInvokedCallback? = null
-    private var pageReady = false
+
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -91,11 +92,6 @@ class MainActivity : Activity() {
             settings.layoutAlgorithm = WebSettings.LayoutAlgorithm.TEXT_AUTOSIZING
             settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
             webViewClient = object : WebViewClient() {
-                override fun onPageFinished(view: WebView?, url: String?) {
-                    pageReady = true
-                    applyLedgerIntent(intent)
-                    flushPending()
-                }
                 override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
                     return assetLoader.shouldInterceptRequest(request.url)
                 }
@@ -128,6 +124,8 @@ class MainActivity : Activity() {
             }
         }
         setContentView(webView)
+        val launchIntent = intent
+        webPageReadyGate.dispatch(Runnable { applyLedgerIntent(launchIntent) })
         if (Build.VERSION.SDK_INT >= 33) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 76)
         }
@@ -178,7 +176,7 @@ class MainActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (pageReady) applyLedgerIntent(intent)
+        webPageReadyGate.dispatch(Runnable { applyLedgerIntent(intent) })
     }
 
     override fun onResume() {
@@ -211,6 +209,7 @@ class MainActivity : Activity() {
     }
 
     private fun flushPending() {
+        if (!webPageReadyGate.isReady()) return
         while (true) {
             val transaction = pendingTransactions.poll() ?: break
             val json = ConfirmBus.toJson(transaction)
@@ -275,6 +274,14 @@ class MainActivity : Activity() {
     }
 
     inner class AndroidBridge {
+        @JavascriptInterface
+        fun webAppReady() {
+            runOnUiThread {
+                webPageReadyGate.markReady()
+                flushPending()
+            }
+        }
+
         @JavascriptInterface
         fun openNotificationAccess() {
             startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))

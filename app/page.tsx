@@ -311,6 +311,49 @@ function withInboxEvent(current: AppData, event: InboxLifecycleEvent): AppData {
   const next = applyInboxLifecycle({ inboxItems: current.inboxItems, auditLog: current.auditLog }, event);
   return { ...current, inboxItems: next.inboxItems, auditLog: next.auditLog };
 }
+function autoConfirmPaymentEvent(current: AppData, incoming: InboxItem, timestamp: string): { data: AppData; status: 'posted' | 'reused' | 'needs-review' } {
+  const queued = withInboxEvent(current, { type: 'enqueue', item: incoming, timestamp, id: uid('audit') });
+  const item = queued.inboxItems.find((entry) => entry.status === 'pending' && entry.dedupeKey === incoming.dedupeKey);
+  if (!item || (item.proposedAction !== 'create_expense' && item.proposedAction !== 'create_income')) {
+    return { data: queued, status: 'needs-review' };
+  }
+  if (inboxConfirmBlockReason(item, current.accounts)) return { data: queued, status: 'needs-review' };
+  const amount = Math.abs(Number(item.payload.amount ?? 0));
+  const accountId = String(item.payload.accountId || '');
+  const account = current.accounts.find((entry) => entry.id === accountId);
+  const currencyValue = String(item.payload.currency || account?.currency || '');
+  if (!(Number.isFinite(amount) && amount > 0) || !account || !isCurrency(currencyValue)) {
+    return { data: queued, status: 'needs-review' };
+  }
+  const transaction: Transaction = {
+    id: uid('transaction'),
+    kind: item.proposedAction === 'create_income' ? 'income' : 'expense',
+    amount,
+    accountAmount: amount,
+    currency: currencyValue,
+    merchant: String(item.payload.merchant || '待补充商家'),
+    category: String(item.payload.category || (item.proposedAction === 'create_income' ? '收入' : '其他')),
+    accountId,
+    source: String(item.payload.paySource || inboxSourceLabel(item.source)),
+    reimbursable: item.payload.reimbursable === true,
+    createdAt: timestamp,
+    idempotencyKey: ledgerIdempotencyKeyForInboxItem(item),
+  };
+  const resolution = resolveInboxFinanceConfirmation(current.accounts, current.transactions, transaction);
+  if (resolution.outcome === 'rejected' || !resolution.transactionId) return { data: queued, status: 'needs-review' };
+  const confirmed = withInboxEvent(queued, {
+    type: 'confirm', itemId: item.id, resultEntityId: resolution.transactionId, timestamp, id: uid('audit'),
+  });
+  return {
+    data: {
+      ...confirmed,
+      accounts: toAccounts(resolution.accounts as Account[]),
+      transactions: toTransactions(resolution.transactions as Array<Partial<Transaction> & { id: string; kind: TransactionKind; accountId: string }>),
+      lastConfirmedInboxId: resolution.outcome === 'posted' ? item.id : null,
+    },
+    status: resolution.outcome,
+  };
+}
 function parseCapture(text: string, accounts: Account[]): CaptureDraft {
   const parsed = parseNaturalCapture(text, TODAY);
   if (parsed.kind === 'schedule' || parsed.kind === 'travel' || parsed.kind === 'health') return parsed;
@@ -652,24 +695,43 @@ export default function Home() {
   }, []);
   useEffect(() => {
     function onPayment(event: Event) {
-      const detail = (event as CustomEvent<Partial<ExpenseDraft> & { title?: string; dir?: string; source?: string; accountHint?: string; id?: string }>).detail || {};
+      const detail = (event as CustomEvent<Partial<ExpenseDraft> & { title?: string; dir?: string; source?: string; accountHint?: string; id?: string; autoSave?: boolean }>).detail || {};
       const merchant = detail.merchant || detail.title || '支付成功';
       const accountId = resolvePaymentAccountId(data.accounts, detail.source, detail.accountHint) ?? '';
+      const account = data.accounts.find((entry) => entry.id === accountId);
       const fingerprint = typeof detail.id === 'string' && detail.id.trim() ? detail.id.trim() : undefined;
+      const timestamp = localStamp();
+      const item = inboxItemFromPayment({
+        id: uid('inbox'),
+        createdAt: timestamp,
+        amount: Number(detail.amount ?? 0),
+        merchant,
+        category: detail.category,
+        source: String(detail.source || 'Android 支付通知'),
+        accountId,
+        currency: account?.currency,
+        dir: detail.dir,
+        fingerprint,
+      });
+      if (detail.autoSave === true) {
+        const result = autoConfirmPaymentEvent(data, item, timestamp);
+        setData(result.data);
+        if (result.status === 'posted') {
+          navigate('finance');
+          notify('已确认并记入账本');
+        } else if (result.status === 'reused') {
+          navigate('finance');
+          notify('这笔账目已存在，未重复记账');
+        } else {
+          navigate('capture');
+          notify('需要补充金额或账户，已保留在收件箱');
+        }
+        return;
+      }
       setData((current) => withInboxEvent(current, {
         type: 'enqueue',
-        item: inboxItemFromPayment({
-          id: uid('inbox'),
-          createdAt: localStamp(),
-          amount: Number(detail.amount ?? 0),
-          merchant,
-          category: detail.category,
-          source: String(detail.source || 'Android 支付通知'),
-          accountId,
-          dir: detail.dir,
-          fingerprint,
-        }),
-        timestamp: localStamp(),
+        item,
+        timestamp,
         id: uid('audit'),
       }));
       navigate('capture');
@@ -677,16 +739,17 @@ export default function Home() {
     }
     function onAutoTxn(event: Event) {
       const detail = (event as CustomEvent<{ id?: string; amount?: number | null; title?: string; category?: string; source?: string; accountHint?: string; dir?: string; autoSave?: boolean }>).detail || {};
-      onPayment(new CustomEvent('x', { detail: { amount: detail.amount ?? 0, merchant: detail.title, category: detail.category, source: detail.source, accountHint: detail.accountHint, dir: detail.dir, id: detail.id } }));
+      onPayment(new CustomEvent('x', { detail: { amount: detail.amount ?? 0, merchant: detail.title, category: detail.category, source: detail.source, accountHint: detail.accountHint, dir: detail.dir, id: detail.id, autoSave: detail.autoSave } }));
     }
     window.addEventListener('self-agent:payment-detected', onPayment);
     window.addEventListener('self-agent:auto-txn', onAutoTxn);
     (window as Window & { onAutoTxn?: (p: unknown) => void }).onAutoTxn = (p) => onAutoTxn(new CustomEvent('self-agent:auto-txn', { detail: p }));
+    (window as Window & { SelfAgentNative?: { webAppReady?: () => void } }).SelfAgentNative?.webAppReady?.();
     return () => {
       window.removeEventListener('self-agent:payment-detected', onPayment);
       window.removeEventListener('self-agent:auto-txn', onAutoTxn);
     };
-  }, [data.accounts]);
+  }, [data.accounts, data.transactions, data.inboxItems, data.auditLog]);
 
   const editingSchedule = editingScheduleId ? data.schedules.find((item) => item.id === editingScheduleId) : undefined;
   const todaySpend = useMemo(() => getDailySpend(data.transactions, TODAY, 'CNY'), [data.transactions]);

@@ -1313,6 +1313,7 @@ export function inboxItemFromPayment(input: {
   category?: string;
   source?: string;
   accountId?: string;
+  currency?: string;
   dir?: string;
   fingerprint?: string;
 }): InboxItem {
@@ -1324,7 +1325,7 @@ export function inboxItemFromPayment(input: {
     source: 'payment',
     confidence: inboxDefaultConfidence('payment'),
     proposedAction,
-    payload: { amount, merchant, category: input.category || (proposedAction === 'create_income' ? '收入' : '其他'), accountId: input.accountId || '', paySource: input.source || 'Android 支付通知', reimbursable: false },
+    payload: { amount, merchant, category: input.category || (proposedAction === 'create_income' ? '收入' : '其他'), accountId: input.accountId || '', currency: input.currency || '', paySource: input.source || 'Android 支付通知', reimbursable: false },
     createdAt: input.createdAt,
     status: 'pending',
     fingerprint: input.fingerprint,

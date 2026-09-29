@@ -749,7 +749,7 @@ export default function Home() {
       window.removeEventListener('self-agent:payment-detected', onPayment);
       window.removeEventListener('self-agent:auto-txn', onAutoTxn);
     };
-  }, [data.accounts, data.transactions, data.inboxItems, data.auditLog]);
+  }, [data]);
 
   const editingSchedule = editingScheduleId ? data.schedules.find((item) => item.id === editingScheduleId) : undefined;
   const todaySpend = useMemo(() => getDailySpend(data.transactions, TODAY, 'CNY'), [data.transactions]);
